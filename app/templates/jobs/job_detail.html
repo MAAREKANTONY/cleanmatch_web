@@ -41,14 +41,20 @@
     </div>
 </div>
 
-<div class="card">
-    <h3 style="margin-top:0;">Logs</h3>
-    <pre>{{ job.log_text|default:'Pas encore de logs.' }}</pre>
+<div class="grid grid-2">
+    <div class="card">
+        <h3 style="margin-top:0;">Paramètres</h3>
+        <pre>{{ job.parameters_json }}</pre>
+    </div>
+    <div class="card">
+        <h3 style="margin-top:0;">Erreur</h3>
+        <pre>{{ job.error_message|default:'Aucune erreur.' }}</pre>
+    </div>
 </div>
 
 <div class="card">
-    <h3 style="margin-top:0;">Erreur</h3>
-    <pre>{{ job.error_message|default:'Aucune erreur.' }}</pre>
+    <h3 style="margin-top:0;">Logs</h3>
+    <pre>{{ job.log_text|default:'Pas encore de logs.' }}</pre>
 </div>
 
 <script>

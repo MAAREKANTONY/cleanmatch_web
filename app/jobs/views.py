@@ -19,15 +19,23 @@ def create_job(request):
     if request.method == 'POST':
         form = JobCreateForm(request.POST, request.FILES)
         if form.is_valid():
+            parameters = {
+                'mode': 'uploaded',
+                'filename_1': form.cleaned_data['input_file_1'].name,
+                'filename_2': form.cleaned_data['input_file_2'].name if form.cleaned_data.get('input_file_2') else None,
+            }
+            if form.cleaned_data['job_type'] == Job.JobType.NORMALIZER:
+                parameters.update({
+                    'do_clean': form.cleaned_data['normalizer_do_clean'],
+                    'do_matchcode': form.cleaned_data['normalizer_do_matchcode'],
+                    'sheet_name': form.cleaned_data['normalizer_sheet_name'].strip(),
+                })
+
             job = Job.objects.create(
                 job_type=form.cleaned_data['job_type'],
                 status=Job.Status.PENDING,
                 progress_message='Job créé',
-                parameters_json={
-                    'mode': 'uploaded',
-                    'filename_1': form.cleaned_data['input_file_1'].name,
-                    'filename_2': form.cleaned_data['input_file_2'].name if form.cleaned_data.get('input_file_2') else None,
-                },
+                parameters_json=parameters,
                 input_file_1=form.cleaned_data['input_file_1'],
                 input_file_2=form.cleaned_data.get('input_file_2') or None,
             )
