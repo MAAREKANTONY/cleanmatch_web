@@ -1,69 +1,201 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="card">
-    <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;">
-        <div>
-            <h2 style="margin:0 0 8px 0;">Créer un job</h2>
-            <div class="muted">Upload d'un fichier et exécution asynchrone via Celery.</div>
-        </div>
-        <div>
-            <a class="btn btn-secondary" href="{% url 'jobs:home' %}">Retour</a>
-        </div>
-    </div>
-</div>
+<section class="hero">
+    <span class="pill">Nouveau job</span>
+    <h1 style="margin:14px 0 10px 0; font-size:2rem; letter-spacing:-.04em;">Créer un job avec un flux plus guidé</h1>
+    <p>
+        Pour le Normalizer, tu peux maintenant inspecter le fichier Excel avant envoi afin d'identifier rapidement les onglets disponibles et préremplir le nom d'onglet.
+    </p>
+</section>
 
-<div class="card">
-    <form method="post" enctype="multipart/form-data">
-        {% csrf_token %}
-        {% if form.non_field_errors %}
-            <div class="muted">{{ form.non_field_errors }}</div>
-        {% endif %}
-        <div style="display:grid;gap:18px;">
+<form method="post" enctype="multipart/form-data" class="stack">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+        <div class="card">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <section class="grid grid-2">
+        <div class="card stack">
             <div>
-                <label for="id_job_type"><strong>{{ form.job_type.label }}</strong></label><br>
+                <h2>1. Paramètres de base</h2>
+                <div class="muted">Choisis le type de traitement et charge les fichiers nécessaires.</div>
+            </div>
+
+            <div class="field">
+                <label for="id_job_type">{{ form.job_type.label }}</label>
                 {{ form.job_type }}
-                {% if form.job_type.errors %}<div class="muted">{{ form.job_type.errors }}</div>{% endif %}
+                {% if form.job_type.errors %}{{ form.job_type.errors }}{% endif %}
             </div>
-            <div>
-                <label for="id_input_file_1"><strong>{{ form.input_file_1.label }}</strong></label><br>
+
+            <div class="field">
+                <label for="id_input_file_1">{{ form.input_file_1.label }}</label>
                 {{ form.input_file_1 }}
-                {% if form.input_file_1.errors %}<div class="muted">{{ form.input_file_1.errors }}</div>{% endif %}
+                <div class="field-help">Pour le Normalizer, formats supportés actuellement : <span class="code-inline">.xlsx .xlsm .xltx .xltm</span></div>
+                {% if form.input_file_1.errors %}{{ form.input_file_1.errors }}{% endif %}
             </div>
-            <div>
-                <label for="id_input_file_2"><strong>{{ form.input_file_2.label }}</strong></label><br>
+
+            <div class="field">
+                <label for="id_input_file_2">{{ form.input_file_2.label }}</label>
                 {{ form.input_file_2 }}
-                {% if form.input_file_2.errors %}<div class="muted">{{ form.input_file_2.errors }}</div>{% endif %}
+                <div class="field-help">Utilisé plus tard pour les modules nécessitant deux entrées.</div>
+                {% if form.input_file_2.errors %}{{ form.input_file_2.errors }}{% endif %}
             </div>
+        </div>
 
-            <div class="card" id="normalizer-options" style="margin:0;background:#0f172a0d;">
-                <h3 style="margin-top:0;">Options Normalizer</h3>
-                <p class="muted">Cette itération branche le vrai moteur métier du normalizer. Le mapping interactif des colonnes n'est pas encore migré.</p>
-                <div style="display:grid;gap:12px;">
-                    <label>{{ form.normalizer_do_clean }} {{ form.normalizer_do_clean.label }}</label>
-                    <label>{{ form.normalizer_do_matchcode }} {{ form.normalizer_do_matchcode.label }}</label>
-                    <div>
-                        <label for="id_normalizer_sheet_name"><strong>{{ form.normalizer_sheet_name.label }}</strong></label><br>
-                        {{ form.normalizer_sheet_name }}
-                        {% if form.normalizer_sheet_name.help_text %}<div class="muted">{{ form.normalizer_sheet_name.help_text }}</div>{% endif %}
-                        {% if form.normalizer_sheet_name.errors %}<div class="muted">{{ form.normalizer_sheet_name.errors }}</div>{% endif %}
-                    </div>
-                </div>
-            </div>
-
+        <div class="card stack" id="normalizer-panel">
             <div>
+                <h2>2. Options Normalizer</h2>
+                <div class="muted">Toujours centré sur le vrai moteur métier. Le mapping visuel arrivera dans l'itération suivante.</div>
+            </div>
+
+            <div class="checklist">
+                <label class="check-item">{{ form.normalizer_do_clean }} <span><strong>{{ form.normalizer_do_clean.label }}</strong><br><span class="muted small">Nettoyage préparatoire des colonnes.</span></span></label>
+                <label class="check-item">{{ form.normalizer_do_matchcode }} <span><strong>{{ form.normalizer_do_matchcode.label }}</strong><br><span class="muted small">Construit les colonnes métier matchcode, voie et num_voie.</span></span></label>
+            </div>
+
+            <div class="field">
+                <label for="id_normalizer_sheet_name">{{ form.normalizer_sheet_name.label }}</label>
+                {{ form.normalizer_sheet_name }}
+                <datalist id="sheet-options"></datalist>
+                <div class="field-help">{{ form.normalizer_sheet_name.help_text }}</div>
+                {% if form.normalizer_sheet_name.errors %}{{ form.normalizer_sheet_name.errors }}{% endif %}
+            </div>
+
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button class="btn btn-secondary" type="button" id="inspect-btn">Inspecter le fichier Excel</button>
+                <div class="muted small" id="inspect-status">Aucune inspection lancée.</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="card hidden" id="inspection-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">3. Résultat de l'inspection</h2>
+                <div class="muted">Sélection rapide d'onglet et aperçu des premières lignes.</div>
+            </div>
+        </div>
+        <div id="inspection-results" class="grid grid-2"></div>
+    </section>
+
+    <section class="card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">4. Lancer le job</h2>
+                <div class="muted">Le traitement partira côté worker Celery sans bloquer l'interface.</div>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <a class="btn btn-secondary" href="{% url 'jobs:home' %}">Retour dashboard</a>
                 <button class="btn" type="submit">Créer et lancer le job</button>
             </div>
         </div>
-    </form>
-</div>
+    </section>
+</form>
 
 <script>
-function toggleNormalizerOptions() {
+(function() {
     const jobType = document.getElementById('id_job_type');
-    const panel = document.getElementById('normalizer-options');
-    panel.style.display = jobType.value === 'normalizer' ? 'block' : 'none';
-}
-document.getElementById('id_job_type').addEventListener('change', toggleNormalizerOptions);
-toggleNormalizerOptions();
+    const normalizerPanel = document.getElementById('normalizer-panel');
+    const inspectBtn = document.getElementById('inspect-btn');
+    const inspectStatus = document.getElementById('inspect-status');
+    const inspectionCard = document.getElementById('inspection-card');
+    const inspectionResults = document.getElementById('inspection-results');
+    const inputFile = document.getElementById('id_input_file_1');
+    const sheetNameInput = document.getElementById('id_normalizer_sheet_name');
+    const sheetOptions = document.getElementById('sheet-options');
+    const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+
+    function toggleNormalizerOptions() {
+        const isNormalizer = jobType.value === 'normalizer';
+        normalizerPanel.classList.toggle('hidden', !isNormalizer);
+        inspectionCard.classList.toggle('hidden', !isNormalizer || !inspectionResults.children.length);
+    }
+
+    function buildPreviewTable(preview) {
+        if (!preview || !preview.length) {
+            return '<div class="muted small">Aperçu indisponible.</div>';
+        }
+        const rows = preview.map(row => `<tr>${row.map(cell => `<td>${cell || ''}</td>`).join('')}</tr>`).join('');
+        return `<table class="preview-table">${rows}</table>`;
+    }
+
+    function renderInspection(data) {
+        sheetOptions.innerHTML = '';
+        inspectionResults.innerHTML = '';
+        data.sheets.forEach((sheet, index) => {
+            const option = document.createElement('option');
+            option.value = sheet.name;
+            sheetOptions.appendChild(option);
+
+            const card = document.createElement('div');
+            card.className = 'sheet-item' + (index === 0 ? ' active' : '');
+            card.innerHTML = `
+                <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+                    <div>
+                        <strong>${sheet.name}</strong>
+                        <div class="sheet-meta">
+                            <span>${sheet.max_row} lignes</span>
+                            <span>${sheet.max_column} colonnes</span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary small choose-sheet">Choisir cet onglet</button>
+                </div>
+                ${buildPreviewTable(sheet.preview)}
+            `;
+            card.querySelector('.choose-sheet').addEventListener('click', () => {
+                sheetNameInput.value = sheet.name;
+                document.querySelectorAll('.sheet-item').forEach(el => el.classList.remove('active'));
+                card.classList.add('active');
+                inspectStatus.textContent = `Onglet sélectionné : ${sheet.name}`;
+            });
+            inspectionResults.appendChild(card);
+        });
+
+        if (data.sheets.length) {
+            sheetNameInput.value = sheetNameInput.value || data.sheets[0].name;
+            inspectionCard.classList.remove('hidden');
+        }
+    }
+
+    async function inspectWorkbook() {
+        if (jobType.value !== 'normalizer') {
+            inspectStatus.textContent = 'Inspection disponible uniquement pour le Normalizer.';
+            return;
+        }
+        if (!inputFile.files.length) {
+            inspectStatus.textContent = 'Sélectionne d’abord un fichier Excel.';
+            return;
+        }
+
+        inspectStatus.textContent = 'Inspection du fichier en cours...';
+        inspectBtn.disabled = true;
+        const formData = new FormData();
+        formData.append('input_file_1', inputFile.files[0]);
+
+        try {
+            const response = await fetch('{% url "jobs:inspect_excel" %}', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken },
+                body: formData,
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                inspectStatus.textContent = data.error || 'Inspection impossible.';
+                return;
+            }
+            renderInspection(data);
+            inspectStatus.textContent = `${data.sheets.length} onglet(s) détecté(s) dans ${data.filename}.`;
+            toggleNormalizerOptions();
+        } catch (error) {
+            inspectStatus.textContent = 'Erreur réseau pendant l’inspection.';
+        } finally {
+            inspectBtn.disabled = false;
+        }
+    }
+
+    inspectBtn.addEventListener('click', inspectWorkbook);
+    jobType.addEventListener('change', toggleNormalizerOptions);
+    toggleNormalizerOptions();
+})();
 </script>
 {% endblock %}

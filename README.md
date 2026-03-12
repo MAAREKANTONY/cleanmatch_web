@@ -1,86 +1,46 @@
-# CleanMatch Web — Itération 3
+# CleanMatch Web - Iteration 5
 
-Cette itération branche le premier vrai moteur métier : **Normalizer**.
+Cette itération ajoute la robustesse des jobs :
+- bouton **Kill job** dans l'UI
+- champ `last_heartbeat`
+- détection et auto-fail des jobs stale via **Celery Beat**
+- garde-fou sur l'espace disque avant lancement et pendant le traitement
+- meilleure gestion des annulations côté worker
 
-## Ce qui est inclus
-
-- architecture Docker `Django + PostgreSQL + Redis + Celery + Nginx`
-- upload de fichier et création de job
-- exécution asynchrone côté worker
-- suivi de progression et logs
-- **normalizer métier branché** :
-  - nettoyage des colonnes
-  - génération `num_voie`
-  - génération `voie`
-  - génération `matchcode`
-  - tentative de détection `chaine` via `app/legacy_data/chaines.csv` si présent
-- téléchargement du fichier Excel résultat
-
-## Limites connues de cette itération
-
-- le normalizer web supporte uniquement les fichiers Excel `.xlsx/.xlsm/.xltx/.xltm`
-- si plusieurs onglets sont présents et qu'aucun nom d'onglet n'est fourni, le premier est utilisé
-- le mapping interactif des colonnes n'est **pas encore** migré
-- `Matcher` et `Geocoder` restent en stub
-
-## Installation
+## Démarrage
 
 ```bash
 cp .env.example .env
+docker compose up --build
 ```
 
-### Initialisation Git
+## Git init
 
 ```bash
 git init
 git add .
-git commit -m "iteration 3 - real normalizer service"
+git commit -m "iteration 5 - job robustness"
 ```
 
-### Démarrage
+## URLs
 
-```bash
-docker compose up --build
-```
+- http://localhost:8080/
+- http://localhost:8080/jobs/new/
+- http://localhost:8080/health/
 
-Puis dans un second terminal :
+## Notes importantes
 
-```bash
-docker compose exec web python manage.py migrate
-docker compose exec web python manage.py createsuperuser
-```
+- le bouton **Kill job** annule proprement les jobs `queued`
+- pour les jobs `running`, l'arrêt s'effectue au prochain checkpoint worker (progress/log/check disque)
+- le service `beat` marque automatiquement en `failed` les jobs `running` sans heartbeat depuis trop longtemps
+- tu peux ajuster les seuils dans `.env`
 
-## URLs utiles
 
-- Application : `http://localhost:8080/`
-- Nouveau job : `http://localhost:8080/jobs/new/`
-- Admin : `http://localhost:8080/admin/`
-- Health : `http://localhost:8080/health/`
+## Environment
 
-## Test conseillé
+Use `.env.example` as the base for `.env`. This iteration keeps compatibility with the previous variable names (`DEBUG`, `SECRET_KEY`, `ALLOWED_HOSTS`, `TIME_ZONE`) and also still accepts the newer `DJANGO_*` aliases.
 
-1. Aller sur `/jobs/new/`
-2. Choisir `Normalizer`
-3. Uploader un fichier Excel avec au minimum `address`, `zipcode`, `city`
-4. Cocher ou décocher les options selon le besoin
-5. Lancer le job
-6. Télécharger le résultat `.xlsx`
 
-## Données chaînes
+## Patch export normalizer
 
-Pour réactiver la recherche locale de chaînes, déposer un fichier ici :
-
-```text
-app/legacy_data/chaines.csv
-```
-
-Colonnes attendues :
-- `name`
-- `keyword`
-
-## Logs
-
-```bash
-docker compose logs -f web
-docker compose logs -f worker
-```
+Le normalizer écrit désormais les résultats en **CSV UTF-8 avec BOM** (`.csv`) afin d'éviter les crashs mémoire liés à l'export Excel sur gros volumes.

@@ -261,9 +261,9 @@ class NormalizerService:
         if options.do_matchcode:
             df = self._perform_matchcode(df)
 
-        self._progress(95, 'Écriture du fichier résultat')
-        df.to_excel(output_path, index=False, engine='openpyxl')
-        self._log(f"✓ Fichier sauvegardé : {output_path.name}")
+        self._progress(95, 'Écriture du fichier résultat CSV')
+        df.to_csv(output_path, index=False, encoding='utf-8-sig')
+        self._log(f"✓ Fichier CSV sauvegardé : {output_path.name}")
         self._log(f"📊 Résumé : {len(df)} lignes, {len(df.columns)} colonnes")
         self._progress(100, 'Traitement terminé')
         return output_path
