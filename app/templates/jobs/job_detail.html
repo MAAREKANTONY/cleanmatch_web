@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;">
+        <div>
+            <h2 style="margin:0 0 8px 0;">Job {{ job.id }}</h2>
+            <div class="muted">Type : {{ job.job_type }}</div>
+        </div>
+        <div>
+            <a class="btn btn-secondary" href="{% url 'jobs:home' %}">Retour</a>
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-2">
+    <div class="card">
+        <h3 style="margin-top:0;">Statut</h3>
+        <p><span class="badge badge-{{ job.status }}">{{ job.status }}</span></p>
+        <div class="progress">
+            <div class="progress-bar" style="width: {{ job.progress_percent }}%;"></div>
+        </div>
+        <p style="margin-top:10px;">{{ job.progress_percent }}% — {{ job.progress_message|default:'-' }}</p>
+        <p class="muted">Créé : {{ job.created_at }}</p>
+        <p class="muted">Démarré : {{ job.started_at|default:'-' }}</p>
+        <p class="muted">Terminé : {{ job.finished_at|default:'-' }}</p>
+    </div>
+
+    <div class="card">
+        <h3 style="margin-top:0;">Fichiers</h3>
+        <p class="muted">Entrée 1 : {% if job.input_file_1 %}{{ job.input_file_1.name }}{% else %}-{% endif %}</p>
+        <p class="muted">Entrée 2 : {% if job.input_file_2 %}{{ job.input_file_2.name }}{% else %}-{% endif %}</p>
+        {% if job.output_file %}
+            <p><a class="btn" href="{{ job.output_file.url }}">Télécharger le fichier résultat</a></p>
+        {% else %}
+            <p class="muted">Aucun fichier résultat pour le moment.</p>
+        {% endif %}
+        {% if job.error_file %}
+            <p><a class="btn btn-secondary" href="{{ job.error_file.url }}">Télécharger le fichier d'erreur</a></p>
+        {% endif %}
+        <p class="muted">API JSON : <a href="{% url 'jobs:api_detail' job.id %}">{% url 'jobs:api_detail' job.id %}</a></p>
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="margin-top:0;">Logs</h3>
+    <pre>{{ job.log_text|default:'Pas encore de logs.' }}</pre>
+</div>
+
+<div class="card">
+    <h3 style="margin-top:0;">Erreur</h3>
+    <pre>{{ job.error_message|default:'Aucune erreur.' }}</pre>
+</div>
+
+<script>
+setTimeout(function() {
+    if (["queued", "running", "pending"].includes("{{ job.status }}")) {
+        window.location.reload();
+    }
+}, 3000);
+</script>
+{% endblock %}

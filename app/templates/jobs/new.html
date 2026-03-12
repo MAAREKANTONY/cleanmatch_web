@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;">
+        <div>
+            <h2 style="margin:0 0 8px 0;">Créer un job</h2>
+            <div class="muted">Upload d'un fichier et exécution asynchrone via Celery.</div>
+        </div>
+        <div>
+            <a class="btn btn-secondary" href="{% url 'jobs:home' %}">Retour</a>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="muted">{{ form.non_field_errors }}</div>
+        {% endif %}
+        <div style="display:grid;gap:18px;">
+            <div>
+                <label for="id_job_type"><strong>{{ form.job_type.label }}</strong></label><br>
+                {{ form.job_type }}
+                {% if form.job_type.errors %}<div class="muted">{{ form.job_type.errors }}</div>{% endif %}
+            </div>
+            <div>
+                <label for="id_input_file_1"><strong>{{ form.input_file_1.label }}</strong></label><br>
+                {{ form.input_file_1 }}
+                {% if form.input_file_1.errors %}<div class="muted">{{ form.input_file_1.errors }}</div>{% endif %}
+            </div>
+            <div>
+                <label for="id_input_file_2"><strong>{{ form.input_file_2.label }}</strong></label><br>
+                {{ form.input_file_2 }}
+                {% if form.input_file_2.errors %}<div class="muted">{{ form.input_file_2.errors }}</div>{% endif %}
+            </div>
+            <div>
+                <button class="btn" type="submit">Créer et lancer le job</button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

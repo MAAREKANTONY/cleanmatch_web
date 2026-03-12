@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+    <h2 style="margin-top:0;">Itération 2 prête : upload + job async + résultat</h2>
+    <p>
+        Cette itération valide le pipeline complet : upload de fichier, création d'un job,
+        exécution Celery en arrière-plan, progression, logs et téléchargement du résultat.
+    </p>
+    <p>
+        <a class="btn" href="{% url 'jobs:new' %}">Créer un nouveau job</a>
+    </p>
+</div>
+
+<div class="grid grid-2">
+    <div class="card">
+        <h3 style="margin-top:0;">Endpoints utiles</h3>
+        <p><a href="/health/">/health/</a></p>
+        <p class="muted">Détail JSON : <code>/api/jobs/&lt;uuid&gt;/</code></p>
+        <p class="muted">Nouveau job : <code>/jobs/new/</code></p>
+    </div>
+    <div class="card">
+        <h3 style="margin-top:0;">Portée de cette itération</h3>
+        <p class="muted">Le worker traite encore un stub technique. Le prochain incrément branchera le vrai moteur métier.</p>
+    </div>
+</div>
+
+<div class="card">
+    <h2 style="margin-top:0;">Derniers jobs</h2>
+    {% if jobs %}
+    <table>
+        <thead>
+            <tr>
+                <th>Job</th>
+                <th>Type</th>
+                <th>Statut</th>
+                <th>Progression</th>
+                <th>Message</th>
+                <th>Fichier</th>
+                <th>Créé le</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for job in jobs %}
+            <tr>
+                <td><a href="{% url 'jobs:detail' job.id %}">{{ job.id }}</a></td>
+                <td>{{ job.job_type }}</td>
+                <td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td>
+                <td>{{ job.progress_percent }}%</td>
+                <td>{{ job.progress_message|default:'-' }}</td>
+                <td>{% if job.input_file_1 %}{{ job.input_file_1.name }}{% else %}-{% endif %}</td>
+                <td>{{ job.created_at }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p class="muted">Aucun job pour le moment.</p>
+    {% endif %}
+</div>
+{% endblock %}
