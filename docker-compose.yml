@@ -56,6 +56,21 @@ services:
         condition: service_healthy
     command: celery -A config worker -l info --pool=solo
 
+  beat:
+    build:
+      context: ./app
+    env_file: .env
+    volumes:
+      - ./app:/app
+      - media_data:/app/media
+      - static_data:/app/staticfiles
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A config beat -l info
+
   nginx:
     image: nginx:1.27-alpine
     ports:

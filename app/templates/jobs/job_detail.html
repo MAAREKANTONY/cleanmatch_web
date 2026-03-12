@@ -1,67 +1,223 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="card">
-    <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;">
+<section class="hero">
+    <span class="pill">Suivi live</span>
+    <h1 style="margin:14px 0 10px 0; font-size:1.9rem; letter-spacing:-.04em;">Job <span class="code-inline">{{ job.id }}</span></h1>
+    <p>Le détail du job se met à jour automatiquement par appel API, sans recharger toute la page.</p>
+</section>
+
+<section class="grid grid-4">
+    <div class="kpi">
+        <div class="metric-label">Statut</div>
+        <div><span id="job-status" class="badge badge-{{ job.status }}">{{ job.status }}</span></div>
+    </div>
+    <div class="kpi">
+        <div class="metric-label">Type</div>
+        <div class="metric-value" style="font-size:1.3rem;">{{ job.job_type }}</div>
+    </div>
+    <div class="kpi">
+        <div class="metric-label">Progression</div>
+        <div class="metric-value" id="job-progress-value" style="font-size:1.3rem;">{{ job.progress_percent }}%</div>
+    </div>
+    <div class="kpi">
+        <div class="metric-label">Heartbeat</div>
+        <div class="metric-value small" id="job-heartbeat">{{ job.last_heartbeat|default:'-' }}</div>
+    </div>
+</section>
+
+<section class="grid grid-2">
+    <div class="card">
+        <h2>État d'avancement</h2>
+        <div class="progress"><div id="job-progress-bar" class="progress-bar" style="width: {{ job.progress_percent }}%;"></div></div>
+        <p id="job-progress-message" style="margin-top:12px;"><strong>{{ job.progress_percent }}%</strong> — {{ job.progress_message|default:'-' }}</p>
+        <div class="stack small muted">
+            <div>Créé : <span id="job-created">{{ job.created_at }}</span></div>
+            <div>Démarré : <span id="job-started">{{ job.started_at|default:'-' }}</span></div>
+            <div>Terminé : <span id="job-finished">{{ job.finished_at|default:'-' }}</span></div>
+            <div>Annulation demandée : <span id="job-cancel-requested">{{ job.cancellation_requested|yesno:'oui,non' }}</span></div>
+            <div>Raison annulation : <span id="job-cancel-reason">{{ job.cancellation_reason|default:'-' }}</span></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Fichiers</h2>
+        <div class="stack small">
+            <div>Entrée 1 : <span id="input-file-1">{% if job.input_file_1 %}{{ job.input_file_1.name }}{% else %}-{% endif %}</span></div>
+            <div>Entrée 2 : <span id="input-file-2">{% if job.input_file_2 %}{{ job.input_file_2.name }}{% else %}-{% endif %}</span></div>
+        </div>
+        <div id="download-actions" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:16px;">
+            {% if job.output_file %}
+                <a id="output-link" class="btn" href="{{ job.output_file.url }}">Télécharger le résultat</a>
+            {% else %}
+                <span id="output-placeholder" class="muted">Aucun fichier résultat pour le moment.</span>
+            {% endif %}
+            {% if job.error_file %}
+                <a id="error-link" class="btn btn-secondary" href="{{ job.error_file.url }}">Télécharger le fichier d'erreur</a>
+            {% endif %}
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:16px;">
+            <button id="kill-job-btn" class="btn btn-danger" {% if job.is_finished %}disabled{% endif %}>Kill job</button>
+            <span id="kill-job-status" class="muted small">Le kill marque le job comme annulé et demande au worker de s'arrêter au prochain checkpoint.</span>
+        </div>
+        <div class="muted small" style="margin-top:16px;">API JSON : <a href="{% url 'jobs:api_detail' job.id %}">{% url 'jobs:api_detail' job.id %}</a></div>
+    </div>
+</section>
+
+<section class="grid grid-2">
+    <div class="card">
+        <h2>Paramètres</h2>
+        <pre id="job-params">{{ job.parameters_json }}</pre>
+    </div>
+    <div class="card">
+        <h2>Erreur</h2>
+        <pre id="job-error">{{ job.error_message|default:'Aucune erreur.' }}</pre>
+    </div>
+</section>
+
+<section class="card">
+    <div class="toolbar">
         <div>
-            <h2 style="margin:0 0 8px 0;">Job {{ job.id }}</h2>
-            <div class="muted">Type : {{ job.job_type }}</div>
+            <h2 style="margin-bottom:6px;">Logs</h2>
+            <div class="muted">Mise à jour automatique tant que le job n'est pas terminé.</div>
         </div>
-        <div>
-            <a class="btn btn-secondary" href="{% url 'jobs:home' %}">Retour</a>
-        </div>
+        <a class="btn btn-secondary" href="{% url 'jobs:home' %}">Retour dashboard</a>
     </div>
-</div>
-
-<div class="grid grid-2">
-    <div class="card">
-        <h3 style="margin-top:0;">Statut</h3>
-        <p><span class="badge badge-{{ job.status }}">{{ job.status }}</span></p>
-        <div class="progress">
-            <div class="progress-bar" style="width: {{ job.progress_percent }}%;"></div>
-        </div>
-        <p style="margin-top:10px;">{{ job.progress_percent }}% — {{ job.progress_message|default:'-' }}</p>
-        <p class="muted">Créé : {{ job.created_at }}</p>
-        <p class="muted">Démarré : {{ job.started_at|default:'-' }}</p>
-        <p class="muted">Terminé : {{ job.finished_at|default:'-' }}</p>
-    </div>
-
-    <div class="card">
-        <h3 style="margin-top:0;">Fichiers</h3>
-        <p class="muted">Entrée 1 : {% if job.input_file_1 %}{{ job.input_file_1.name }}{% else %}-{% endif %}</p>
-        <p class="muted">Entrée 2 : {% if job.input_file_2 %}{{ job.input_file_2.name }}{% else %}-{% endif %}</p>
-        {% if job.output_file %}
-            <p><a class="btn" href="{{ job.output_file.url }}">Télécharger le fichier résultat</a></p>
-        {% else %}
-            <p class="muted">Aucun fichier résultat pour le moment.</p>
-        {% endif %}
-        {% if job.error_file %}
-            <p><a class="btn btn-secondary" href="{{ job.error_file.url }}">Télécharger le fichier d'erreur</a></p>
-        {% endif %}
-        <p class="muted">API JSON : <a href="{% url 'jobs:api_detail' job.id %}">{% url 'jobs:api_detail' job.id %}</a></p>
-    </div>
-</div>
-
-<div class="grid grid-2">
-    <div class="card">
-        <h3 style="margin-top:0;">Paramètres</h3>
-        <pre>{{ job.parameters_json }}</pre>
-    </div>
-    <div class="card">
-        <h3 style="margin-top:0;">Erreur</h3>
-        <pre>{{ job.error_message|default:'Aucune erreur.' }}</pre>
-    </div>
-</div>
-
-<div class="card">
-    <h3 style="margin-top:0;">Logs</h3>
-    <pre>{{ job.log_text|default:'Pas encore de logs.' }}</pre>
-</div>
+    <pre id="job-logs">{{ job.log_text|default:'Pas encore de logs.' }}</pre>
+</section>
 
 <script>
-setTimeout(function() {
-    if (["queued", "running", "pending"].includes("{{ job.status }}")) {
-        window.location.reload();
+(function() {
+    const apiUrl = '{% url "jobs:api_detail" job.id %}';
+    const cancelUrl = '{% url "jobs:cancel" job.id %}';
+    const outputContainer = document.getElementById('download-actions');
+    const killBtn = document.getElementById('kill-job-btn');
+    const killStatus = document.getElementById('kill-job-status');
+    const csrfToken = '{{ csrf_token }}';
+
+    function badgeClass(status) {
+        return 'badge badge-' + status;
     }
-}, 3000);
+
+    function ensureOutputLink(url) {
+        let link = document.getElementById('output-link');
+        const placeholder = document.getElementById('output-placeholder');
+        if (!url) {
+            if (!placeholder) {
+                const span = document.createElement('span');
+                span.id = 'output-placeholder';
+                span.className = 'muted';
+                span.textContent = 'Aucun fichier résultat pour le moment.';
+                outputContainer.prepend(span);
+            }
+            if (link) link.remove();
+            return;
+        }
+        if (placeholder) placeholder.remove();
+        if (!link) {
+            link = document.createElement('a');
+            link.id = 'output-link';
+            link.className = 'btn';
+            link.textContent = 'Télécharger le résultat';
+            outputContainer.prepend(link);
+        }
+        link.href = url;
+    }
+
+    function ensureErrorLink(url) {
+        let link = document.getElementById('error-link');
+        if (!url) {
+            if (link) link.remove();
+            return;
+        }
+        if (!link) {
+            link = document.createElement('a');
+            link.id = 'error-link';
+            link.className = 'btn btn-secondary';
+            link.textContent = 'Télécharger le fichier d\'erreur';
+            outputContainer.appendChild(link);
+        }
+        link.href = url;
+    }
+
+    function formatText(value, fallback='-') {
+        return value || fallback;
+    }
+
+    function updateKillUI(data) {
+        const isFinished = ['success', 'failed', 'cancelled'].includes(data.status);
+        killBtn.disabled = isFinished || data.cancellation_requested;
+        if (data.status === 'cancelled') {
+            killStatus.textContent = data.error_message || 'Job annulé.';
+        } else if (data.cancellation_requested) {
+            killStatus.textContent = 'Annulation demandée, attente d’un checkpoint worker.';
+        } else {
+            killStatus.textContent = 'Le kill marque le job comme annulé et demande au worker de s\'arrêter au prochain checkpoint.';
+        }
+    }
+
+    async function refreshJob() {
+        try {
+            const response = await fetch(apiUrl, { headers: { 'Accept': 'application/json' } });
+            const data = await response.json();
+            if (!response.ok) return;
+
+            document.getElementById('job-status').className = badgeClass(data.status);
+            document.getElementById('job-status').textContent = data.status;
+            document.getElementById('job-progress-value').textContent = `${data.progress_percent}%`;
+            document.getElementById('job-progress-bar').style.width = `${data.progress_percent}%`;
+            document.getElementById('job-progress-message').innerHTML = `<strong>${data.progress_percent}%</strong> — ${data.progress_message || '-'}`;
+            document.getElementById('job-created').textContent = formatText(data.created_at);
+            document.getElementById('job-started').textContent = formatText(data.started_at);
+            document.getElementById('job-finished').textContent = formatText(data.finished_at);
+            document.getElementById('job-heartbeat').textContent = formatText(data.last_heartbeat);
+            document.getElementById('job-cancel-requested').textContent = data.cancellation_requested ? 'oui' : 'non';
+            document.getElementById('job-cancel-reason').textContent = formatText(data.cancellation_reason);
+            document.getElementById('input-file-1').textContent = formatText(data.input_file_1_name);
+            document.getElementById('input-file-2').textContent = formatText(data.input_file_2_name);
+            document.getElementById('job-params').textContent = JSON.stringify(data.parameters_json || {}, null, 2);
+            document.getElementById('job-error').textContent = data.error_message || 'Aucune erreur.';
+            document.getElementById('job-logs').textContent = data.log_text || 'Pas encore de logs.';
+            ensureOutputLink(data.output_file_url);
+            ensureErrorLink(data.error_file_url);
+            updateKillUI(data);
+
+            if (['queued', 'running', 'pending'].includes(data.status) || data.cancellation_requested) {
+                window.setTimeout(refreshJob, 2500);
+            }
+        } catch (error) {
+            window.setTimeout(refreshJob, 4000);
+        }
+    }
+
+    killBtn.addEventListener('click', async function() {
+        killBtn.disabled = true;
+        killStatus.textContent = 'Demande d’annulation en cours...';
+        try {
+            const response = await fetch(cancelUrl, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Accept': 'application/json'
+                }
+            });
+            const data = await response.json();
+            if (!response.ok || !data.ok) {
+                killStatus.textContent = data.error || 'Impossible d’annuler ce job.';
+                killBtn.disabled = false;
+                return;
+            }
+            killStatus.textContent = 'Annulation demandée avec succès.';
+            refreshJob();
+        } catch (error) {
+            killStatus.textContent = 'Erreur réseau pendant la demande d’annulation.';
+            killBtn.disabled = false;
+        }
+    });
+
+    updateKillUI({status: '{{ job.status }}', cancellation_requested: {{ job.cancellation_requested|yesno:'true,false' }}, error_message: '{{ job.error_message|escapejs }}'});
+    if (['queued', 'running', 'pending'].includes('{{ job.status }}') || {{ job.cancellation_requested|yesno:'true,false' }}) {
+        window.setTimeout(refreshJob, 1800);
+    }
+})();
 </script>
 {% endblock %}
