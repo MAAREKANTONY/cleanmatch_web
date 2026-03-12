@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="card">
-    <h2 style="margin-top:0;">Itération 2 prête : upload + job async + résultat</h2>
+    <h2 style="margin-top:0;">Itération 3 : premier moteur métier branché</h2>
     <p>
-        Cette itération valide le pipeline complet : upload de fichier, création d'un job,
-        exécution Celery en arrière-plan, progression, logs et téléchargement du résultat.
+        Cette itération conserve l'architecture web async et branche le vrai moteur du <strong>Normalizer</strong>.
+        Le job normalizer génère désormais un vrai fichier Excel résultat côté worker.
     </p>
     <p>
         <a class="btn" href="{% url 'jobs:new' %}">Créer un nouveau job</a>
@@ -20,7 +20,7 @@
     </div>
     <div class="card">
         <h3 style="margin-top:0;">Portée de cette itération</h3>
-        <p class="muted">Le worker traite encore un stub technique. Le prochain incrément branchera le vrai moteur métier.</p>
+        <p class="muted">Normalizer branché. Matcher et Geocoder restent en stub. Le mapping interactif et la sélection guidée d'onglet viendront plus tard.</p>
     </div>
 </div>
 
