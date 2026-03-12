@@ -21,7 +21,8 @@ class JobCreateForm(forms.Form):
     normalizer_sheet_name = forms.CharField(
         label='Nom de l’onglet Excel (optionnel)',
         required=False,
-        help_text='Si vide et si plusieurs onglets existent, le premier sera utilisé.',
+        help_text='Tu peux choisir un onglet après inspection du fichier. Si vide et si plusieurs onglets existent, le premier sera utilisé.',
+        widget=forms.TextInput(attrs={'list': 'sheet-options', 'placeholder': 'Ex: Feuil1'}),
     )
 
     def clean_input_file_1(self):

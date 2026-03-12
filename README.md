@@ -1,49 +1,36 @@
-# CleanMatch Web — Itération 3
+# CleanMatch Web — Itération 4
 
-Cette itération branche le premier vrai moteur métier : **Normalizer**.
+Cette itération améliore principalement l'interface utilisateur et le confort d'exploitation.
 
-## Ce qui est inclus
+## Nouveautés
 
-- architecture Docker `Django + PostgreSQL + Redis + Celery + Nginx`
-- upload de fichier et création de job
-- exécution asynchrone côté worker
-- suivi de progression et logs
-- **normalizer métier branché** :
-  - nettoyage des colonnes
-  - génération `num_voie`
-  - génération `voie`
-  - génération `matchcode`
-  - tentative de détection `chaine` via `app/legacy_data/chaines.csv` si présent
-- téléchargement du fichier Excel résultat
+- dashboard jobs plus lisible avec KPI et filtres rapides
+- page de détail job avec rafraîchissement via API sans reload complet
+- page de création plus guidée
+- inspection d'un fichier Excel avant lancement du Normalizer
+- préremplissage assisté du nom d'onglet grâce à la liste des sheets détectées
 
-## Limites connues de cette itération
-
-- le normalizer web supporte uniquement les fichiers Excel `.xlsx/.xlsm/.xltx/.xltm`
-- si plusieurs onglets sont présents et qu'aucun nom d'onglet n'est fourni, le premier est utilisé
-- le mapping interactif des colonnes n'est **pas encore** migré
-- `Matcher` et `Geocoder` restent en stub
-
-## Installation
+## Démarrage
 
 ```bash
 cp .env.example .env
 ```
 
-### Initialisation Git
+Si le projet n'est pas encore versionné :
 
 ```bash
 git init
 git add .
-git commit -m "iteration 3 - real normalizer service"
+git commit -m "iteration 4 - dashboard ui and excel inspection"
 ```
 
-### Démarrage
+Lancement :
 
 ```bash
 docker compose up --build
 ```
 
-Puis dans un second terminal :
+Puis au besoin :
 
 ```bash
 docker compose exec web python manage.py migrate
@@ -52,35 +39,10 @@ docker compose exec web python manage.py createsuperuser
 
 ## URLs utiles
 
-- Application : `http://localhost:8080/`
-- Nouveau job : `http://localhost:8080/jobs/new/`
-- Admin : `http://localhost:8080/admin/`
-- Health : `http://localhost:8080/health/`
+- http://localhost:8080/
+- http://localhost:8080/jobs/new/
+- http://localhost:8080/health/
 
-## Test conseillé
+## Note
 
-1. Aller sur `/jobs/new/`
-2. Choisir `Normalizer`
-3. Uploader un fichier Excel avec au minimum `address`, `zipcode`, `city`
-4. Cocher ou décocher les options selon le besoin
-5. Lancer le job
-6. Télécharger le résultat `.xlsx`
-
-## Données chaînes
-
-Pour réactiver la recherche locale de chaînes, déposer un fichier ici :
-
-```text
-app/legacy_data/chaines.csv
-```
-
-Colonnes attendues :
-- `name`
-- `keyword`
-
-## Logs
-
-```bash
-docker compose logs -f web
-docker compose logs -f worker
-```
+L'inspection Excel est utilisée uniquement côté UI pour aider au choix de l'onglet avant soumission du job Normalizer. Le mapping interactif des colonnes reste prévu pour l'itération suivante.

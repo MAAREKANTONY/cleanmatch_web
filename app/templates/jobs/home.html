@@ -1,60 +1,102 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="card">
-    <h2 style="margin-top:0;">Itération 3 : premier moteur métier branché</h2>
+<section class="hero">
+    <span class="pill">UI V2</span>
+    <h1 style="margin:14px 0 10px 0; font-size:2.1rem; letter-spacing:-.04em;">Tableau de bord jobs plus lisible et plus exploitable</h1>
     <p>
-        Cette itération conserve l'architecture web async et branche le vrai moteur du <strong>Normalizer</strong>.
-        Le job normalizer génère désormais un vrai fichier Excel résultat côté worker.
+        Cette itération améliore surtout l'expérience utilisateur : dashboard plus clair, filtres rapides, page de détail qui se met à jour sans rechargement brutal,
+        et préparation d'un flux Normalizer guidé grâce à l'inspection des onglets Excel.
     </p>
-    <p>
-        <a class="btn" href="{% url 'jobs:new' %}">Créer un nouveau job</a>
-    </p>
-</div>
+</section>
 
-<div class="grid grid-2">
-    <div class="card">
-        <h3 style="margin-top:0;">Endpoints utiles</h3>
-        <p><a href="/health/">/health/</a></p>
-        <p class="muted">Détail JSON : <code>/api/jobs/&lt;uuid&gt;/</code></p>
-        <p class="muted">Nouveau job : <code>/jobs/new/</code></p>
+<section class="cards">
+    <div class="kpi">
+        <div class="metric-value">{{ stats.total }}</div>
+        <div class="metric-label">Jobs au total</div>
     </div>
-    <div class="card">
-        <h3 style="margin-top:0;">Portée de cette itération</h3>
-        <p class="muted">Normalizer branché. Matcher et Geocoder restent en stub. Le mapping interactif et la sélection guidée d'onglet viendront plus tard.</p>
+    <div class="kpi">
+        <div class="metric-value">{{ stats.running }}</div>
+        <div class="metric-label">En cours</div>
     </div>
-</div>
+    <div class="kpi">
+        <div class="metric-value">{{ stats.queued }}</div>
+        <div class="metric-label">En file</div>
+    </div>
+    <div class="kpi">
+        <div class="metric-value">{{ stats.success }}</div>
+        <div class="metric-label">Terminés</div>
+    </div>
+    <div class="kpi">
+        <div class="metric-value">{{ stats.failed }}</div>
+        <div class="metric-label">En erreur</div>
+    </div>
+</section>
 
-<div class="card">
-    <h2 style="margin-top:0;">Derniers jobs</h2>
+<section class="card">
+    <div class="toolbar">
+        <div>
+            <h2 style="margin-bottom:6px;">Liste des jobs</h2>
+            <div class="muted">Filtre rapide par type, statut et nom de fichier.</div>
+        </div>
+        <form method="get">
+            <select name="job_type">
+                <option value="">Tous les types</option>
+                {% for value, label in job_type_choices %}
+                    <option value="{{ value }}" {% if filters.job_type == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select name="status">
+                <option value="">Tous les statuts</option>
+                {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="q" placeholder="Nom de fichier..." value="{{ filters.q }}">
+            <button class="btn" type="submit">Filtrer</button>
+            <a class="btn btn-secondary" href="{% url 'jobs:home' %}">Réinitialiser</a>
+        </form>
+    </div>
+</section>
+
+<section class="card">
     {% if jobs %}
-    <table>
-        <thead>
-            <tr>
-                <th>Job</th>
-                <th>Type</th>
-                <th>Statut</th>
-                <th>Progression</th>
-                <th>Message</th>
-                <th>Fichier</th>
-                <th>Créé le</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for job in jobs %}
-            <tr>
-                <td><a href="{% url 'jobs:detail' job.id %}">{{ job.id }}</a></td>
-                <td>{{ job.job_type }}</td>
-                <td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td>
-                <td>{{ job.progress_percent }}%</td>
-                <td>{{ job.progress_message|default:'-' }}</td>
-                <td>{% if job.input_file_1 %}{{ job.input_file_1.name }}{% else %}-{% endif %}</td>
-                <td>{{ job.created_at }}</td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Job</th>
+                        <th>Type</th>
+                        <th>Statut</th>
+                        <th>Progression</th>
+                        <th>Fichier principal</th>
+                        <th>Créé le</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for job in jobs %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'jobs:detail' job.id %}"><strong>{{ job.id }}</strong></a><br>
+                            <span class="muted small">{{ job.progress_message|default:'-' }}</span>
+                        </td>
+                        <td>{{ job.job_type }}</td>
+                        <td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td>
+                        <td style="min-width:220px;">
+                            <div class="progress"><div class="progress-bar" style="width: {{ job.progress_percent }}%;"></div></div>
+                            <div class="muted small" style="margin-top:8px;">{{ job.progress_percent }}%</div>
+                        </td>
+                        <td>{% if job.input_file_1 %}{{ job.input_file_1.name }}{% else %}-{% endif %}</td>
+                        <td>{{ job.created_at }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
     {% else %}
-        <p class="muted">Aucun job pour le moment.</p>
+        <div class="empty">
+            <strong>Aucun job trouvé.</strong>
+            <div class="muted" style="margin-top:6px;">Lance un premier job ou ajuste les filtres.</div>
+        </div>
     {% endif %}
-</div>
+</section>
 {% endblock %}
