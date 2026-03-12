@@ -39,3 +39,8 @@ git commit -m "iteration 5 - job robustness"
 ## Environment
 
 Use `.env.example` as the base for `.env`. This iteration keeps compatibility with the previous variable names (`DEBUG`, `SECRET_KEY`, `ALLOWED_HOSTS`, `TIME_ZONE`) and also still accepts the newer `DJANGO_*` aliases.
+
+
+## Patch export normalizer
+
+Le normalizer écrit désormais les résultats en **CSV UTF-8 avec BOM** (`.csv`) afin d'éviter les crashs mémoire liés à l'export Excel sur gros volumes.

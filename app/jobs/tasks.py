@@ -81,6 +81,7 @@ def _run_normalizer_job(job: Job):
 
     log('🚀 Lancement du normalizer web V1')
     log(f'📂 Fichier source : {input_path.name}')
+    log('💾 Format de sortie : CSV UTF-8 (compatible gros volumes)')
     result_path = service.run(input_path=input_path, output_path=output_path, options=options)
 
     job.refresh_from_db()
@@ -100,11 +101,11 @@ def _build_normalizer_output_name(input_path: Path, parameters: dict) -> str:
     do_clean = bool(parameters.get('do_clean', True))
     do_matchcode = bool(parameters.get('do_matchcode', True))
     if do_clean and do_matchcode:
-        suffix = '_normalized.xlsx'
+        suffix = '_normalized.csv'
     elif do_clean:
-        suffix = '_cleaned.xlsx'
+        suffix = '_cleaned.csv'
     else:
-        suffix = '_matchcoded.xlsx'
+        suffix = '_matchcoded.csv'
     return f'{stem}{suffix}'
 
 
