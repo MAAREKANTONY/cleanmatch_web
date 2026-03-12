@@ -5,9 +5,10 @@ from pathlib import Path
 from celery import shared_task
 from django.core.files import File
 from django.core.files.base import ContentFile
+from django.conf import settings
 
 from jobs.models import Job
-from jobs.services import JobService
+from jobs.services import JobCancelledError, JobService
 from normalizer.services.normalizer_service import NormalizerOptions, NormalizerService
 
 
@@ -22,6 +23,10 @@ def _read_text_preview(path: str, limit: int = 4000) -> str:
         return f'Aperçu indisponible : {exc}'
 
 
+def _job_storage_root() -> str:
+    return str(Path(settings.MEDIA_ROOT))
+
+
 @shared_task(bind=True)
 def run_uploaded_job(self, job_id: str):
     job = Job.objects.get(id=job_id)
@@ -29,14 +34,25 @@ def run_uploaded_job(self, job_id: str):
     second_input_path = job.input_file_2.path if job.input_file_2 else ''
 
     try:
+        JobService.ensure_disk_space(_job_storage_root())
         JobService.mark_running(job, 'Initialisation du traitement')
+        JobService.enforce_not_cancelled(job)
         if job.job_type == Job.JobType.NORMALIZER:
             return _run_normalizer_job(job)
         return _run_stub_job(job, input_path, second_input_path)
+    except JobCancelledError as exc:
+        job.refresh_from_db()
+        JobService.mark_cancelled(job, str(exc))
+        return str(job.id)
     except Exception as exc:
         job.refresh_from_db()
         JobService.mark_failed(job, str(exc))
         raise
+
+
+@shared_task
+def monitor_stale_jobs():
+    return JobService.fail_stale_jobs()
 
 
 def _run_normalizer_job(job: Job):
@@ -47,10 +63,13 @@ def _run_normalizer_job(job: Job):
 
     def progress(percent: int, message: str) -> None:
         job.refresh_from_db()
+        JobService.enforce_not_cancelled(job)
+        JobService.ensure_disk_space(_job_storage_root())
         JobService.update_progress(job, percent, message)
 
     def log(message: str) -> None:
         job.refresh_from_db()
+        JobService.enforce_not_cancelled(job)
         JobService.append_runtime_log(job, message)
 
     service = NormalizerService(progress_callback=progress, log_callback=log)
@@ -65,6 +84,7 @@ def _run_normalizer_job(job: Job):
     result_path = service.run(input_path=input_path, output_path=output_path, options=options)
 
     job.refresh_from_db()
+    JobService.enforce_not_cancelled(job)
     with result_path.open('rb') as fh:
         job.output_file.save(result_path.name, File(fh), save=False)
     JobService.mark_success(job, message='Normalizer terminé avec succès')
@@ -115,11 +135,13 @@ def _run_stub_job(job: Job, input_path: str, second_input_path: str):
     ]:
         time.sleep(1)
         job.refresh_from_db()
+        JobService.enforce_not_cancelled(job)
+        JobService.ensure_disk_space(_job_storage_root())
         JobService.update_progress(job, percent, message)
 
     preview = _read_text_preview(input_path)
     output_lines = [
-        'CleanMatch Web - Iteration 3',
+        'CleanMatch Web - Iteration 5',
         f'Job ID: {job.id}',
         f'Type: {job.job_type}',
         f'Fichier principal: {Path(input_path).name if input_path else "-"}',
@@ -136,6 +158,7 @@ def _run_stub_job(job: Job, input_path: str, second_input_path: str):
     output_content = '\n'.join(output_lines)
 
     job.refresh_from_db()
+    JobService.enforce_not_cancelled(job)
     job.output_file.save(output_name, ContentFile(output_content.encode('utf-8')), save=False)
     JobService.mark_success(job, message='Job terminé avec succès')
     return str(job.id)

@@ -1,12 +1,11 @@
-from pathlib import Path
 import os
+from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'change-me')
-DEBUG = os.getenv('DEBUG', '0') == '1'
-ALLOWED_HOSTS = [host.strip() for host in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if host.strip()]
-CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()]
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'change-me')
+DEBUG = os.getenv('DJANGO_DEBUG', '1') == '1'
+ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '*').split(',')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -61,7 +60,7 @@ DATABASES = {
 }
 
 LANGUAGE_CODE = 'fr-fr'
-TIME_ZONE = os.getenv('TIME_ZONE', 'Asia/Jerusalem')
+TIME_ZONE = os.getenv('TZ', 'UTC')
 USE_I18N = True
 USE_TZ = True
 
@@ -77,6 +76,15 @@ CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/1
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 60 * 60 * 6
 CELERY_TASK_SOFT_TIME_LIMIT = 60 * 60 * 5
+CELERY_BEAT_SCHEDULE = {
+    'monitor-stale-jobs-every-2-min': {
+        'task': 'jobs.tasks.monitor_stale_jobs',
+        'schedule': 120.0,
+    }
+}
+JOB_STALE_RUNNING_MINUTES = int(os.getenv('JOB_STALE_RUNNING_MINUTES', '30'))
+JOB_STALE_QUEUED_MINUTES = int(os.getenv('JOB_STALE_QUEUED_MINUTES', '60'))
+JOB_MIN_FREE_DISK_MB = int(os.getenv('JOB_MIN_FREE_DISK_MB', '1024'))
 
 LOGGING = {
     'version': 1,
