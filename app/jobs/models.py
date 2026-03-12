@@ -1,5 +1,6 @@
 import uuid
 from django.db import models
+from django.utils import timezone
 
 
 class Job(models.Model):
@@ -30,6 +31,10 @@ class Job(models.Model):
     log_text = models.TextField(blank=True)
     error_message = models.TextField(blank=True)
     celery_task_id = models.CharField(max_length=255, blank=True)
+    cancellation_requested = models.BooleanField(default=False)
+    cancellation_reason = models.CharField(max_length=255, blank=True)
+    cancelled_at = models.DateTimeField(blank=True, null=True)
+    last_heartbeat = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(blank=True, null=True)
     finished_at = models.DateTimeField(blank=True, null=True)
@@ -42,3 +47,10 @@ class Job(models.Model):
 
     def append_log(self, message: str):
         self.log_text = (self.log_text or '') + message + '\n'
+
+    @property
+    def is_finished(self) -> bool:
+        return self.status in {self.Status.SUCCESS, self.Status.FAILED, self.Status.CANCELLED}
+
+    def beat(self):
+        self.last_heartbeat = timezone.now()
