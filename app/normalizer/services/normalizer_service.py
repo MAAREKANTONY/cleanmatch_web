@@ -131,14 +131,77 @@ def detect_header_row(preview_rows: list[list[str]]) -> int:
     return best_index
 
 
+def _sample_validation_warnings(ws, detected_columns: list[str], suggestions: dict[str, str], header_index: int) -> list[str]:
+    warnings: list[str] = []
+    column_positions = {col: idx for idx, col in enumerate(detected_columns)}
+    sample_rows = []
+    data_start = header_index + 2
+    data_end = min(ws.max_row, data_start + 24)
+    for row in ws.iter_rows(min_row=data_start, max_row=data_end, values_only=True):
+        sample_rows.append(['' if value is None else str(value).strip() for value in row[: max(len(detected_columns), 20)]])
+
+    def emptiness_ratio(source_col: str) -> float:
+        idx = column_positions.get(source_col)
+        if idx is None or not sample_rows:
+            return 0.0
+        empties = 0
+        total = 0
+        for row in sample_rows:
+            total += 1
+            value = row[idx] if idx < len(row) else ''
+            if not str(value).strip():
+                empties += 1
+        return empties / total if total else 0.0
+
+    for required_field in sorted(REQUIRED_MATCHCODE_FIELDS):
+        source_col = suggestions.get(required_field)
+        if not source_col:
+            continue
+        ratio = emptiness_ratio(source_col)
+        if ratio >= 0.5:
+            warnings.append(
+                f"La colonne suggérée '{source_col}' pour {required_field} semble vide à {int(ratio * 100)}% sur l’échantillon."
+            )
+
+    lat_col = suggestions.get('lat')
+    lng_col = suggestions.get('lng')
+    if lat_col and lng_col and sample_rows:
+        lat_idx = column_positions.get(lat_col)
+        lng_idx = column_positions.get(lng_col)
+        invalid_points = 0
+        checked_points = 0
+        for row in sample_rows:
+            try:
+                lat_raw = row[lat_idx] if lat_idx is not None and lat_idx < len(row) else ''
+                lng_raw = row[lng_idx] if lng_idx is not None and lng_idx < len(row) else ''
+                if not lat_raw and not lng_raw:
+                    continue
+                checked_points += 1
+                lat_val = float(str(lat_raw).replace(',', '.'))
+                lng_val = float(str(lng_raw).replace(',', '.'))
+                if not (-90 <= lat_val <= 90 and -180 <= lng_val <= 180):
+                    invalid_points += 1
+            except Exception:
+                invalid_points += 1
+                checked_points += 1
+        if checked_points and invalid_points:
+            warnings.append(
+                f"{invalid_points} coordonnées lat/lng semblent invalides sur {checked_points} lignes de l’échantillon."
+            )
+
+    return warnings
+
+
 def inspect_excel_workbook(uploaded_file) -> dict:
     workbook = load_workbook(uploaded_file, read_only=True, data_only=True)
     sheets = []
     for ws in workbook.worksheets[:10]:
         rows = []
-        for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 8), values_only=True):
-            rows.append(['' if value is None else str(value)[:120] for value in (row or [])[:20]])
-        header_index = detect_header_row(rows) if rows else 0
+        preview_limit = min(ws.max_row, 20)
+        max_preview_columns = min(ws.max_column, 30)
+        for row in ws.iter_rows(min_row=1, max_row=preview_limit, values_only=True):
+            rows.append(['' if value is None else str(value)[:120] for value in (row or [])[:max_preview_columns]])
+        header_index = detect_header_row(rows[:8]) if rows else 0
         detected_columns = rows[header_index] if rows else []
         detected_columns = [str(col).strip() for col in detected_columns if str(col).strip()]
         suggestions = suggest_column_mapping(detected_columns)
@@ -146,11 +209,12 @@ def inspect_excel_workbook(uploaded_file) -> dict:
             'name': ws.title,
             'max_row': ws.max_row,
             'max_column': ws.max_column,
-            'preview': rows[:5],
+            'preview': rows[:20],
             'detected_header_row': header_index + 1,
             'detected_columns': detected_columns,
             'mapping_suggestions': suggestions,
             'missing_required_for_matchcode': sorted(REQUIRED_MATCHCODE_FIELDS - set(suggestions.keys())),
+            'validation_warnings': _sample_validation_warnings(ws, detected_columns, suggestions, header_index),
         })
     workbook.close()
     return sheets
