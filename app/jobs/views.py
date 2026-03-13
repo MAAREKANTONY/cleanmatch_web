@@ -9,6 +9,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from normalizer.services.normalizer_service import CANONICAL_MAPPING_FIELDS, inspect_excel_workbook
+from matcher.services.matcher_service import MATCHER_MAPPING_FIELDS, inspect_table_file
 
 from .forms import JobCreateForm
 from .models import Job
@@ -42,11 +43,7 @@ def home(request):
             'success': stats.get(Job.Status.SUCCESS, 0),
             'failed': stats.get(Job.Status.FAILED, 0),
         },
-        'filters': {
-            'job_type': job_type,
-            'status': status,
-            'q': q,
-        },
+        'filters': {'job_type': job_type, 'status': status, 'q': q},
         'job_type_choices': Job.JobType.choices,
         'status_choices': Job.Status.choices,
     }
@@ -69,12 +66,26 @@ def create_job(request):
                     'sheet_name': form.cleaned_data['normalizer_sheet_name'].strip(),
                     'column_mapping': form.get_mapping_payload(form.cleaned_data),
                 })
+            elif form.cleaned_data['job_type'] == Job.JobType.MATCHER:
+                parameters.update({
+                    'master_sheet_name': (form.cleaned_data.get('matcher_master_sheet_name') or '').strip() or None,
+                    'slave_sheet_name': (form.cleaned_data.get('matcher_slave_sheet_name') or '').strip() or None,
+                    'threshold_name': form.cleaned_data.get('matcher_threshold_name') or 85,
+                    'threshold_voie': form.cleaned_data.get('matcher_threshold_voie') or 70,
+                    'top_k_per_master': form.cleaned_data.get('matcher_top_k') or 5,
+                    'master_mapping': form.get_matcher_mapping_payload(form.cleaned_data, 'master'),
+                    'slave_mapping': form.get_matcher_mapping_payload(form.cleaned_data, 'slave'),
+                })
 
             try:
                 JobService.ensure_disk_space(str(Path('media').resolve()))
             except Exception as exc:
                 messages.error(request, str(exc))
-                return render(request, 'jobs/new.html', {'form': form, 'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS})
+                return render(request, 'jobs/new.html', {
+                    'form': form,
+                    'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS,
+                    'matcher_mapping_fields': MATCHER_MAPPING_FIELDS,
+                })
 
             job = Job.objects.create(
                 job_type=form.cleaned_data['job_type'],
@@ -91,7 +102,11 @@ def create_job(request):
     else:
         form = JobCreateForm()
 
-    return render(request, 'jobs/new.html', {'form': form, 'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS})
+    return render(request, 'jobs/new.html', {
+        'form': form,
+        'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS,
+        'matcher_mapping_fields': MATCHER_MAPPING_FIELDS,
+    })
 
 
 def job_detail(request, job_id):
@@ -119,23 +134,31 @@ def cancel_job(request, job_id):
 def inspect_excel(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Méthode non autorisée.'}, status=405)
-
     uploaded = request.FILES.get('input_file_1')
     if not uploaded:
         return JsonResponse({'error': 'Aucun fichier fourni.'}, status=400)
-
     filename = uploaded.name.lower()
     allowed_ext = {'.xlsx', '.xlsm', '.xltx', '.xltm'}
     if not any(filename.endswith(ext) for ext in allowed_ext):
         return JsonResponse({'error': 'Inspection disponible uniquement pour les fichiers Excel.'}, status=400)
-
     try:
         sheets = inspect_excel_workbook(uploaded)
     except Exception as exc:
         return JsonResponse({'error': f'Impossible de lire le fichier Excel : {exc}'}, status=400)
+    return JsonResponse({'filename': Path(uploaded.name).name, 'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS, 'sheets': sheets})
 
-    return JsonResponse({
-        'filename': Path(uploaded.name).name,
-        'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS,
-        'sheets': sheets,
-    })
+
+def inspect_matcher_file(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Méthode non autorisée.'}, status=405)
+    uploaded = request.FILES.get('file')
+    role = request.POST.get('role', 'master')
+    if not uploaded:
+        return JsonResponse({'error': 'Aucun fichier fourni.'}, status=400)
+    try:
+        payload = inspect_table_file(uploaded)
+    except Exception as exc:
+        return JsonResponse({'error': f'Impossible d’inspecter le fichier matcher : {exc}'}, status=400)
+    payload['role'] = role
+    payload['matcher_mapping_fields'] = MATCHER_MAPPING_FIELDS
+    return JsonResponse(payload)

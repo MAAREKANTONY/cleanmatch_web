@@ -10,6 +10,7 @@ from django.conf import settings
 from jobs.models import Job
 from jobs.services import JobCancelledError, JobService
 from normalizer.services.normalizer_service import NormalizerOptions, NormalizerService
+from matcher.services.matcher_service import MatcherOptions, MatcherService
 
 
 def _read_text_preview(path: str, limit: int = 4000) -> str:
@@ -39,6 +40,8 @@ def run_uploaded_job(self, job_id: str):
         JobService.enforce_not_cancelled(job)
         if job.job_type == Job.JobType.NORMALIZER:
             return _run_normalizer_job(job)
+        if job.job_type == Job.JobType.MATCHER:
+            return _run_matcher_job(job)
         return _run_stub_job(job, input_path, second_input_path)
     except JobCancelledError as exc:
         job.refresh_from_db()
@@ -108,6 +111,50 @@ def _build_normalizer_output_name(input_path: Path, parameters: dict) -> str:
     else:
         suffix = '_matchcoded.csv'
     return f'{stem}{suffix}'
+
+
+
+def _run_matcher_job(job: Job):
+    parameters = job.parameters_json or {}
+    master_path = Path(job.input_file_1.path)
+    slave_path = Path(job.input_file_2.path)
+    output_name = f"{master_path.stem}__vs__{slave_path.stem}_matches.csv"
+    output_path = Path(job.output_file.field.storage.path(f'outputs/{output_name}'))
+
+    def progress(percent: int, message: str) -> None:
+        job.refresh_from_db()
+        JobService.enforce_not_cancelled(job)
+        JobService.ensure_disk_space(_job_storage_root())
+        JobService.update_progress(job, percent, message)
+
+    def log(message: str) -> None:
+        job.refresh_from_db()
+        JobService.enforce_not_cancelled(job)
+        JobService.append_runtime_log(job, message)
+
+    service = MatcherService(progress_callback=progress, log_callback=log)
+    options = MatcherOptions(
+        threshold_name=int(parameters.get('threshold_name') or 85),
+        threshold_voie=int(parameters.get('threshold_voie') or 70),
+        top_k_per_master=int(parameters.get('top_k_per_master') or 5),
+        master_sheet_name=parameters.get('master_sheet_name') or None,
+        slave_sheet_name=parameters.get('slave_sheet_name') or None,
+        master_mapping=parameters.get('master_mapping') or {},
+        slave_mapping=parameters.get('slave_mapping') or {},
+    )
+
+    log('🚀 Lancement du matcher web V1')
+    log(f'📂 Master : {master_path.name}')
+    log(f'📂 Slave : {slave_path.name}')
+    log('💾 Format de sortie : CSV UTF-8')
+    result_path = service.run(master_path=master_path, slave_path=slave_path, output_path=output_path, options=options)
+
+    job.refresh_from_db()
+    JobService.enforce_not_cancelled(job)
+    with result_path.open('rb') as fh:
+        job.output_file.save(result_path.name, File(fh), save=False)
+    JobService.mark_success(job, message='Matcher terminé avec succès')
+    return str(job.id)
 
 
 def _run_stub_job(job: Job, input_path: str, second_input_path: str):

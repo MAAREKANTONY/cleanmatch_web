@@ -39,3 +39,10 @@ git commit -m "iteration 6 - normalizer structure analysis and column mapping"
 ## Environment
 
 Use `.env.example` as the base for `.env`. This iteration keeps compatibility with the previous variable names (`DEBUG`, `SECRET_KEY`, `ALLOWED_HOSTS`, `TIME_ZONE`) and also still accepts the newer `DJANGO_*` aliases.
+
+
+## Iteration 8
+
+- Matcher V1 with master/slave inspection
+- Mapping suggestions for both datasets
+- CSV output for match results

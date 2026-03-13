@@ -1,13 +1,15 @@
 from django.urls import path
-from .views import api_job_detail, cancel_job, create_job, home, inspect_excel, job_detail
+
+from . import views
 
 app_name = 'jobs'
 
 urlpatterns = [
-    path('', home, name='home'),
-    path('jobs/new/', create_job, name='new'),
-    path('jobs/inspect-excel/', inspect_excel, name='inspect_excel'),
-    path('jobs/<uuid:job_id>/', job_detail, name='detail'),
-    path('jobs/<uuid:job_id>/cancel/', cancel_job, name='cancel'),
-    path('api/jobs/<uuid:job_id>/', api_job_detail, name='api_detail'),
+    path('', views.home, name='home'),
+    path('new/', views.create_job, name='new'),
+    path('inspect-excel/', views.inspect_excel, name='inspect_excel'),
+    path('inspect-matcher-file/', views.inspect_matcher_file, name='inspect_matcher_file'),
+    path('<uuid:job_id>/', views.job_detail, name='detail'),
+    path('<uuid:job_id>/cancel/', views.cancel_job, name='cancel'),
+    path('api/<uuid:job_id>/', views.api_job_detail, name='api_detail'),
 ]
