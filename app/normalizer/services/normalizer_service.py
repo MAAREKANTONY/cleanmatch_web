@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
 import pandas as pd
+from openpyxl import load_workbook
 from slugify import slugify
 
 
@@ -18,6 +19,23 @@ CHAINES_DATA_AVAILABLE = False
 CHAINES_REGEX = None
 CHAINES_LOOKUP: dict[str, str] = {}
 
+CANONICAL_MAPPING_FIELDS = [
+    'id', 'name', 'address', 'zipcode', 'city',
+    'lat', 'lng', 'hexa_gmap', 'phone_gmap', 'social_link_gmap',
+]
+REQUIRED_MATCHCODE_FIELDS = {'address', 'zipcode', 'city'}
+COLUMN_ALIASES = {
+    'id': ['id', 'identifier', 'identifiant', 'outlet_id', 'store_id', 'restaurant_id'],
+    'name': ['name', 'nom', 'raison sociale', 'enseigne', 'outlet_name', 'store_name'],
+    'address': ['address', 'adresse', 'adresse1', 'street', 'rue', 'addr', 'full_address'],
+    'zipcode': ['zipcode', 'zip', 'postal_code', 'code_postal', 'cp', 'post_code'],
+    'city': ['city', 'ville', 'commune', 'town'],
+    'lat': ['lat', 'latitude'],
+    'lng': ['lng', 'lon', 'long', 'longitude'],
+    'hexa_gmap': ['hexa_gmap', 'hexa', 'hexa_code'],
+    'phone_gmap': ['phone_gmap', 'phone', 'telephone', 'tel', 'mobile'],
+    'social_link_gmap': ['social_link_gmap', 'website', 'web', 'site', 'url', 'social_link'],
+}
 
 REFERENCE_COLUMNS = {
     'id', 'hexa', 'name', 'address', 'zipcode', 'city', 'lat', 'lng',
@@ -60,7 +78,7 @@ _VOIE_STOP_WORDS_LIST = sorted([
 ], key=len, reverse=True)
 
 _VOIE_STOP_WORDS_PATTERN = re.compile(
-    r'\b(' + '|'.join(re.escape(w) for w in _VOIE_STOP_WORDS_LIST) + r'|[a-zA-Z]\.)\b',
+    r'(' + '|'.join(re.escape(w) for w in _VOIE_STOP_WORDS_LIST) + r'|[a-zA-Z]\.)',
     flags=re.IGNORECASE,
 )
 
@@ -71,6 +89,135 @@ def _noop_progress(percent: int, message: str) -> None:
 
 def _noop_log(message: str) -> None:
     return None
+
+
+def normalized_label(value: str) -> str:
+    return slugify(str(value or ''), separator='_')
+
+
+def suggest_column_mapping(columns: list[str]) -> dict[str, str]:
+    normalized_to_original = {normalized_label(col): col for col in columns}
+    suggestions: dict[str, str] = {}
+    used_sources: set[str] = set()
+    for target, aliases in COLUMN_ALIASES.items():
+        for alias in aliases:
+            candidate = normalized_to_original.get(normalized_label(alias))
+            if candidate and candidate not in used_sources:
+                suggestions[target] = candidate
+                used_sources.add(candidate)
+                break
+        if target in suggestions:
+            continue
+        for norm, original in normalized_to_original.items():
+            if original in used_sources:
+                continue
+            if any(normalized_label(alias) in norm or norm in normalized_label(alias) for alias in aliases):
+                suggestions[target] = original
+                used_sources.add(original)
+                break
+    return suggestions
+
+
+def detect_header_row(preview_rows: list[list[str]]) -> int:
+    best_index = 0
+    best_score = -1
+    for idx, row in enumerate(preview_rows):
+        non_empty = [str(cell).strip() for cell in row if str(cell).strip()]
+        unique_count = len(set(non_empty))
+        score = (len(non_empty) * 10) + unique_count
+        if score > best_score:
+            best_score = score
+            best_index = idx
+    return best_index
+
+
+def _sample_validation_warnings(ws, detected_columns: list[str], suggestions: dict[str, str], header_index: int) -> list[str]:
+    warnings: list[str] = []
+    column_positions = {col: idx for idx, col in enumerate(detected_columns)}
+    sample_rows = []
+    data_start = header_index + 2
+    data_end = min(ws.max_row, data_start + 24)
+    for row in ws.iter_rows(min_row=data_start, max_row=data_end, values_only=True):
+        sample_rows.append(['' if value is None else str(value).strip() for value in row[: max(len(detected_columns), 20)]])
+
+    def emptiness_ratio(source_col: str) -> float:
+        idx = column_positions.get(source_col)
+        if idx is None or not sample_rows:
+            return 0.0
+        empties = 0
+        total = 0
+        for row in sample_rows:
+            total += 1
+            value = row[idx] if idx < len(row) else ''
+            if not str(value).strip():
+                empties += 1
+        return empties / total if total else 0.0
+
+    for required_field in sorted(REQUIRED_MATCHCODE_FIELDS):
+        source_col = suggestions.get(required_field)
+        if not source_col:
+            continue
+        ratio = emptiness_ratio(source_col)
+        if ratio >= 0.5:
+            warnings.append(
+                f"La colonne suggérée '{source_col}' pour {required_field} semble vide à {int(ratio * 100)}% sur l’échantillon."
+            )
+
+    lat_col = suggestions.get('lat')
+    lng_col = suggestions.get('lng')
+    if lat_col and lng_col and sample_rows:
+        lat_idx = column_positions.get(lat_col)
+        lng_idx = column_positions.get(lng_col)
+        invalid_points = 0
+        checked_points = 0
+        for row in sample_rows:
+            try:
+                lat_raw = row[lat_idx] if lat_idx is not None and lat_idx < len(row) else ''
+                lng_raw = row[lng_idx] if lng_idx is not None and lng_idx < len(row) else ''
+                if not lat_raw and not lng_raw:
+                    continue
+                checked_points += 1
+                lat_val = float(str(lat_raw).replace(',', '.'))
+                lng_val = float(str(lng_raw).replace(',', '.'))
+                if not (-90 <= lat_val <= 90 and -180 <= lng_val <= 180):
+                    invalid_points += 1
+            except Exception:
+                invalid_points += 1
+                checked_points += 1
+        if checked_points and invalid_points:
+            warnings.append(
+                f"{invalid_points} coordonnées lat/lng semblent invalides sur {checked_points} lignes de l’échantillon."
+            )
+
+    return warnings
+
+
+def inspect_excel_workbook(uploaded_file) -> dict:
+    workbook = load_workbook(uploaded_file, read_only=True, data_only=True)
+    sheets = []
+    for ws in workbook.worksheets[:10]:
+        rows = []
+        preview_limit = min(ws.max_row, 20)
+        max_preview_columns = min(ws.max_column, 30)
+        for row in ws.iter_rows(min_row=1, max_row=preview_limit, values_only=True):
+            rows.append(['' if value is None else str(value)[:120] for value in (row or [])[:max_preview_columns]])
+        header_index = detect_header_row(rows[:8]) if rows else 0
+        detected_columns = rows[header_index] if rows else []
+        detected_columns = [str(col).strip() for col in detected_columns if str(col).strip()]
+        suggestions = suggest_column_mapping(detected_columns)
+        sheets.append({
+            'name': ws.title,
+            'max_row': ws.max_row,
+            'max_column': ws.max_column,
+            'preview': rows[:20],
+            'detected_header_row': header_index + 1,
+            'detected_columns': detected_columns,
+            'mapping_suggestions': suggestions,
+            'missing_required_for_matchcode': sorted(REQUIRED_MATCHCODE_FIELDS - set(suggestions.keys())),
+            'validation_warnings': _sample_validation_warnings(ws, detected_columns, suggestions, header_index),
+        })
+    workbook.close()
+    return sheets
 
 
 def load_chaines_data() -> tuple[bool, str | None]:
@@ -93,11 +240,11 @@ def load_chaines_data() -> tuple[bool, str | None]:
         df = df.sort_values(by='keyword_len', ascending=False)
 
         CHAINES_LOOKUP = pd.Series(df.name.values, index=df.slug_keyword).to_dict()
-        bounded_keywords = [r'\b' + re.escape(k) + r'\b' for k in df['slug_keyword']]
+        bounded_keywords = [r'' + re.escape(k) + r'' for k in df['slug_keyword']]
         CHAINES_REGEX = re.compile('|'.join(bounded_keywords)) if bounded_keywords else None
         CHAINES_DATA_AVAILABLE = True
         return True, f"Chaînes chargées : {len(df)} mots-clés"
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:
         return False, f"Impossible de charger chaines.csv : {exc}"
 
 
@@ -111,7 +258,7 @@ def _find_raw_num_voie_match(address) -> str | None:
     if pd.isna(address):
         return None
     address = str(address)
-    patterns = [r'\b(\d+)\b', r'\b(\d+[a-zA-Z]*)|\b([a-zA-Z]+\d+)\b']
+    patterns = [r'(\d+)', r'(\d+[a-zA-Z]*)|([a-zA-Z]+\d+)']
     for pattern in patterns:
         match = re.search(pattern, address)
         if match:
@@ -169,7 +316,7 @@ def make_matchcode(address, zipcode) -> str | None:
         number_candidate = words[-2]
 
     if not number_candidate:
-        match = re.search(r'\b(\d+[a-zA-Z]*)\b', address_proc)
+        match = re.search(r'(\d+[a-zA-Z]*)', address_proc)
         if match:
             number_candidate = match.group(1)
             parts = address_proc.split(number_candidate, 1)
@@ -206,6 +353,7 @@ class NormalizerOptions:
     do_clean: bool = True
     do_matchcode: bool = True
     sheet_name: str | None = None
+    column_mapping: dict[str, str] = field(default_factory=dict)
 
 
 class NormalizerService:
@@ -246,13 +394,15 @@ class NormalizerService:
         self._log(f"✓ Fichier chargé : {len(df)} lignes, {len(df.columns)} colonnes")
         self._progress(15, 'Lecture du classeur terminée')
 
+        if options.column_mapping:
+            df = self._apply_column_mapping(df, options.column_mapping)
+
         if options.do_matchcode:
-            base_required = {'address', 'zipcode', 'city'}
-            missing = sorted(base_required - set(df.columns))
+            missing = sorted(REQUIRED_MATCHCODE_FIELDS - set(df.columns))
             if missing:
                 raise ValueError(
-                    "Colonnes requises manquantes pour le matchcode : " + ', '.join(missing) + ". "
-                    "Le mapping interactif PyQt n'est pas encore migré dans cette itération."
+                    'Colonnes requises manquantes pour le matchcode : ' + ', '.join(missing) + '. '
+                    'Renseigne le mapping de colonnes avant de relancer le job.'
                 )
 
         if options.do_clean:
@@ -267,6 +417,26 @@ class NormalizerService:
         self._log(f"📊 Résumé : {len(df)} lignes, {len(df.columns)} colonnes")
         self._progress(100, 'Traitement terminé')
         return output_path
+
+    def _apply_column_mapping(self, df: pd.DataFrame, mapping: dict[str, str]) -> pd.DataFrame:
+        cleaned_mapping = {}
+        for target, source in mapping.items():
+            source = str(source or '').strip()
+            if not source or source == '__ignore__':
+                continue
+            if source not in df.columns:
+                raise ValueError(f"La colonne source '{source}' est introuvable pour le mapping '{target}'.")
+            cleaned_mapping[target] = source
+
+        duplicates = [src for src in cleaned_mapping.values() if list(cleaned_mapping.values()).count(src) > 1]
+        if duplicates:
+            raise ValueError('Une même colonne source ne peut pas être mappée plusieurs fois : ' + ', '.join(sorted(set(duplicates))))
+
+        reverse_mapping = {source: target for target, source in cleaned_mapping.items() if source != target}
+        if reverse_mapping:
+            self._log('🧭 Mapping appliqué : ' + ', '.join(f"{src} → {dst}" for src, dst in reverse_mapping.items()))
+            df = df.rename(columns=reverse_mapping)
+        return df
 
     def _perform_cleaning(self, df: pd.DataFrame) -> pd.DataFrame:
         self._log('--- Nettoyage des données ---')

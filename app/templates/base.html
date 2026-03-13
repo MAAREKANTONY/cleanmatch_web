@@ -145,8 +145,21 @@
         .sheet-item { border:1px solid var(--line); border-radius: 16px; padding: 14px; background:white; }
         .sheet-item.active { border-color:#60a5fa; box-shadow: 0 0 0 4px rgba(96,165,250,.12); }
         .sheet-meta { display:flex; gap:12px; flex-wrap:wrap; color: var(--muted); font-size: .88rem; margin-top:8px; }
-        .preview-table { width:100%; border-collapse: collapse; margin-top: 12px; }
-        .preview-table td { border:1px solid var(--line); padding:8px; font-size:.9rem; }
+        .preview-wrap { margin-top: 12px; overflow-x: auto; border:1px solid var(--line); border-radius: 14px; background:#fff; }
+        .preview-table { width:max-content; min-width:100%; border-collapse: collapse; }
+        .preview-table th, .preview-table td { border:1px solid var(--line); padding:8px 10px; font-size:.9rem; white-space: nowrap; }
+        .preview-table tr:nth-child(odd) td { background: rgba(148,163,184,.03); }
+        .preview-labels { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+        .mini-badge { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; background:#eff6ff; color:#1d4ed8; font-size:.8rem; font-weight:700; }
+        .mini-badge.warning { background:#fff7ed; color:#c2410c; }
+        .mini-badge.required { background:#fffbeb; color:#b45309; }
+        .warning-list { margin:10px 0 0 18px; color:#b45309; }
+
+        .mapping-grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+        .mapping-item { border:1px solid var(--line); border-radius:16px; padding:14px; background:white; }
+        .mapping-item select { width:100%; padding:10px 12px; border-radius:12px; border:1px solid #cbd5e1; margin-top:8px; }
+        .mapping-item.required { border-color: #f59e0b; background: #fffbeb; }
+        .hint-list { margin:8px 0 0 18px; color: var(--muted); }
         .hidden { display:none !important; }
         @media (max-width: 720px) {
             .container { width: min(100%, calc(100% - 20px)); }
@@ -161,7 +174,7 @@
     <div class="container topbar">
         <div>
             <div class="brand-title"><a href="/" style="color:white;">CleanMatch Web</a></div>
-            <div class="brand-subtitle">Itération 5 — robustesse des jobs, heartbeat et kill job</div>
+            <div class="brand-subtitle">Itération 7 — preview, validation et mapping assisté</div>
         </div>
         <div class="top-actions">
             <a class="btn btn-ghost" href="{% url 'jobs:home' %}">Dashboard</a>
