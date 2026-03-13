@@ -147,6 +147,12 @@
         .sheet-meta { display:flex; gap:12px; flex-wrap:wrap; color: var(--muted); font-size: .88rem; margin-top:8px; }
         .preview-table { width:100%; border-collapse: collapse; margin-top: 12px; }
         .preview-table td { border:1px solid var(--line); padding:8px; font-size:.9rem; }
+
+        .mapping-grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+        .mapping-item { border:1px solid var(--line); border-radius:16px; padding:14px; background:white; }
+        .mapping-item select { width:100%; padding:10px 12px; border-radius:12px; border:1px solid #cbd5e1; margin-top:8px; }
+        .mapping-item.required { border-color: #f59e0b; background: #fffbeb; }
+        .hint-list { margin:8px 0 0 18px; color: var(--muted); }
         .hidden { display:none !important; }
         @media (max-width: 720px) {
             .container { width: min(100%, calc(100% - 20px)); }
@@ -161,7 +167,7 @@
     <div class="container topbar">
         <div>
             <div class="brand-title"><a href="/" style="color:white;">CleanMatch Web</a></div>
-            <div class="brand-subtitle">Itération 5 — robustesse des jobs, heartbeat et kill job</div>
+            <div class="brand-subtitle">Itération 6 — analyse de structure et mapping de colonnes</div>
         </div>
         <div class="top-actions">
             <a class="btn btn-ghost" href="{% url 'jobs:home' %}">Dashboard</a>
