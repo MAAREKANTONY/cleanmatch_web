@@ -118,7 +118,7 @@ def _run_matcher_job(job: Job):
     parameters = job.parameters_json or {}
     master_path = Path(job.input_file_1.path)
     slave_path = Path(job.input_file_2.path)
-    output_name = f"{master_path.stem}__vs__{slave_path.stem}_matches.csv"
+    output_name = f"{master_path.stem}__vs__{slave_path.stem}_matcher_v2.zip"
     output_path = Path(job.output_file.field.storage.path(f'outputs/{output_name}'))
 
     def progress(percent: int, message: str) -> None:
@@ -143,17 +143,17 @@ def _run_matcher_job(job: Job):
         slave_mapping=parameters.get('slave_mapping') or {},
     )
 
-    log('🚀 Lancement du matcher web V1')
+    log('🚀 Lancement du matcher web V2')
     log(f'📂 Master : {master_path.name}')
     log(f'📂 Slave : {slave_path.name}')
-    log('💾 Format de sortie : CSV UTF-8')
+    log('💾 Format de sortie : ZIP contenant all_matches.csv, automatch.csv, review.csv, unmatched.csv et summary.json')
     result_path = service.run(master_path=master_path, slave_path=slave_path, output_path=output_path, options=options)
 
     job.refresh_from_db()
     JobService.enforce_not_cancelled(job)
     with result_path.open('rb') as fh:
         job.output_file.save(result_path.name, File(fh), save=False)
-    JobService.mark_success(job, message='Matcher terminé avec succès')
+    JobService.mark_success(job, message='Matcher V2 terminé avec succès')
     return str(job.id)
 
 

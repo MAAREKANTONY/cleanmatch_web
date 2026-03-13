@@ -4,7 +4,7 @@
     <span class="pill">Nouveau job</span>
     <h1 style="margin:14px 0 10px 0; font-size:2rem; letter-spacing:-.04em;">Normalizer + Matcher</h1>
     <p>
-        Cette itération ajoute le <strong>Matcher V1</strong> avec inspection des deux fichiers, suggestions de mapping master/slave et export CSV des correspondances.
+        Cette itération ajoute le <strong>Matcher V2</strong> avec meilleure qualification métier des correspondances, livrable ZIP segmenté et review plus exploitable.
         Le flow Normalizer reste disponible tel quel.
     </p>
 </section>
@@ -69,7 +69,7 @@
         <div class="card stack hidden" id="matcher-panel">
             <div>
                 <h2>2B. Options Matcher</h2>
-                <div class="muted">Deux fichiers, mapping master/slave, scoring name/voie et top résultats par master.</div>
+                <div class="muted">Deux fichiers, mapping master/slave, scoring amélioré, segmentation automatch/review/unmatched et livrable ZIP.</div>
             </div>
             <section class="grid grid-3">
                 <div class="field">
@@ -127,7 +127,7 @@
         <div class="toolbar">
             <div>
                 <h2 style="margin-bottom:6px;">4B. Mapping master / slave</h2>
-                <div class="muted">Le matcher V1 sait calculer automatiquement voie, num_voie et matchcode si tu fournis address + zipcode.</div>
+                <div class="muted">Le matcher V2 sait calculer automatiquement voie, num_voie et matchcode si tu fournis address + zipcode, puis produit un ZIP avec plusieurs CSV de restitution.</div>
             </div>
         </div>
         <div class="grid grid-2">
@@ -146,7 +146,7 @@
         <div class="toolbar">
             <div>
                 <h2 style="margin-bottom:6px;">5. Lancer le job</h2>
-                <div class="muted">Sortie Normalizer et Matcher en CSV UTF-8.</div>
+                <div class="muted">Sortie Normalizer en CSV UTF-8 ; sortie Matcher V2 en ZIP multi-fichiers.</div>
             </div>
             <div style="display:flex; gap:10px; flex-wrap:wrap;">
                 <a class="btn btn-secondary" href="{% url 'jobs:home' %}">Retour dashboard</a>

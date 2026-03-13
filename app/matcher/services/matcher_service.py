@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import math
+import tempfile
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -46,6 +49,15 @@ FRENCH_STOP_WORDS = {
     'hotels', 'bistrot', 'pizza', 'crepe', 'sandwich', 'bowling', 'billard', 'club', 'sarl', 'eurl', 'sas',
     'sasu', 'sa', 'snc', 'sci', 'gaec', 'entreprise', 'societe', 'etablissements', 'ets', 'cie', 'groupe',
     'maison', 'chez', 'association'
+}
+
+
+AUTO_REASONS = {
+    'matchcode_name': 'Matchcode identique + nom fort',
+    'algo_score': 'Nom + voie très proches',
+    'hexa_match': 'Hexa identique',
+    'phone_match': 'Téléphone identique + proximité',
+    'siret_match': 'SIRET identique',
 }
 
 
@@ -101,20 +113,22 @@ def inspect_table_file(uploaded_file, sheet_name: str | None = None) -> dict:
         for name in xls.sheet_names[:10]:
             df = pd.read_excel(uploaded_file, sheet_name=name, nrows=20)
             columns = [str(col) for col in df.columns]
+            suggestions = suggest_column_mapping(columns)
             sheets.append({
                 'name': name,
                 'max_row': None,
                 'max_column': len(columns),
                 'preview': df.head(20).fillna('').astype(str).values.tolist(),
                 'detected_columns': columns,
-                'mapping_suggestions': suggest_column_mapping(columns),
-                'missing_required': sorted(MATCHER_REQUIRED_FIELDS - set(suggest_column_mapping(columns).keys())),
+                'mapping_suggestions': suggestions,
+                'missing_required': sorted(MATCHER_REQUIRED_FIELDS - set(suggestions.keys())),
             })
         return {'filename': Path(uploaded_file.name).name, 'kind': 'excel', 'sheets': sheets}
 
     if suffix in {'.csv', '.txt'}:
         df = pd.read_csv(uploaded_file, nrows=20)
         columns = [str(col) for col in df.columns]
+        suggestions = suggest_column_mapping(columns)
         return {
             'filename': Path(uploaded_file.name).name,
             'kind': 'csv',
@@ -124,8 +138,8 @@ def inspect_table_file(uploaded_file, sheet_name: str | None = None) -> dict:
                 'max_column': len(columns),
                 'preview': df.head(20).fillna('').astype(str).values.tolist(),
                 'detected_columns': columns,
-                'mapping_suggestions': suggest_column_mapping(columns),
-                'missing_required': sorted(MATCHER_REQUIRED_FIELDS - set(suggest_column_mapping(columns).keys())),
+                'mapping_suggestions': suggestions,
+                'missing_required': sorted(MATCHER_REQUIRED_FIELDS - set(suggestions.keys())),
             }],
         }
 
@@ -217,31 +231,82 @@ class MatcherService:
         slave_by_city = {city: grp.copy() for city, grp in df_slave.groupby('city_clean') if city}
         self.log(f'🧭 Groupes slave indexés: {len(slave_by_zip)} zipcodes, {len(slave_by_city)} villes')
 
-        results = []
+        all_matches = []
+        review_rows = []
+        unmatched_rows = []
         total = max(len(df_master), 1)
         for idx, (_, master_row) in enumerate(df_master.iterrows(), start=1):
             candidates = self._get_candidates(master_row, df_slave, slave_by_zip, slave_by_city)
-            if candidates.empty:
-                continue
-            matches = self._score_candidates(master_row, candidates, options)
+            matches = self._score_candidates(master_row, candidates, options) if not candidates.empty else []
+            classification = self._classify_master(master_row, matches, options)
+            if classification['best_row'] is not None:
+                review_rows.append(classification['best_row']) if classification['best_row']['match_status'] == 'review' else None
+            if classification['unmatched_row'] is not None:
+                unmatched_rows.append(classification['unmatched_row'])
             if matches:
-                results.extend(matches[: options.top_k_per_master])
+                all_matches.extend(matches[: options.top_k_per_master])
             if idx == 1 or idx % 100 == 0 or idx == total:
-                pct = 35 + int((idx / total) * 55)
+                pct = 35 + int((idx / total) * 50)
                 self.progress(min(pct, 90), f'Matching en cours: {idx}/{total} master')
 
-        self.progress(92, 'Construction du fichier résultat')
-        result_df = pd.DataFrame(results)
-        if result_df.empty:
-            result_df = pd.DataFrame(columns=[
-                'master_id', 'master_name', 'slave_id', 'slave_name', 'score_name', 'score_voie', 'score_city',
-                'score_phone', 'same_matchcode', 'same_hexa', 'same_siret', 'distance_meters', 'automatch', 'match_method'
-            ])
-        result_df = result_df.sort_values(by=['automatch', 'score_name', 'score_voie', 'score_city'], ascending=[False, False, False, False])
+        self.progress(92, 'Construction des livrables Matcher V2')
+        all_matches_df = pd.DataFrame(all_matches)
+        if all_matches_df.empty:
+            all_matches_df = pd.DataFrame(columns=self._result_columns())
+        else:
+            all_matches_df = all_matches_df.sort_values(
+                by=['automatch', 'composite_score', 'score_name', 'score_voie', 'score_city', 'score_phone'],
+                ascending=[False, False, False, False, False, False],
+            )
+
+        review_df = pd.DataFrame(review_rows)
+        if review_df.empty:
+            review_df = pd.DataFrame(columns=self._review_columns())
+
+        unmatched_df = pd.DataFrame(unmatched_rows)
+        if unmatched_df.empty:
+            unmatched_df = pd.DataFrame(columns=self._unmatched_columns())
+
+        summary = {
+            'master_rows': int(len(df_master)),
+            'slave_rows': int(len(df_slave)),
+            'candidate_pairs': int(len(all_matches_df)),
+            'automatch_rows': int((all_matches_df['match_status'] == 'automatch').sum()) if 'match_status' in all_matches_df.columns else 0,
+            'review_rows': int(len(review_df)),
+            'unmatched_rows': int(len(unmatched_df)),
+            'threshold_name': int(options.threshold_name),
+            'threshold_voie': int(options.threshold_voie),
+            'top_k_per_master': int(options.top_k_per_master),
+        }
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        result_df.to_csv(output_path, index=False, encoding='utf-8-sig')
-        self.log(f'✅ Sortie matcher écrite: {output_path.name} ({len(result_df)} correspondances)')
-        self.progress(100, 'Matcher terminé')
+        if output_path.suffix.lower() != '.zip':
+            output_path = output_path.with_suffix('.zip')
+
+        with tempfile.TemporaryDirectory(prefix='matcher_v2_') as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            all_path = tmpdir_path / 'all_matches.csv'
+            auto_path = tmpdir_path / 'automatch.csv'
+            review_path = tmpdir_path / 'review.csv'
+            unmatched_path = tmpdir_path / 'unmatched.csv'
+            summary_path = tmpdir_path / 'summary.json'
+
+            all_matches_df.to_csv(all_path, index=False, encoding='utf-8-sig')
+            all_matches_df[all_matches_df['match_status'] == 'automatch'].to_csv(auto_path, index=False, encoding='utf-8-sig')
+            review_df.to_csv(review_path, index=False, encoding='utf-8-sig')
+            unmatched_df.to_csv(unmatched_path, index=False, encoding='utf-8-sig')
+            summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding='utf-8')
+
+            with zipfile.ZipFile(output_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+                zf.write(all_path, arcname='all_matches.csv')
+                zf.write(auto_path, arcname='automatch.csv')
+                zf.write(review_path, arcname='review.csv')
+                zf.write(unmatched_path, arcname='unmatched.csv')
+                zf.write(summary_path, arcname='summary.json')
+
+        self.log(f"✅ Livrable ZIP écrit: {output_path.name}")
+        self.log(f"📊 Résumé matcher: {summary['automatch_rows']} automatch, {summary['review_rows']} review, {summary['unmatched_rows']} unmatched")
+        self.progress(100, 'Matcher V2 terminé')
         return output_path
 
     def _apply_mapping(self, df: pd.DataFrame, mapping: dict[str, str], side: str) -> pd.DataFrame:
@@ -285,8 +350,6 @@ class MatcherService:
         master_name = str(master_row.get('name', ''))
         master_city = str(master_row.get('city', ''))
         master_voie = slugify(str(master_row.get('voie', '') or ''), separator=' ')
-        master_phone_raw = master_row.get('phone', '')
-        master_cell_raw = master_row.get('cellular', '')
         master_phones = [p for p in [master_row.get('phone_clean', ''), master_row.get('cellular_clean', '')] if p]
         master_matchcode = master_row.get('matchcode')
         master_hexa = master_row.get('hexa')
@@ -328,6 +391,10 @@ class MatcherService:
             elif same_siret:
                 automatch = 1; method = 'siret_match'
 
+            composite_score = round((score_name * 0.48) + (score_voie * 0.24) + (score_city * 0.14) + (score_phone * 0.14), 1)
+            match_status = 'automatch' if automatch else self._review_status(score_name, score_voie, score_city, score_phone, same_matchcode, same_hexa, same_siret)
+            reason = AUTO_REASONS.get(method, '') if automatch else self._review_reason(score_name, score_voie, score_city, score_phone, same_matchcode, same_hexa, same_siret)
+
             out.append({
                 'master_id': master_row.get('id'),
                 'master_name': master_name,
@@ -343,12 +410,94 @@ class MatcherService:
                 'score_voie': round(score_voie, 1),
                 'score_city': round(score_city, 1),
                 'score_phone': round(score_phone, 1),
+                'composite_score': composite_score,
                 'same_matchcode': same_matchcode,
                 'same_hexa': same_hexa,
                 'same_siret': same_siret,
                 'distance_meters': None if math.isnan(distance) else round(distance, 2),
                 'automatch': automatch,
+                'match_status': match_status,
                 'match_method': method,
+                'match_reason': reason,
             })
-        out.sort(key=lambda item: (item['automatch'], item['score_name'], item['score_voie'], item['score_city'], item['score_phone']), reverse=True)
+        out.sort(key=lambda item: (item['automatch'], item['composite_score'], item['score_name'], item['score_voie'], item['score_city'], item['score_phone']), reverse=True)
+        for rank, row in enumerate(out, start=1):
+            row['rank_for_master'] = rank
         return out
+
+    def _review_status(self, score_name: float, score_voie: float, score_city: float, score_phone: float, same_matchcode: bool, same_hexa: bool, same_siret: bool) -> str:
+        if same_siret or same_hexa:
+            return 'review'
+        if same_matchcode and score_name >= 70:
+            return 'review'
+        if score_name >= 82 and score_voie >= 60:
+            return 'review'
+        if score_name >= 75 and score_voie >= 75 and score_city >= 80:
+            return 'review'
+        if score_phone == 100:
+            return 'review'
+        return 'candidate'
+
+    def _review_reason(self, score_name: float, score_voie: float, score_city: float, score_phone: float, same_matchcode: bool, same_hexa: bool, same_siret: bool) -> str:
+        reasons = []
+        if same_siret:
+            reasons.append('SIRET identique')
+        if same_hexa:
+            reasons.append('Hexa identique')
+        if same_matchcode:
+            reasons.append('Matchcode identique')
+        if score_phone == 100:
+            reasons.append('Téléphone identique')
+        if score_name >= 80:
+            reasons.append('Nom proche')
+        if score_voie >= 70:
+            reasons.append('Voie proche')
+        if score_city >= 80:
+            reasons.append('Ville proche')
+        return ' + '.join(reasons[:4]) if reasons else 'À vérifier'
+
+    def _classify_master(self, master_row: pd.Series, matches: list[dict], options: MatcherOptions) -> dict:
+        if not matches:
+            return {
+                'best_row': None,
+                'unmatched_row': {
+                    'master_id': master_row.get('id'),
+                    'master_name': master_row.get('name', ''),
+                    'master_address': master_row.get('address', ''),
+                    'master_zipcode': master_row.get('zipcode', ''),
+                    'master_city': master_row.get('city', ''),
+                    'reason': 'Aucun candidat retenu',
+                },
+            }
+        best = matches[0].copy()
+        if best['match_status'] == 'candidate':
+            return {
+                'best_row': None,
+                'unmatched_row': {
+                    'master_id': master_row.get('id'),
+                    'master_name': master_row.get('name', ''),
+                    'master_address': master_row.get('address', ''),
+                    'master_zipcode': master_row.get('zipcode', ''),
+                    'master_city': master_row.get('city', ''),
+                    'reason': f"Meilleur candidat insuffisant (score composite {best['composite_score']})",
+                },
+            }
+        return {'best_row': best, 'unmatched_row': None}
+
+    @staticmethod
+    def _result_columns() -> list[str]:
+        return [
+            'master_id', 'master_name', 'master_address', 'master_zipcode', 'master_city',
+            'slave_id', 'slave_name', 'slave_address', 'slave_zipcode', 'slave_city',
+            'score_name', 'score_voie', 'score_city', 'score_phone', 'composite_score',
+            'same_matchcode', 'same_hexa', 'same_siret', 'distance_meters',
+            'automatch', 'match_status', 'match_method', 'match_reason', 'rank_for_master'
+        ]
+
+    @staticmethod
+    def _review_columns() -> list[str]:
+        return MatcherService._result_columns()
+
+    @staticmethod
+    def _unmatched_columns() -> list[str]:
+        return ['master_id', 'master_name', 'master_address', 'master_zipcode', 'master_city', 'reason']
