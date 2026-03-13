@@ -2,23 +2,27 @@
 {% block content %}
 <section class="hero">
     <span class="pill">Nouveau job</span>
-    <h1 style="margin:14px 0 10px 0; font-size:2rem; letter-spacing:-.04em;">Créer un job avec un flux plus guidé</h1>
+    <h1 style="margin:14px 0 10px 0; font-size:2rem; letter-spacing:-.04em;">Normalizer — analyse de structure et mapping de colonnes</h1>
     <p>
-        Pour le Normalizer, tu peux maintenant inspecter le fichier Excel avant envoi afin d'identifier rapidement les onglets disponibles et préremplir le nom d'onglet.
+        Cette itération ajoute une vraie pré-analyse du fichier Excel : détection des onglets, proposition de ligne d'entête, colonnes détectées et mapping vers les colonnes métier du normalizer.
     </p>
 </section>
 
-<form method="post" enctype="multipart/form-data" class="stack">
+<form method="post" enctype="multipart/form-data" class="stack" id="job-form">
     {% csrf_token %}
     {% if form.non_field_errors %}
         <div class="card">{{ form.non_field_errors }}</div>
     {% endif %}
 
+    {% for field in form %}
+        {% if field.is_hidden %}{{ field }}{% endif %}
+    {% endfor %}
+
     <section class="grid grid-2">
         <div class="card stack">
             <div>
                 <h2>1. Paramètres de base</h2>
-                <div class="muted">Choisis le type de traitement et charge les fichiers nécessaires.</div>
+                <div class="muted">Choisis le type de traitement et charge le fichier à analyser.</div>
             </div>
 
             <div class="field">
@@ -30,14 +34,14 @@
             <div class="field">
                 <label for="id_input_file_1">{{ form.input_file_1.label }}</label>
                 {{ form.input_file_1 }}
-                <div class="field-help">Pour le Normalizer, formats supportés actuellement : <span class="code-inline">.xlsx .xlsm .xltx .xltm</span></div>
+                <div class="field-help">Formats Normalizer : <span class="code-inline">.xlsx .xlsm .xltx .xltm</span></div>
                 {% if form.input_file_1.errors %}{{ form.input_file_1.errors }}{% endif %}
             </div>
 
             <div class="field">
                 <label for="id_input_file_2">{{ form.input_file_2.label }}</label>
                 {{ form.input_file_2 }}
-                <div class="field-help">Utilisé plus tard pour les modules nécessitant deux entrées.</div>
+                <div class="field-help">Conservé pour les prochaines itérations Matcher / Geocoder.</div>
                 {% if form.input_file_2.errors %}{{ form.input_file_2.errors }}{% endif %}
             </div>
         </div>
@@ -45,12 +49,12 @@
         <div class="card stack" id="normalizer-panel">
             <div>
                 <h2>2. Options Normalizer</h2>
-                <div class="muted">Toujours centré sur le vrai moteur métier. Le mapping visuel arrivera dans l'itération suivante.</div>
+                <div class="muted">Le mapping ci-dessous sera prérempli après inspection du fichier.</div>
             </div>
 
             <div class="checklist">
-                <label class="check-item">{{ form.normalizer_do_clean }} <span><strong>{{ form.normalizer_do_clean.label }}</strong><br><span class="muted small">Nettoyage préparatoire des colonnes.</span></span></label>
-                <label class="check-item">{{ form.normalizer_do_matchcode }} <span><strong>{{ form.normalizer_do_matchcode.label }}</strong><br><span class="muted small">Construit les colonnes métier matchcode, voie et num_voie.</span></span></label>
+                <label class="check-item">{{ form.normalizer_do_clean }} <span><strong>{{ form.normalizer_do_clean.label }}</strong><br><span class="muted small">Supprime les colonnes de référence inutiles et harmonise les noms standards.</span></span></label>
+                <label class="check-item">{{ form.normalizer_do_matchcode }} <span><strong>{{ form.normalizer_do_matchcode.label }}</strong><br><span class="muted small">Nécessite le mapping de address, zipcode et city.</span></span></label>
             </div>
 
             <div class="field">
@@ -61,8 +65,8 @@
                 {% if form.normalizer_sheet_name.errors %}{{ form.normalizer_sheet_name.errors }}{% endif %}
             </div>
 
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                <button class="btn btn-secondary" type="button" id="inspect-btn">Inspecter le fichier Excel</button>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <button class="btn btn-secondary" type="button" id="inspect-btn">Inspecter la feuille de calcul</button>
                 <div class="muted small" id="inspect-status">Aucune inspection lancée.</div>
             </div>
         </div>
@@ -71,18 +75,34 @@
     <section class="card hidden" id="inspection-card">
         <div class="toolbar">
             <div>
-                <h2 style="margin-bottom:6px;">3. Résultat de l'inspection</h2>
-                <div class="muted">Sélection rapide d'onglet et aperçu des premières lignes.</div>
+                <h2 style="margin-bottom:6px;">3. Analyse de structure</h2>
+                <div class="muted">Choisis l'onglet, contrôle la ligne d'entête détectée et prépare le mapping métier.</div>
             </div>
         </div>
         <div id="inspection-results" class="grid grid-2"></div>
     </section>
 
+    <section class="card hidden" id="mapping-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">4. Mapping de colonnes</h2>
+                <div class="muted">Les suggestions sont automatiques. Tu peux les ajuster avant lancement.</div>
+            </div>
+            <div class="muted small">Champs requis pour le matchcode : <span class="code-inline">address</span>, <span class="code-inline">zipcode</span>, <span class="code-inline">city</span></div>
+        </div>
+        <div class="mapping-grid" id="mapping-grid"></div>
+        <ul class="hint-list">
+            <li>La même colonne source ne doit pas être utilisée plusieurs fois.</li>
+            <li>Tu peux laisser un champ sur “Ignorer” si tu n'en as pas besoin.</li>
+            <li>Le mapping sera mémorisé dans le job pour audit.</li>
+        </ul>
+    </section>
+
     <section class="card">
         <div class="toolbar">
             <div>
-                <h2 style="margin-bottom:6px;">4. Lancer le job</h2>
-                <div class="muted">Le traitement partira côté worker Celery sans bloquer l'interface.</div>
+                <h2 style="margin-bottom:6px;">5. Lancer le job</h2>
+                <div class="muted">Le traitement partira côté worker Celery avec export CSV.</div>
             </div>
             <div style="display:flex; gap:10px; flex-wrap:wrap;">
                 <a class="btn btn-secondary" href="{% url 'jobs:home' %}">Retour dashboard</a>
@@ -94,34 +114,96 @@
 
 <script>
 (function() {
+    const canonicalFields = {{ canonical_mapping_fields|safe }};
+    const requiredFields = new Set(['address', 'zipcode', 'city']);
     const jobType = document.getElementById('id_job_type');
     const normalizerPanel = document.getElementById('normalizer-panel');
     const inspectBtn = document.getElementById('inspect-btn');
     const inspectStatus = document.getElementById('inspect-status');
     const inspectionCard = document.getElementById('inspection-card');
     const inspectionResults = document.getElementById('inspection-results');
+    const mappingCard = document.getElementById('mapping-card');
+    const mappingGrid = document.getElementById('mapping-grid');
     const inputFile = document.getElementById('id_input_file_1');
     const sheetNameInput = document.getElementById('id_normalizer_sheet_name');
     const sheetOptions = document.getElementById('sheet-options');
     const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+    let latestInspection = null;
 
     function toggleNormalizerOptions() {
         const isNormalizer = jobType.value === 'normalizer';
         normalizerPanel.classList.toggle('hidden', !isNormalizer);
         inspectionCard.classList.toggle('hidden', !isNormalizer || !inspectionResults.children.length);
+        mappingCard.classList.toggle('hidden', !isNormalizer || !mappingGrid.children.length);
     }
 
-    function buildPreviewTable(preview) {
+    function buildPreviewTable(preview, headerRowIndex) {
         if (!preview || !preview.length) {
             return '<div class="muted small">Aperçu indisponible.</div>';
         }
-        const rows = preview.map(row => `<tr>${row.map(cell => `<td>${cell || ''}</td>`).join('')}</tr>`).join('');
+        const rows = preview.map((row, index) => {
+            const tag = index === (headerRowIndex - 1) ? 'th' : 'td';
+            return `<tr>${row.map(cell => `<${tag}>${cell || ''}</${tag}>`).join('')}</tr>`;
+        }).join('');
         return `<table class="preview-table">${rows}</table>`;
     }
 
+    function escapeHtml(value) {
+        return String(value || '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    }
+
+    function titleForField(field) {
+        const labels = {
+            id: 'ID',
+            name: 'Name',
+            address: 'Address',
+            zipcode: 'Zipcode',
+            city: 'City',
+            lat: 'Latitude',
+            lng: 'Longitude',
+            hexa_gmap: 'Hexa GMAP',
+            phone_gmap: 'Phone GMAP',
+            social_link_gmap: 'Website / Social link',
+        };
+        return labels[field] || field;
+    }
+
+    function renderMapping(columns, suggestions) {
+        mappingGrid.innerHTML = '';
+        const options = ['<option value="__ignore__">Ignorer</option>']
+            .concat(columns.map(col => `<option value="${escapeHtml(col)}">${escapeHtml(col)}</option>`))
+            .join('');
+
+        canonicalFields.forEach(field => {
+            const hidden = document.getElementById(`id_mapping_${field}`);
+            const card = document.createElement('div');
+            card.className = 'mapping-item' + (requiredFields.has(field) ? ' required' : '');
+            card.innerHTML = `
+                <strong>${titleForField(field)}</strong>
+                <div class="muted small">${requiredFields.has(field) ? 'Requis si matchcode activé' : 'Optionnel'}</div>
+                <select data-field="${field}">${options}</select>
+            `;
+            const select = card.querySelector('select');
+            select.value = suggestions[field] || hidden.value || '__ignore__';
+            hidden.value = select.value === '__ignore__' ? '' : select.value;
+            select.addEventListener('change', () => {
+                hidden.value = select.value === '__ignore__' ? '' : select.value;
+            });
+            mappingGrid.appendChild(card);
+        });
+        mappingCard.classList.remove('hidden');
+    }
+
     function renderInspection(data) {
+        latestInspection = data;
         sheetOptions.innerHTML = '';
         inspectionResults.innerHTML = '';
+
         data.sheets.forEach((sheet, index) => {
             const option = document.createElement('option');
             option.value = sheet.name;
@@ -129,30 +211,39 @@
 
             const card = document.createElement('div');
             card.className = 'sheet-item' + (index === 0 ? ' active' : '');
+            const missing = sheet.missing_required_for_matchcode.length
+                ? `<div class="muted small" style="color:#b45309; margin-top:8px;">Suggestions manquantes : ${sheet.missing_required_for_matchcode.map(escapeHtml).join(', ')}</div>`
+                : '<div class="muted small" style="color:#15803d; margin-top:8px;">Les colonnes clés du matchcode ont été reconnues.</div>';
             card.innerHTML = `
                 <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
                     <div>
-                        <strong>${sheet.name}</strong>
+                        <strong>${escapeHtml(sheet.name)}</strong>
                         <div class="sheet-meta">
                             <span>${sheet.max_row} lignes</span>
                             <span>${sheet.max_column} colonnes</span>
+                            <span>Entête détectée : ligne ${sheet.detected_header_row}</span>
                         </div>
                     </div>
-                    <button type="button" class="btn btn-secondary small choose-sheet">Choisir cet onglet</button>
+                    <button type="button" class="btn btn-secondary small choose-sheet">Utiliser cet onglet</button>
                 </div>
-                ${buildPreviewTable(sheet.preview)}
+                <div class="muted small" style="margin-top:10px;">Colonnes détectées : ${sheet.detected_columns.map(escapeHtml).join(', ') || 'aucune'}</div>
+                ${missing}
+                ${buildPreviewTable(sheet.preview, sheet.detected_header_row)}
             `;
             card.querySelector('.choose-sheet').addEventListener('click', () => {
                 sheetNameInput.value = sheet.name;
                 document.querySelectorAll('.sheet-item').forEach(el => el.classList.remove('active'));
                 card.classList.add('active');
                 inspectStatus.textContent = `Onglet sélectionné : ${sheet.name}`;
+                renderMapping(sheet.detected_columns, sheet.mapping_suggestions || {});
             });
             inspectionResults.appendChild(card);
         });
 
         if (data.sheets.length) {
-            sheetNameInput.value = sheetNameInput.value || data.sheets[0].name;
+            const selected = data.sheets.find(sheet => sheet.name === sheetNameInput.value) || data.sheets[0];
+            sheetNameInput.value = selected.name;
+            renderMapping(selected.detected_columns, selected.mapping_suggestions || {});
             inspectionCard.classList.remove('hidden');
         }
     }
