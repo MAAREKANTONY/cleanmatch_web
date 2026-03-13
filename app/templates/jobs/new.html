@@ -2,9 +2,10 @@
 {% block content %}
 <section class="hero">
     <span class="pill">Nouveau job</span>
-    <h1 style="margin:14px 0 10px 0; font-size:2rem; letter-spacing:-.04em;">Normalizer — analyse de structure et mapping de colonnes</h1>
+    <h1 style="margin:14px 0 10px 0; font-size:2rem; letter-spacing:-.04em;">Normalizer + Matcher</h1>
     <p>
-        Cette itération ajoute une vraie pré-analyse du fichier Excel : détection des onglets, proposition de ligne d'entête, colonnes détectées et mapping vers les colonnes métier du normalizer.
+        Cette itération ajoute le <strong>Matcher V1</strong> avec inspection des deux fichiers, suggestions de mapping master/slave et export CSV des correspondances.
+        Le flow Normalizer reste disponible tel quel.
     </p>
 </section>
 
@@ -13,7 +14,6 @@
     {% if form.non_field_errors %}
         <div class="card">{{ form.non_field_errors }}</div>
     {% endif %}
-
     {% for field in form %}
         {% if field.is_hidden %}{{ field }}{% endif %}
     {% endfor %}
@@ -22,61 +22,82 @@
         <div class="card stack">
             <div>
                 <h2>1. Paramètres de base</h2>
-                <div class="muted">Choisis le type de traitement et charge le fichier à analyser.</div>
+                <div class="muted">Choisis le type de traitement et charge les fichiers nécessaires.</div>
             </div>
 
             <div class="field">
                 <label for="id_job_type">{{ form.job_type.label }}</label>
                 {{ form.job_type }}
-                {% if form.job_type.errors %}{{ form.job_type.errors }}{% endif %}
             </div>
 
             <div class="field">
                 <label for="id_input_file_1">{{ form.input_file_1.label }}</label>
                 {{ form.input_file_1 }}
-                <div class="field-help">Formats Normalizer : <span class="code-inline">.xlsx .xlsm .xltx .xltm</span></div>
+                <div class="field-help">Normalizer : Excel. Matcher : master CSV ou Excel.</div>
                 {% if form.input_file_1.errors %}{{ form.input_file_1.errors }}{% endif %}
             </div>
 
             <div class="field">
                 <label for="id_input_file_2">{{ form.input_file_2.label }}</label>
                 {{ form.input_file_2 }}
-                <div class="field-help">Conservé pour les prochaines itérations Matcher / Geocoder.</div>
+                <div class="field-help">Requis pour le Matcher : fichier slave CSV ou Excel.</div>
                 {% if form.input_file_2.errors %}{{ form.input_file_2.errors }}{% endif %}
             </div>
         </div>
 
         <div class="card stack" id="normalizer-panel">
             <div>
-                <h2>2. Options Normalizer</h2>
-                <div class="muted">Le mapping ci-dessous sera prérempli après inspection du fichier.</div>
+                <h2>2A. Options Normalizer</h2>
+                <div class="muted">Inspection Excel, preview et mapping guidé.</div>
             </div>
-
             <div class="checklist">
-                <label class="check-item">{{ form.normalizer_do_clean }} <span><strong>{{ form.normalizer_do_clean.label }}</strong><br><span class="muted small">Supprime les colonnes de référence inutiles et harmonise les noms standards.</span></span></label>
-                <label class="check-item">{{ form.normalizer_do_matchcode }} <span><strong>{{ form.normalizer_do_matchcode.label }}</strong><br><span class="muted small">Nécessite le mapping de address, zipcode et city.</span></span></label>
+                <label class="check-item">{{ form.normalizer_do_clean }} <span><strong>{{ form.normalizer_do_clean.label }}</strong><br><span class="muted small">Nettoyage et harmonisation.</span></span></label>
+                <label class="check-item">{{ form.normalizer_do_matchcode }} <span><strong>{{ form.normalizer_do_matchcode.label }}</strong><br><span class="muted small">Nécessite address, zipcode, city.</span></span></label>
             </div>
-
             <div class="field">
                 <label for="id_normalizer_sheet_name">{{ form.normalizer_sheet_name.label }}</label>
                 {{ form.normalizer_sheet_name }}
                 <datalist id="sheet-options"></datalist>
                 <div class="field-help">{{ form.normalizer_sheet_name.help_text }}</div>
-                {% if form.normalizer_sheet_name.errors %}{{ form.normalizer_sheet_name.errors }}{% endif %}
             </div>
-
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
                 <button class="btn btn-secondary" type="button" id="inspect-btn">Inspecter la feuille de calcul</button>
-                <div class="muted small" id="inspect-status">Aucune inspection lancée.</div>
+                <div class="muted small" id="inspect-status">Aucune inspection Normalizer lancée.</div>
             </div>
+        </div>
+
+        <div class="card stack hidden" id="matcher-panel">
+            <div>
+                <h2>2B. Options Matcher</h2>
+                <div class="muted">Deux fichiers, mapping master/slave, scoring name/voie et top résultats par master.</div>
+            </div>
+            <section class="grid grid-3">
+                <div class="field">
+                    <label for="id_matcher_threshold_name">{{ form.matcher_threshold_name.label }}</label>
+                    {{ form.matcher_threshold_name }}
+                </div>
+                <div class="field">
+                    <label for="id_matcher_threshold_voie">{{ form.matcher_threshold_voie.label }}</label>
+                    {{ form.matcher_threshold_voie }}
+                </div>
+                <div class="field">
+                    <label for="id_matcher_top_k">{{ form.matcher_top_k.label }}</label>
+                    {{ form.matcher_top_k }}
+                </div>
+            </section>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <button class="btn btn-secondary" type="button" id="inspect-matcher-btn">Inspecter master + slave</button>
+                <div class="muted small" id="inspect-matcher-status">Aucune inspection Matcher lancée.</div>
+            </div>
+            <div class="muted small">Colonnes minimales à mapper des deux côtés : <span class="code-inline">id</span>, <span class="code-inline">name</span>, <span class="code-inline">address</span>, <span class="code-inline">zipcode</span>, <span class="code-inline">city</span>.</div>
         </div>
     </section>
 
     <section class="card hidden" id="inspection-card">
         <div class="toolbar">
             <div>
-                <h2 style="margin-bottom:6px;">3. Analyse de structure</h2>
-                <div class="muted">Choisis l'onglet, contrôle la ligne d'entête détectée, prévisualise 20 lignes et prépare le mapping métier.</div>
+                <h2 style="margin-bottom:6px;">3A. Analyse de structure Normalizer</h2>
+                <div class="muted">Choisis l'onglet, contrôle la preview 20 lignes et prépare le mapping métier.</div>
             </div>
         </div>
         <div id="inspection-results" class="grid grid-2"></div>
@@ -85,24 +106,47 @@
     <section class="card hidden" id="mapping-card">
         <div class="toolbar">
             <div>
-                <h2 style="margin-bottom:6px;">4. Mapping de colonnes</h2>
-                <div class="muted">Les suggestions sont automatiques. Tu peux les ajuster avant lancement, avec badges requis et auto-détectés.</div>
+                <h2 style="margin-bottom:6px;">4A. Mapping de colonnes Normalizer</h2>
+                <div class="muted">Suggestions automatiques + badges requis et auto-détectés.</div>
             </div>
-            <div class="muted small">Champs requis pour le matchcode : <span class="code-inline">address</span>, <span class="code-inline">zipcode</span>, <span class="code-inline">city</span></div>
         </div>
         <div class="mapping-grid" id="mapping-grid"></div>
-        <ul class="hint-list">
-            <li>La même colonne source ne doit pas être utilisée plusieurs fois.</li>
-            <li>Tu peux laisser un champ sur “Ignorer” si tu n'en as pas besoin.</li>
-            <li>Le mapping sera mémorisé dans le job pour audit.</li>
-        </ul>
+    </section>
+
+    <section class="card hidden" id="matcher-inspection-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">3B. Analyse de structure Matcher</h2>
+                <div class="muted">Inspection indépendante du master et du slave avec aperçu 20 lignes et scroll horizontal.</div>
+            </div>
+        </div>
+        <div class="grid grid-2" id="matcher-inspection-results"></div>
+    </section>
+
+    <section class="card hidden" id="matcher-mapping-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">4B. Mapping master / slave</h2>
+                <div class="muted">Le matcher V1 sait calculer automatiquement voie, num_voie et matchcode si tu fournis address + zipcode.</div>
+            </div>
+        </div>
+        <div class="grid grid-2">
+            <div>
+                <h3 style="margin-top:0;">Master</h3>
+                <div class="mapping-grid" id="matcher-master-mapping-grid"></div>
+            </div>
+            <div>
+                <h3 style="margin-top:0;">Slave</h3>
+                <div class="mapping-grid" id="matcher-slave-mapping-grid"></div>
+            </div>
+        </div>
     </section>
 
     <section class="card">
         <div class="toolbar">
             <div>
                 <h2 style="margin-bottom:6px;">5. Lancer le job</h2>
-                <div class="muted">Le traitement partira côté worker Celery avec export CSV.</div>
+                <div class="muted">Sortie Normalizer et Matcher en CSV UTF-8.</div>
             </div>
             <div style="display:flex; gap:10px; flex-wrap:wrap;">
                 <a class="btn btn-secondary" href="{% url 'jobs:home' %}">Retour dashboard</a>
@@ -114,10 +158,13 @@
 
 <script>
 (function() {
-    const canonicalFields = {{ canonical_mapping_fields|safe }};
-    const requiredFields = new Set(['address', 'zipcode', 'city']);
+    const normalizerFields = {{ canonical_mapping_fields|safe }};
+    const matcherFields = {{ matcher_mapping_fields|safe }};
+    const normalizerRequired = new Set(['address', 'zipcode', 'city']);
+    const matcherRequired = new Set(['id', 'name', 'address', 'zipcode', 'city']);
     const jobType = document.getElementById('id_job_type');
     const normalizerPanel = document.getElementById('normalizer-panel');
+    const matcherPanel = document.getElementById('matcher-panel');
     const inspectBtn = document.getElementById('inspect-btn');
     const inspectStatus = document.getElementById('inspect-status');
     const inspectionCard = document.getElementById('inspection-card');
@@ -125,28 +172,19 @@
     const mappingCard = document.getElementById('mapping-card');
     const mappingGrid = document.getElementById('mapping-grid');
     const inputFile = document.getElementById('id_input_file_1');
+    const inputFile2 = document.getElementById('id_input_file_2');
     const sheetNameInput = document.getElementById('id_normalizer_sheet_name');
     const sheetOptions = document.getElementById('sheet-options');
     const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
-    let latestInspection = null;
 
-    function toggleNormalizerOptions() {
-        const isNormalizer = jobType.value === 'normalizer';
-        normalizerPanel.classList.toggle('hidden', !isNormalizer);
-        inspectionCard.classList.toggle('hidden', !isNormalizer || !inspectionResults.children.length);
-        mappingCard.classList.toggle('hidden', !isNormalizer || !mappingGrid.children.length);
-    }
-
-    function buildPreviewTable(preview, headerRowIndex) {
-        if (!preview || !preview.length) {
-            return '<div class="muted small">Aperçu indisponible.</div>';
-        }
-        const rows = preview.map((row, index) => {
-            const tag = index === (headerRowIndex - 1) ? 'th' : 'td';
-            return `<tr>${row.map(cell => `<${tag}>${escapeHtml(cell || '')}</${tag}>`).join('')}</tr>`;
-        }).join('');
-        return `<div class="preview-wrap"><table class="preview-table">${rows}</table></div>`;
-    }
+    const inspectMatcherBtn = document.getElementById('inspect-matcher-btn');
+    const inspectMatcherStatus = document.getElementById('inspect-matcher-status');
+    const matcherInspectionCard = document.getElementById('matcher-inspection-card');
+    const matcherInspectionResults = document.getElementById('matcher-inspection-results');
+    const matcherMappingCard = document.getElementById('matcher-mapping-card');
+    const matcherMasterGrid = document.getElementById('matcher-master-mapping-grid');
+    const matcherSlaveGrid = document.getElementById('matcher-slave-mapping-grid');
+    let matcherInspectionState = {master: null, slave: null};
 
     function escapeHtml(value) {
         return String(value || '')
@@ -157,87 +195,56 @@
             .replaceAll("'", '&#39;');
     }
 
+    function buildPreviewTable(preview) {
+        if (!preview || !preview.length) return '<div class="muted small">Aperçu indisponible.</div>';
+        const rows = preview.map((row, idx) => `<tr>${row.map(cell => `<${idx === 0 ? 'th' : 'td'}>${escapeHtml(cell || '')}</${idx === 0 ? 'th' : 'td'}>`).join('')}</tr>`).join('');
+        return `<div class="preview-wrap"><table class="preview-table">${rows}</table></div>`;
+    }
+
     function titleForField(field) {
         const labels = {
-            id: 'ID',
-            name: 'Name',
-            address: 'Address',
-            zipcode: 'Zipcode',
-            city: 'City',
-            lat: 'Latitude',
-            lng: 'Longitude',
-            hexa_gmap: 'Hexa GMAP',
-            phone_gmap: 'Phone GMAP',
-            social_link_gmap: 'Website / Social link',
+            id: 'ID', name: 'Name', address: 'Address', zipcode: 'Zipcode', city: 'City', lat: 'Latitude', lng: 'Longitude',
+            hexa_gmap: 'Hexa GMAP', phone_gmap: 'Phone GMAP', social_link_gmap: 'Website / Social link',
+            voie: 'Voie', num_voie: 'Num voie', matchcode: 'Matchcode', phone: 'Phone', cellular: 'Cellular', siret: 'Siret', hexa: 'Hexa'
         };
         return labels[field] || field;
     }
 
     function renderMapping(columns, suggestions) {
         mappingGrid.innerHTML = '';
-        const options = ['<option value="__ignore__">Ignorer</option>']
-            .concat(columns.map(col => `<option value="${escapeHtml(col)}">${escapeHtml(col)}</option>`))
-            .join('');
-
-        canonicalFields.forEach(field => {
+        const options = ['<option value="__ignore__">Ignorer</option>'].concat(columns.map(col => `<option value="${escapeHtml(col)}">${escapeHtml(col)}</option>`)).join('');
+        normalizerFields.forEach(field => {
             const hidden = document.getElementById(`id_mapping_${field}`);
             const card = document.createElement('div');
-            card.className = 'mapping-item' + (requiredFields.has(field) ? ' required' : '');
-            const autoDetected = suggestions[field] ? '<span class="mini-badge">Auto-détecté</span>' : '';
-            const required = requiredFields.has(field) ? '<span class="mini-badge required">Requis</span>' : '';
+            card.className = 'mapping-item' + (normalizerRequired.has(field) ? ' required' : '');
             card.innerHTML = `
                 <strong>${titleForField(field)}</strong>
-                <div class="preview-labels">${required}${autoDetected}</div>
-                <div class="muted small">${requiredFields.has(field) ? 'Requis si matchcode activé' : 'Optionnel'}</div>
-                <select data-field="${field}">${options}</select>
-            `;
+                <div class="preview-labels">${normalizerRequired.has(field) ? '<span class="mini-badge required">Requis</span>' : ''}${suggestions[field] ? '<span class="mini-badge">Auto-détecté</span>' : ''}</div>
+                <select data-field="${field}">${options}</select>`;
             const select = card.querySelector('select');
             select.value = suggestions[field] || hidden.value || '__ignore__';
             hidden.value = select.value === '__ignore__' ? '' : select.value;
-            select.addEventListener('change', () => {
-                hidden.value = select.value === '__ignore__' ? '' : select.value;
-            });
+            select.addEventListener('change', () => { hidden.value = select.value === '__ignore__' ? '' : select.value; });
             mappingGrid.appendChild(card);
         });
         mappingCard.classList.remove('hidden');
     }
 
     function renderInspection(data) {
-        latestInspection = data;
         sheetOptions.innerHTML = '';
         inspectionResults.innerHTML = '';
-
         data.sheets.forEach((sheet, index) => {
-            const option = document.createElement('option');
-            option.value = sheet.name;
-            sheetOptions.appendChild(option);
-
-            const card = document.createElement('div');
-            card.className = 'sheet-item' + (index === 0 ? ' active' : '');
-            const missing = sheet.missing_required_for_matchcode.length
-                ? `<div class="preview-labels"><span class="mini-badge warning">Suggestions manquantes : ${sheet.missing_required_for_matchcode.map(escapeHtml).join(', ')}</span></div>`
-                : '<div class="preview-labels"><span class="mini-badge">Les colonnes clés du matchcode ont été reconnues</span></div>';
-            const warnings = (sheet.validation_warnings || []).length
-                ? `<ul class="warning-list">${sheet.validation_warnings.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
-                : '';
+            const option = document.createElement('option'); option.value = sheet.name; sheetOptions.appendChild(option);
+            const card = document.createElement('div'); card.className = 'sheet-item' + (index === 0 ? ' active' : '');
+            const warnings = (sheet.validation_warnings || []).length ? `<ul class="warning-list">${sheet.validation_warnings.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '';
             card.innerHTML = `
                 <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
-                    <div>
-                        <strong>${escapeHtml(sheet.name)}</strong>
-                        <div class="sheet-meta">
-                            <span>${sheet.max_row} lignes</span>
-                            <span>${sheet.max_column} colonnes</span>
-                            <span>Entête détectée : ligne ${sheet.detected_header_row}</span>
-                            <span>Aperçu : 20 lignes max</span>
-                        </div>
-                    </div>
+                    <div><strong>${escapeHtml(sheet.name)}</strong><div class="sheet-meta"><span>${sheet.max_row} lignes</span><span>${sheet.max_column} colonnes</span><span>Entête détectée : ligne ${sheet.detected_header_row}</span></div></div>
                     <button type="button" class="btn btn-secondary small choose-sheet">Utiliser cet onglet</button>
                 </div>
                 <div class="muted small" style="margin-top:10px;">Colonnes détectées : ${sheet.detected_columns.map(escapeHtml).join(', ') || 'aucune'}</div>
-                ${missing}
                 ${warnings}
-                ${buildPreviewTable(sheet.preview, sheet.detected_header_row)}
-            `;
+                ${buildPreviewTable(sheet.preview)}`;
             card.querySelector('.choose-sheet').addEventListener('click', () => {
                 sheetNameInput.value = sheet.name;
                 document.querySelectorAll('.sheet-item').forEach(el => el.classList.remove('active'));
@@ -247,54 +254,130 @@
             });
             inspectionResults.appendChild(card);
         });
-
         if (data.sheets.length) {
-            const selected = data.sheets.find(sheet => sheet.name === sheetNameInput.value) || data.sheets[0];
+            const selected = data.sheets.find(s => s.name === sheetNameInput.value) || data.sheets[0];
             sheetNameInput.value = selected.name;
             renderMapping(selected.detected_columns, selected.mapping_suggestions || {});
             inspectionCard.classList.remove('hidden');
         }
     }
 
+    function renderMatcherMapping(side, columns, suggestions) {
+        const grid = side === 'master' ? matcherMasterGrid : matcherSlaveGrid;
+        grid.innerHTML = '';
+        const options = ['<option value="__ignore__">Ignorer</option>'].concat(columns.map(col => `<option value="${escapeHtml(col)}">${escapeHtml(col)}</option>`)).join('');
+        matcherFields.forEach(field => {
+            const hidden = document.getElementById(`id_matcher_${side}_${field}`);
+            const card = document.createElement('div');
+            card.className = 'mapping-item' + (matcherRequired.has(field) ? ' required' : '');
+            card.innerHTML = `
+                <strong>${titleForField(field)}</strong>
+                <div class="preview-labels">${matcherRequired.has(field) ? '<span class="mini-badge required">Requis</span>' : ''}${suggestions[field] ? '<span class="mini-badge">Auto-détecté</span>' : ''}</div>
+                <select>${options}</select>`;
+            const select = card.querySelector('select');
+            select.value = suggestions[field] || hidden.value || '__ignore__';
+            hidden.value = select.value === '__ignore__' ? '' : select.value;
+            select.addEventListener('change', () => { hidden.value = select.value === '__ignore__' ? '' : select.value; });
+            grid.appendChild(card);
+        });
+    }
+
+    function renderMatcherSheetCard(role, sheet, index) {
+        const card = document.createElement('div');
+        card.className = 'sheet-item' + (index === 0 ? ' active' : '');
+        const hiddenSheetInput = document.getElementById(`id_matcher_${role}_sheet_name`);
+        card.innerHTML = `
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+                <div>
+                    <strong>${role === 'master' ? 'Master' : 'Slave'} — ${escapeHtml(sheet.name === '__csv__' ? 'CSV' : sheet.name)}</strong>
+                    <div class="sheet-meta"><span>${sheet.max_column} colonnes</span><span>Aperçu : 20 lignes max</span></div>
+                </div>
+                <button type="button" class="btn btn-secondary small choose-sheet">Utiliser</button>
+            </div>
+            <div class="muted small" style="margin-top:10px;">Colonnes détectées : ${sheet.detected_columns.map(escapeHtml).join(', ') || 'aucune'}</div>
+            ${sheet.missing_required.length ? `<div class="preview-labels"><span class="mini-badge warning">Colonnes minimales non reconnues : ${sheet.missing_required.map(escapeHtml).join(', ')}</span></div>` : '<div class="preview-labels"><span class="mini-badge">Colonnes minimales reconnues</span></div>'}
+            ${buildPreviewTable([sheet.detected_columns].concat(sheet.preview))}`;
+        card.querySelector('.choose-sheet').addEventListener('click', () => {
+            hiddenSheetInput.value = sheet.name === '__csv__' ? '' : sheet.name;
+            document.querySelectorAll(`.sheet-item[data-role="${role}"]`).forEach(el => el.classList.remove('active'));
+            card.classList.add('active');
+            renderMatcherMapping(role, sheet.detected_columns, sheet.mapping_suggestions || {});
+            inspectMatcherStatus.textContent = `Inspection Matcher prête — ${role} : ${sheet.name === '__csv__' ? 'CSV' : sheet.name}`;
+            matcherMappingCard.classList.remove('hidden');
+        });
+        card.dataset.role = role;
+        return card;
+    }
+
     async function inspectWorkbook() {
-        if (jobType.value !== 'normalizer') {
-            inspectStatus.textContent = 'Inspection disponible uniquement pour le Normalizer.';
-            return;
-        }
-        if (!inputFile.files.length) {
-            inspectStatus.textContent = 'Sélectionne d’abord un fichier Excel.';
-            return;
-        }
-
-        inspectStatus.textContent = 'Inspection du fichier en cours...';
-        inspectBtn.disabled = true;
-        const formData = new FormData();
-        formData.append('input_file_1', inputFile.files[0]);
-
+        if (jobType.value !== 'normalizer') return;
+        if (!inputFile.files.length) { inspectStatus.textContent = 'Sélectionne d’abord un fichier Excel.'; return; }
+        inspectStatus.textContent = 'Inspection du fichier en cours...'; inspectBtn.disabled = true;
+        const formData = new FormData(); formData.append('input_file_1', inputFile.files[0]);
         try {
-            const response = await fetch('{% url "jobs:inspect_excel" %}', {
-                method: 'POST',
-                headers: { 'X-CSRFToken': csrfToken },
-                body: formData,
-            });
+            const response = await fetch('{% url "jobs:inspect_excel" %}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
             const data = await response.json();
-            if (!response.ok) {
-                inspectStatus.textContent = data.error || 'Inspection impossible.';
-                return;
-            }
-            renderInspection(data);
-            inspectStatus.textContent = `${data.sheets.length} onglet(s) détecté(s) dans ${data.filename}.`;
-            toggleNormalizerOptions();
+            if (!response.ok) { inspectStatus.textContent = data.error || 'Inspection impossible.'; return; }
+            renderInspection(data); inspectStatus.textContent = `${data.sheets.length} onglet(s) détecté(s) dans ${data.filename}.`;
+        } catch (error) { inspectStatus.textContent = 'Erreur réseau pendant l’inspection.'; }
+        finally { inspectBtn.disabled = false; }
+    }
+
+    async function inspectMatcher(role, file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('role', role);
+        const response = await fetch('{% url "jobs:inspect_matcher_file" %}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Inspection matcher impossible.');
+        return data;
+    }
+
+    async function inspectMatcherFiles() {
+        if (jobType.value !== 'matcher') return;
+        if (!inputFile.files.length || !inputFile2.files.length) { inspectMatcherStatus.textContent = 'Sélectionne le master et le slave avant inspection.'; return; }
+        inspectMatcherStatus.textContent = 'Inspection master/slave en cours...';
+        inspectMatcherBtn.disabled = true;
+        matcherInspectionResults.innerHTML = '';
+        try {
+            const [masterData, slaveData] = await Promise.all([inspectMatcher('master', inputFile.files[0]), inspectMatcher('slave', inputFile2.files[0])]);
+            matcherInspectionState.master = masterData; matcherInspectionState.slave = slaveData;
+            [masterData, slaveData].forEach(payload => {
+                const role = payload.role;
+                const wrapper = document.createElement('div');
+                wrapper.className = 'stack';
+                payload.sheets.forEach((sheet, index) => wrapper.appendChild(renderMatcherSheetCard(role, sheet, index)));
+                matcherInspectionResults.appendChild(wrapper);
+                const selected = payload.sheets[0];
+                const hiddenSheetInput = document.getElementById(`id_matcher_${role}_sheet_name`);
+                hiddenSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
+                renderMatcherMapping(role, selected.detected_columns, selected.mapping_suggestions || {});
+            });
+            matcherInspectionCard.classList.remove('hidden');
+            matcherMappingCard.classList.remove('hidden');
+            inspectMatcherStatus.textContent = `Inspection prête — master: ${masterData.filename}, slave: ${slaveData.filename}.`;
         } catch (error) {
-            inspectStatus.textContent = 'Erreur réseau pendant l’inspection.';
+            inspectMatcherStatus.textContent = error.message || 'Erreur réseau pendant l’inspection matcher.';
         } finally {
-            inspectBtn.disabled = false;
+            inspectMatcherBtn.disabled = false;
         }
     }
 
+    function togglePanels() {
+        const isNormalizer = jobType.value === 'normalizer';
+        const isMatcher = jobType.value === 'matcher';
+        normalizerPanel.classList.toggle('hidden', !isNormalizer);
+        inspectionCard.classList.toggle('hidden', !isNormalizer || !inspectionResults.children.length);
+        mappingCard.classList.toggle('hidden', !isNormalizer || !mappingGrid.children.length);
+        matcherPanel.classList.toggle('hidden', !isMatcher);
+        matcherInspectionCard.classList.toggle('hidden', !isMatcher || !matcherInspectionResults.children.length);
+        matcherMappingCard.classList.toggle('hidden', !isMatcher || (!matcherMasterGrid.children.length && !matcherSlaveGrid.children.length));
+    }
+
     inspectBtn.addEventListener('click', inspectWorkbook);
-    jobType.addEventListener('change', toggleNormalizerOptions);
-    toggleNormalizerOptions();
+    inspectMatcherBtn.addEventListener('click', inspectMatcherFiles);
+    jobType.addEventListener('change', togglePanels);
+    togglePanels();
 })();
 </script>
 {% endblock %}
