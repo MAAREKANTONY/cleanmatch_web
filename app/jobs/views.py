@@ -5,9 +5,10 @@ from django.db.models import Count
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
-from openpyxl import load_workbook
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+
+from normalizer.services.normalizer_service import CANONICAL_MAPPING_FIELDS, inspect_excel_workbook
 
 from .forms import JobCreateForm
 from .models import Job
@@ -66,13 +67,14 @@ def create_job(request):
                     'do_clean': form.cleaned_data['normalizer_do_clean'],
                     'do_matchcode': form.cleaned_data['normalizer_do_matchcode'],
                     'sheet_name': form.cleaned_data['normalizer_sheet_name'].strip(),
+                    'column_mapping': form.get_mapping_payload(form.cleaned_data),
                 })
 
             try:
                 JobService.ensure_disk_space(str(Path('media').resolve()))
             except Exception as exc:
                 messages.error(request, str(exc))
-                return render(request, 'jobs/new.html', {'form': form})
+                return render(request, 'jobs/new.html', {'form': form, 'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS})
 
             job = Job.objects.create(
                 job_type=form.cleaned_data['job_type'],
@@ -89,7 +91,7 @@ def create_job(request):
     else:
         form = JobCreateForm()
 
-    return render(request, 'jobs/new.html', {'form': form})
+    return render(request, 'jobs/new.html', {'form': form, 'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS})
 
 
 def job_detail(request, job_id):
@@ -128,27 +130,12 @@ def inspect_excel(request):
         return JsonResponse({'error': 'Inspection disponible uniquement pour les fichiers Excel.'}, status=400)
 
     try:
-        workbook = load_workbook(uploaded, read_only=True, data_only=True)
-        sheets = []
-        for ws in workbook.worksheets[:10]:
-            rows = ws.iter_rows(min_row=1, max_row=3, values_only=True)
-            preview = []
-            for row in rows:
-                preview.append([
-                    '' if value is None else str(value)[:80]
-                    for value in (row or [])[:12]
-                ])
-            sheets.append({
-                'name': ws.title,
-                'max_row': ws.max_row,
-                'max_column': ws.max_column,
-                'preview': preview,
-            })
-        workbook.close()
+        sheets = inspect_excel_workbook(uploaded)
     except Exception as exc:
         return JsonResponse({'error': f'Impossible de lire le fichier Excel : {exc}'}, status=400)
 
     return JsonResponse({
         'filename': Path(uploaded.name).name,
+        'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS,
         'sheets': sheets,
     })

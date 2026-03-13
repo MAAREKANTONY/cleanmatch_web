@@ -1,5 +1,7 @@
 from django import forms
 
+from normalizer.services.normalizer_service import CANONICAL_MAPPING_FIELDS, REQUIRED_MATCHCODE_FIELDS
+
 from .models import Job
 
 
@@ -25,6 +27,18 @@ class JobCreateForm(forms.Form):
         widget=forms.TextInput(attrs={'list': 'sheet-options', 'placeholder': 'Ex: Feuil1'}),
     )
 
+    # Mapping fields populated dynamically in the UI after workbook inspection.
+    mapping_id = forms.CharField(required=False, widget=forms.HiddenInput())
+    mapping_name = forms.CharField(required=False, widget=forms.HiddenInput())
+    mapping_address = forms.CharField(required=False, widget=forms.HiddenInput())
+    mapping_zipcode = forms.CharField(required=False, widget=forms.HiddenInput())
+    mapping_city = forms.CharField(required=False, widget=forms.HiddenInput())
+    mapping_lat = forms.CharField(required=False, widget=forms.HiddenInput())
+    mapping_lng = forms.CharField(required=False, widget=forms.HiddenInput())
+    mapping_hexa_gmap = forms.CharField(required=False, widget=forms.HiddenInput())
+    mapping_phone_gmap = forms.CharField(required=False, widget=forms.HiddenInput())
+    mapping_social_link_gmap = forms.CharField(required=False, widget=forms.HiddenInput())
+
     def clean_input_file_1(self):
         uploaded = self.cleaned_data['input_file_1']
         if uploaded.size <= 0:
@@ -42,4 +56,26 @@ class JobCreateForm(forms.Form):
                 self.add_error('input_file_1', 'Le normalizer web supporte pour le moment uniquement les fichiers Excel .xlsx/.xlsm/.xltx/.xltm.')
             if not cleaned.get('normalizer_do_clean') and not cleaned.get('normalizer_do_matchcode'):
                 self.add_error(None, 'Sélectionne au moins une opération pour le normalizer.')
+
+            mapping = self.get_mapping_payload(cleaned)
+            duplicates = [src for src in mapping.values() if list(mapping.values()).count(src) > 1]
+            if duplicates:
+                self.add_error(None, 'Une même colonne source ne peut pas être utilisée plusieurs fois dans le mapping.')
+
+            if cleaned.get('normalizer_do_matchcode'):
+                missing_required = [field for field in REQUIRED_MATCHCODE_FIELDS if field not in mapping]
+                if missing_required:
+                    self.add_error(
+                        None,
+                        'Le matchcode nécessite un mapping explicite des colonnes : ' + ', '.join(sorted(missing_required))
+                    )
         return cleaned
+
+    @staticmethod
+    def get_mapping_payload(cleaned_data):
+        mapping = {}
+        for canonical in CANONICAL_MAPPING_FIELDS:
+            value = (cleaned_data.get(f'mapping_{canonical}') or '').strip()
+            if value and value != '__ignore__':
+                mapping[canonical] = value
+        return mapping

@@ -77,6 +77,7 @@ def _run_normalizer_job(job: Job):
         do_clean=bool(parameters.get('do_clean', True)),
         do_matchcode=bool(parameters.get('do_matchcode', True)),
         sheet_name=(parameters.get('sheet_name') or '').strip() or None,
+        column_mapping=parameters.get('column_mapping') or {},
     )
 
     log('🚀 Lancement du normalizer web V1')
