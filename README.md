@@ -1,11 +1,12 @@
-# CleanMatch Web - Iteration 5
+# CleanMatch Web - Iteration 6
 
-Cette itération ajoute la robustesse des jobs :
-- bouton **Kill job** dans l'UI
-- champ `last_heartbeat`
-- détection et auto-fail des jobs stale via **Celery Beat**
-- garde-fou sur l'espace disque avant lancement et pendant le traitement
-- meilleure gestion des annulations côté worker
+Cette itération ajoute au **Normalizer** :
+- l'analyse de structure du fichier Excel
+- la détection d'onglets et d'entête probable
+- la détection des colonnes visibles
+- des suggestions automatiques de mapping
+- un mapping de colonnes persistant dans le job
+- l'application du mapping côté moteur métier avant nettoyage et matchcode
 
 ## Démarrage
 
@@ -19,7 +20,7 @@ docker compose up --build
 ```bash
 git init
 git add .
-git commit -m "iteration 5 - job robustness"
+git commit -m "iteration 6 - normalizer structure analysis and column mapping"
 ```
 
 ## URLs
@@ -30,17 +31,11 @@ git commit -m "iteration 5 - job robustness"
 
 ## Notes importantes
 
-- le bouton **Kill job** annule proprement les jobs `queued`
-- pour les jobs `running`, l'arrêt s'effectue au prochain checkpoint worker (progress/log/check disque)
-- le service `beat` marque automatiquement en `failed` les jobs `running` sans heartbeat depuis trop longtemps
-- tu peux ajuster les seuils dans `.env`
-
+- le normalizer continue d'écrire les résultats en **CSV UTF-8 avec BOM**
+- pour générer les colonnes de matchcode, il faut mapper au minimum : `address`, `zipcode`, `city`
+- le mapping choisi est stocké dans `parameters_json` du job
+- la robustesse des jobs de l'itération 5 reste incluse : kill job, heartbeat, stale monitoring
 
 ## Environment
 
 Use `.env.example` as the base for `.env`. This iteration keeps compatibility with the previous variable names (`DEBUG`, `SECRET_KEY`, `ALLOWED_HOSTS`, `TIME_ZONE`) and also still accepts the newer `DJANGO_*` aliases.
-
-
-## Patch export normalizer
-
-Le normalizer écrit désormais les résultats en **CSV UTF-8 avec BOM** (`.csv`) afin d'éviter les crashs mémoire liés à l'export Excel sur gros volumes.
