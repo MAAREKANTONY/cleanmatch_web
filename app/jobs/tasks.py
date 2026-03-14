@@ -146,17 +146,17 @@ def _run_matcher_job(job: Job):
         slave_mapping=parameters.get('slave_mapping') or {},
     )
 
-    log('🚀 Lancement du matcher web V2')
+    log('🚀 Lancement du matcher web V3')
     log(f'📂 Master : {master_path.name}')
     log(f'📂 Slave : {slave_path.name}')
-    log('💾 Format de sortie : ZIP contenant all_matches.csv, automatch.csv, review.csv, unmatched.csv et summary.json')
+    log('💾 Format de sortie : ZIP contenant all_matches.csv, automatch.csv, review.csv, unmatched.csv, diagnostics.csv et summary.json')
     result_path = service.run(master_path=master_path, slave_path=slave_path, output_path=output_path, options=options)
 
     job.refresh_from_db()
     JobService.enforce_not_cancelled(job)
     with result_path.open('rb') as fh:
         job.output_file.save(result_path.name, File(fh), save=False)
-    JobService.mark_success(job, message='Matcher V2 terminé avec succès')
+    JobService.mark_success(job, message='Matcher V3 terminé avec succès')
     return str(job.id)
 
 

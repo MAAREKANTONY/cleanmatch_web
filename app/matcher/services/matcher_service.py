@@ -58,6 +58,7 @@ AUTO_REASONS = {
     'hexa_match': 'Hexa identique',
     'phone_match': 'Téléphone identique + proximité',
     'siret_match': 'SIRET identique',
+    'distance_match': 'Coordonnées très proches',
 }
 
 
@@ -192,6 +193,7 @@ class MatcherOptions:
     threshold_name: int = 85
     threshold_voie: int = 70
     top_k_per_master: int = 5
+    threshold_phone_review: int = 100
     master_sheet_name: str | None = None
     slave_sheet_name: str | None = None
     master_mapping: dict[str, str] = field(default_factory=dict)
@@ -219,6 +221,8 @@ class MatcherService:
         self.progress(15, 'Application du mapping et préparation des colonnes')
         df_master = self._apply_mapping(df_master, options.master_mapping, side='master')
         df_slave = self._apply_mapping(df_slave, options.slave_mapping, side='slave')
+        self.log(f'🗺️ Mapping master: {json.dumps(options.master_mapping, ensure_ascii=False)}')
+        self.log(f'🗺️ Mapping slave: {json.dumps(options.slave_mapping, ensure_ascii=False)}')
 
         self.progress(25, 'Enrichissement des colonnes dérivées')
         df_master = self._prepare_dataframe(df_master)
@@ -232,14 +236,19 @@ class MatcherService:
         self.log(f'🧭 Groupes slave indexés: {len(slave_by_zip)} zipcodes, {len(slave_by_city)} villes')
 
         all_matches = []
+        candidate_source_stats = {'zipcode': 0, 'city': 0, 'fallback': 0}
+        strongest_reason_stats: dict[str, int] = {}
         review_rows = []
         unmatched_rows = []
         total = max(len(df_master), 1)
         for idx, (_, master_row) in enumerate(df_master.iterrows(), start=1):
-            candidates = self._get_candidates(master_row, df_slave, slave_by_zip, slave_by_city)
-            matches = self._score_candidates(master_row, candidates, options) if not candidates.empty else []
+            candidates, candidate_source = self._get_candidates(master_row, df_slave, slave_by_zip, slave_by_city)
+            candidate_source_stats[candidate_source] = candidate_source_stats.get(candidate_source, 0) + 1
+            matches = self._score_candidates(master_row, candidates, options, candidate_source) if not candidates.empty else []
             classification = self._classify_master(master_row, matches, options)
             if classification['best_row'] is not None:
+                strongest_reason = classification['best_row'].get('match_reason') or 'N/A'
+                strongest_reason_stats[strongest_reason] = strongest_reason_stats.get(strongest_reason, 0) + 1
                 review_rows.append(classification['best_row']) if classification['best_row']['match_status'] == 'review' else None
             if classification['unmatched_row'] is not None:
                 unmatched_rows.append(classification['unmatched_row'])
@@ -277,6 +286,8 @@ class MatcherService:
             'threshold_name': int(options.threshold_name),
             'threshold_voie': int(options.threshold_voie),
             'top_k_per_master': int(options.top_k_per_master),
+            'candidate_source_stats': candidate_source_stats,
+            'strongest_reason_stats': strongest_reason_stats,
         }
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -289,12 +300,15 @@ class MatcherService:
             auto_path = tmpdir_path / 'automatch.csv'
             review_path = tmpdir_path / 'review.csv'
             unmatched_path = tmpdir_path / 'unmatched.csv'
+            diagnostics_path = tmpdir_path / 'diagnostics.csv'
             summary_path = tmpdir_path / 'summary.json'
 
             all_matches_df.to_csv(all_path, index=False, encoding='utf-8-sig')
             all_matches_df[all_matches_df['match_status'] == 'automatch'].to_csv(auto_path, index=False, encoding='utf-8-sig')
             review_df.to_csv(review_path, index=False, encoding='utf-8-sig')
             unmatched_df.to_csv(unmatched_path, index=False, encoding='utf-8-sig')
+            diagnostics_df = all_matches_df[[c for c in self._diagnostic_columns() if c in all_matches_df.columns]].copy()
+            diagnostics_df.to_csv(diagnostics_path, index=False, encoding='utf-8-sig')
             summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding='utf-8')
 
             with zipfile.ZipFile(output_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
@@ -302,23 +316,28 @@ class MatcherService:
                 zf.write(auto_path, arcname='automatch.csv')
                 zf.write(review_path, arcname='review.csv')
                 zf.write(unmatched_path, arcname='unmatched.csv')
+                zf.write(diagnostics_path, arcname='diagnostics.csv')
                 zf.write(summary_path, arcname='summary.json')
 
         self.log(f"✅ Livrable ZIP écrit: {output_path.name}")
         self.log(f"📊 Résumé matcher: {summary['automatch_rows']} automatch, {summary['review_rows']} review, {summary['unmatched_rows']} unmatched")
+        self.log(f"🧪 Sources de candidats: {candidate_source_stats}")
         self.progress(100, 'Matcher V2 terminé')
         return output_path
 
     def _apply_mapping(self, df: pd.DataFrame, mapping: dict[str, str], side: str) -> pd.DataFrame:
         df = df.copy()
+        missing_mapping_sources = [source for source in mapping.values() if source not in df.columns]
+        if missing_mapping_sources:
+            raise ValueError(f'Le fichier {side} ne contient pas certaines colonnes mappées: {", ".join(sorted(set(missing_mapping_sources)))}')
         reverse = {source: target for target, source in mapping.items() if source in df.columns}
         df = df.rename(columns=reverse)
+        required_missing = [field for field in MATCHER_REQUIRED_FIELDS if field not in reverse.values() and field not in df.columns]
+        if required_missing:
+            raise ValueError(f'Le fichier {side} ne contient pas les colonnes requises après mapping: {", ".join(sorted(required_missing))}')
         for field in MATCHER_MAPPING_FIELDS:
             if field not in df.columns:
                 df[field] = ''
-        missing = [field for field in MATCHER_REQUIRED_FIELDS if field not in reverse.values() and field not in df.columns]
-        if missing:
-            raise ValueError(f'Le fichier {side} ne contient pas les colonnes requises après mapping: {", ".join(sorted(missing))}')
         return df
 
     def _prepare_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -336,16 +355,16 @@ class MatcherService:
         df['cellular_clean'] = df['cellular'].apply(clean_phone_number)
         return df
 
-    def _get_candidates(self, master_row: pd.Series, df_slave: pd.DataFrame, slave_by_zip: dict[str, pd.DataFrame], slave_by_city: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    def _get_candidates(self, master_row: pd.Series, df_slave: pd.DataFrame, slave_by_zip: dict[str, pd.DataFrame], slave_by_city: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, str]:
         zipcode = master_row.get('zipcode_clean', '')
         city = master_row.get('city_clean', '')
         if zipcode and zipcode in slave_by_zip:
-            return slave_by_zip[zipcode]
+            return slave_by_zip[zipcode], 'zipcode'
         if city and city in slave_by_city:
-            return slave_by_city[city]
-        return df_slave.head(5000)
+            return slave_by_city[city], 'city'
+        return df_slave.head(5000), 'fallback'
 
-    def _score_candidates(self, master_row: pd.Series, candidates: pd.DataFrame, options: MatcherOptions) -> list[dict]:
+    def _score_candidates(self, master_row: pd.Series, candidates: pd.DataFrame, options: MatcherOptions, candidate_source: str) -> list[dict]:
         out = []
         master_name = str(master_row.get('name', ''))
         master_city = str(master_row.get('city', ''))
@@ -390,8 +409,10 @@ class MatcherService:
                 automatch = 1; method = 'phone_match'
             elif same_siret:
                 automatch = 1; method = 'siret_match'
+            elif not math.isnan(distance) and distance <= 15 and score_name >= 75:
+                automatch = 1; method = 'distance_match'
 
-            composite_score = round((score_name * 0.48) + (score_voie * 0.24) + (score_city * 0.14) + (score_phone * 0.14), 1)
+            composite_score = round((score_name * 0.44) + (score_voie * 0.22) + (score_city * 0.12) + (score_phone * 0.12) + (10 if same_matchcode else 0) + (8 if same_hexa else 0) + (10 if same_siret else 0), 1)
             match_status = 'automatch' if automatch else self._review_status(score_name, score_voie, score_city, score_phone, same_matchcode, same_hexa, same_siret)
             reason = AUTO_REASONS.get(method, '') if automatch else self._review_reason(score_name, score_voie, score_city, score_phone, same_matchcode, same_hexa, same_siret)
 
@@ -415,6 +436,7 @@ class MatcherService:
                 'same_hexa': same_hexa,
                 'same_siret': same_siret,
                 'distance_meters': None if math.isnan(distance) else round(distance, 2),
+                'candidate_source': candidate_source,
                 'automatch': automatch,
                 'match_status': match_status,
                 'match_method': method,
@@ -434,7 +456,7 @@ class MatcherService:
             return 'review'
         if score_name >= 75 and score_voie >= 75 and score_city >= 80:
             return 'review'
-        if score_phone == 100:
+        if score_phone >= 100:
             return 'review'
         return 'candidate'
 
@@ -446,7 +468,7 @@ class MatcherService:
             reasons.append('Hexa identique')
         if same_matchcode:
             reasons.append('Matchcode identique')
-        if score_phone == 100:
+        if score_phone >= 100:
             reasons.append('Téléphone identique')
         if score_name >= 80:
             reasons.append('Nom proche')
@@ -490,8 +512,16 @@ class MatcherService:
             'master_id', 'master_name', 'master_address', 'master_zipcode', 'master_city',
             'slave_id', 'slave_name', 'slave_address', 'slave_zipcode', 'slave_city',
             'score_name', 'score_voie', 'score_city', 'score_phone', 'composite_score',
-            'same_matchcode', 'same_hexa', 'same_siret', 'distance_meters',
+            'same_matchcode', 'same_hexa', 'same_siret', 'distance_meters', 'candidate_source',
             'automatch', 'match_status', 'match_method', 'match_reason', 'rank_for_master'
+        ]
+
+    @staticmethod
+    def _diagnostic_columns() -> list[str]:
+        return [
+            'master_id', 'slave_id', 'match_status', 'match_reason', 'candidate_source',
+            'score_name', 'score_voie', 'score_city', 'score_phone', 'composite_score',
+            'same_matchcode', 'same_hexa', 'same_siret', 'distance_meters', 'rank_for_master'
         ]
 
     @staticmethod

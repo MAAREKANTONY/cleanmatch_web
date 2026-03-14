@@ -13,7 +13,7 @@ class JobCreateForm(forms.Form):
         choices=[
             (Job.JobType.DEMO, 'Test pipeline'),
             (Job.JobType.NORMALIZER, 'Normalizer (moteur réel V2)'),
-            (Job.JobType.MATCHER, 'Matcher (moteur réel V2)'),
+            (Job.JobType.MATCHER, 'Matcher (moteur réel V3)'),
             (Job.JobType.GEOCODER, 'Geocoder (moteur réel V1)'),
         ],
         initial=Job.JobType.NORMALIZER,
