@@ -68,6 +68,12 @@ COLUMNS_TO_KEEP = {
     'hexa_gmap', 'phone_gmap', 'social_link_gmap'
 }
 
+PREFERRED_OUTPUT_ORDER = [
+    'id', 'name', 'address', 'zipcode', 'city',
+    'chaine', 'matchcode', 'voie', 'num_voie',
+    'lat', 'lng', 'hexa', 'phone', 'website',
+]
+
 _VOIE_STOP_WORDS_LIST = sorted([
     'CENTRE COMMERCIAL', 'DEPARTEMENTALE', 'BOULEVARD', 'AVENUE', 'NATIONALE',
     'CHEMIN', 'ALLEE', 'ROUTE', 'PLACE', 'PL', 'PARKING', 'IMPASSE', 'QUAI',
@@ -392,6 +398,7 @@ class NormalizerService:
         self._log(f"📄 Onglet utilisé : {chosen_sheet}")
         df = pd.read_excel(xls, sheet_name=chosen_sheet)
         self._log(f"✓ Fichier chargé : {len(df)} lignes, {len(df.columns)} colonnes")
+        self._log('🧾 Colonnes détectées : ' + ', '.join(map(str, df.columns.tolist()[:20])) + (' …' if len(df.columns) > 20 else ''))
         self._progress(15, 'Lecture du classeur terminée')
 
         if options.column_mapping:
@@ -411,10 +418,14 @@ class NormalizerService:
         if options.do_matchcode:
             df = self._perform_matchcode(df)
 
+        df = self._reorder_output_columns(df)
+        self._log('🧱 Ordre final des colonnes aligné avec le normalizer desktop')
+
         self._progress(95, 'Écriture du fichier résultat CSV')
         df.to_csv(output_path, index=False, encoding='utf-8-sig')
         self._log(f"✓ Fichier CSV sauvegardé : {output_path.name}")
         self._log(f"📊 Résumé : {len(df)} lignes, {len(df.columns)} colonnes")
+        self._log('✅ Parité normalizer V12 : cleaning, matchcode, chaîne et ordre de sortie consolidés')
         self._progress(100, 'Traitement terminé')
         return output_path
 
@@ -454,6 +465,7 @@ class NormalizerService:
         df = df.drop(columns=columns_to_remove, errors='ignore')
         if columns_to_remove:
             self._log(f"✓ {len(columns_to_remove)} colonnes supprimées")
+            self._log('🗑️ Colonnes supprimées : ' + ', '.join(columns_to_remove[:20]) + (' …' if len(columns_to_remove) > 20 else ''))
         if custom_columns:
             self._log(f"✓ {len(custom_columns)} colonnes personnalisées conservées : {', '.join(custom_columns)}")
 
@@ -475,6 +487,7 @@ class NormalizerService:
         }
         df = df.rename(columns=rename_mapping)
         self._log('✓ Colonnes renommées avec succès')
+        self._log('🧽 Colonnes après nettoyage : ' + ', '.join(map(str, df.columns.tolist()[:20])) + (' …' if len(df.columns) > 20 else ''))
         self._progress(40, 'Nettoyage terminé')
         return df
 
@@ -496,7 +509,8 @@ class NormalizerService:
 
         self._progress(72, 'Calcul des matchcodes')
         df['matchcode'] = df.apply(lambda row: make_matchcode(row['address'], row['zipcode']), axis=1)
-        self._log('✓ Matchcodes générés')
+        matchcode_count = int(df['matchcode'].notna().sum())
+        self._log(f'✓ Matchcodes générés ({matchcode_count}/{len(df)})')
 
         chains_loaded, chains_message = load_chaines_data()
         if chains_message:
@@ -504,7 +518,8 @@ class NormalizerService:
         self._progress(82, 'Recherche des chaînes')
         if 'name' in df.columns and chains_loaded:
             df['chaine'] = df['name'].apply(find_chaine_local)
-            self._log('✓ Recherche des chaînes terminée')
+            chaine_hits = int(df['chaine'].notna().sum())
+            self._log(f'✓ Recherche des chaînes terminée ({chaine_hits} correspondances)')
         else:
             df['chaine'] = None
             self._log("ℹ️ Colonne 'chaine' laissée vide")
@@ -523,3 +538,8 @@ class NormalizerService:
 
         self._progress(90, 'Réorganisation des colonnes terminée')
         return df
+
+    def _reorder_output_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        preferred = [col for col in PREFERRED_OUTPUT_ORDER if col in df.columns]
+        remaining = [col for col in df.columns if col not in preferred]
+        return df[preferred + remaining]
