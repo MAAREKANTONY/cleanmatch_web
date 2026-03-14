@@ -1,3 +1,4 @@
+
 from pathlib import Path
 
 from django.contrib import messages
@@ -35,6 +36,7 @@ def home(request):
 
     stats_raw = Job.objects.values('status').annotate(total=Count('id'))
     stats = {row['status']: row['total'] for row in stats_raw}
+    storage = JobService.media_storage_stats()
     context = {
         'jobs': jobs[:30],
         'stats': {
@@ -43,6 +45,16 @@ def home(request):
             'queued': stats.get(Job.Status.QUEUED, 0),
             'success': stats.get(Job.Status.SUCCESS, 0),
             'failed': stats.get(Job.Status.FAILED, 0),
+        },
+        'storage': {
+            'input_size': JobService.human_bytes(storage['bytes']['inputs']),
+            'output_size': JobService.human_bytes(storage['bytes']['outputs']),
+            'error_size': JobService.human_bytes(storage['bytes']['errors']),
+            'total_size': JobService.human_bytes(storage['bytes']['total']),
+            'input_count': storage['counts']['inputs'],
+            'output_count': storage['counts']['outputs'],
+            'error_count': storage['counts']['errors'],
+            'total_count': storage['counts']['total'],
         },
         'filters': {'job_type': job_type, 'status': status, 'q': q},
         'job_type_choices': Job.JobType.choices,
@@ -93,7 +105,7 @@ def create_job(request):
                     'form': form,
                     'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS,
                     'matcher_mapping_fields': MATCHER_MAPPING_FIELDS,
-                'geocoder_mapping_fields': GEOCODER_MAPPING_FIELDS,
+                    'geocoder_mapping_fields': GEOCODER_MAPPING_FIELDS,
                 })
 
             job = Job.objects.create(
@@ -141,6 +153,53 @@ def cancel_job(request, job_id):
     return JsonResponse({'ok': True, 'job': serializer.data})
 
 
+@require_POST
+def delete_job(request, job_id):
+    job = get_object_or_404(Job, id=job_id)
+    delete_files = request.POST.get('delete_files') == '1'
+    try:
+        JobService.delete_job(job, delete_files=delete_files)
+    except Exception as exc:
+        messages.error(request, str(exc))
+        return redirect('jobs:detail', job_id=job_id)
+    messages.success(request, 'Job supprimé.' + (' Les fichiers liés ont aussi été supprimés.' if delete_files else ''))
+    return redirect('jobs:home')
+
+
+@require_POST
+def cleanup_job_files(request, job_id):
+    job = get_object_or_404(Job, id=job_id)
+    mode = request.POST.get('mode', 'both')
+    try:
+        result = JobService.delete_job_files(
+            job,
+            delete_input=mode in {'input', 'both'},
+            delete_output=mode in {'output', 'both'},
+            delete_error=mode in {'error', 'both', 'output'},
+        )
+    except Exception as exc:
+        messages.error(request, f'Nettoyage impossible : {exc}')
+        return redirect('jobs:detail', job_id=job.id)
+    count = sum(1 for value in result.values() if value)
+    messages.success(request, f'Nettoyage terminé : {count} fichier(s) supprimé(s).')
+    return redirect('jobs:detail', job_id=job.id)
+
+
+@require_POST
+def maintenance_cleanup(request):
+    action = request.POST.get('action', '')
+    if action == 'cleanup_old_jobs':
+        days = int(request.POST.get('days', '30') or '30')
+        result = JobService.cleanup_old_jobs(days=days, delete_files=True)
+        messages.success(request, f"Purge terminée : {result['deleted_jobs']} job(s) supprimé(s), {result['deleted_files']} fichier(s) supprimé(s).")
+    elif action == 'cleanup_orphan_files':
+        result = JobService.cleanup_orphan_files()
+        messages.success(request, f"Nettoyage fichiers orphelins terminé : {result['deleted_count']} fichier(s) supprimé(s).")
+    else:
+        messages.error(request, 'Action de maintenance inconnue.')
+    return redirect('jobs:home')
+
+
 def inspect_excel(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Méthode non autorisée.'}, status=405)
@@ -168,11 +227,10 @@ def inspect_matcher_file(request):
     try:
         payload = inspect_table_file(uploaded)
     except Exception as exc:
-        return JsonResponse({'error': f'Impossible d’inspecter le fichier matcher : {exc}'}, status=400)
+        return JsonResponse({'error': f'Impossible d’inspecter le fichier : {exc}'}, status=400)
     payload['role'] = role
-    payload['matcher_mapping_fields'] = MATCHER_MAPPING_FIELDS
+    payload['mapping_fields'] = MATCHER_MAPPING_FIELDS
     return JsonResponse(payload)
-
 
 
 def inspect_geocoder(request):
@@ -184,6 +242,6 @@ def inspect_geocoder(request):
     try:
         payload = inspect_geocoder_file(uploaded)
     except Exception as exc:
-        return JsonResponse({'error': f'Impossible d’inspecter le fichier geocoder : {exc}'}, status=400)
-    payload['geocoder_mapping_fields'] = GEOCODER_MAPPING_FIELDS
+        return JsonResponse({'error': f'Impossible d’inspecter le fichier : {exc}'}, status=400)
+    payload['mapping_fields'] = GEOCODER_MAPPING_FIELDS
     return JsonResponse(payload)

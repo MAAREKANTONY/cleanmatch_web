@@ -46,3 +46,19 @@ Use `.env.example` as the base for `.env`. This iteration keeps compatibility wi
 - Matcher V1 with master/slave inspection
 - Mapping suggestions for both datasets
 - CSV output for match results
+
+
+## Iteration 11 — Cleaning & maintenance
+
+Nouveautés :
+- suppression d’un job terminé depuis l’UI
+- suppression des fichiers input / output / error d’un job
+- purge des jobs passés depuis le dashboard
+- purge des fichiers orphelins
+
+Commandes utiles :
+
+```bash
+docker compose exec web python manage.py cleanup_jobs --days 30
+docker compose exec web python manage.py cleanup_files
+```
