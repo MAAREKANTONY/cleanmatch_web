@@ -48,7 +48,7 @@ Use `.env.example` as the base for `.env`. This iteration keeps compatibility wi
 - CSV output for match results
 
 
-## Iteration 11 — Cleaning & maintenance
+## Iteration 12 — Cleaning & maintenance
 
 Nouveautés :
 - suppression d’un job terminé depuis l’UI
