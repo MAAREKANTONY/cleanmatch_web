@@ -62,3 +62,11 @@ Commandes utiles :
 docker compose exec web python manage.py cleanup_jobs --days 30
 docker compose exec web python manage.py cleanup_files
 ```
+
+
+## Iteration 13
+
+- Matcher V3 / parity audit
+- `diagnostics.csv` ajouté dans le ZIP matcher
+- statistiques supplémentaires dans `summary.json`
+- tag UI mis à jour vers `Itération 13 — Matcher Parity Audit`
