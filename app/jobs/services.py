@@ -173,132 +173,132 @@ class JobService:
         return updated
 
 
-@staticmethod
-def _safe_delete_field_file(field_file) -> bool:
-    if not field_file:
+    @staticmethod
+    def _safe_delete_field_file(field_file) -> bool:
+        if not field_file:
+            return False
+        try:
+            storage = field_file.storage
+            name = field_file.name
+            if name and storage.exists(name):
+                storage.delete(name)
+                return True
+        except Exception:
+            return False
         return False
-    try:
-        storage = field_file.storage
-        name = field_file.name
-        if name and storage.exists(name):
-            storage.delete(name)
-            return True
-    except Exception:
-        return False
-    return False
 
-@staticmethod
-def delete_job_files(job: Job, delete_input: bool = False, delete_output: bool = False, delete_error: bool = False) -> dict:
-    deleted = {'input_file_1': False, 'input_file_2': False, 'output_file': False, 'error_file': False}
-    if delete_input:
-        deleted['input_file_1'] = JobService._safe_delete_field_file(job.input_file_1)
-        deleted['input_file_2'] = JobService._safe_delete_field_file(job.input_file_2)
-        if job.input_file_1:
-            job.input_file_1 = None
-        if job.input_file_2:
-            job.input_file_2 = None
-    if delete_output:
-        deleted['output_file'] = JobService._safe_delete_field_file(job.output_file)
-        if job.output_file:
-            job.output_file = None
-    if delete_error:
-        deleted['error_file'] = JobService._safe_delete_field_file(job.error_file)
-        if job.error_file:
-            job.error_file = None
-    update_fields = []
-    if delete_input:
-        update_fields += ['input_file_1', 'input_file_2']
-    if delete_output:
-        update_fields += ['output_file']
-    if delete_error:
-        update_fields += ['error_file']
-    if update_fields:
-        job.append_log(f"[{timezone.now().isoformat()}] CLEANUP: delete_input={delete_input} delete_output={delete_output} delete_error={delete_error}")
-        update_fields += ['log_text']
-        job.save(update_fields=update_fields)
-    return deleted
+    @staticmethod
+    def delete_job_files(job: Job, delete_input: bool = False, delete_output: bool = False, delete_error: bool = False) -> dict:
+        deleted = {'input_file_1': False, 'input_file_2': False, 'output_file': False, 'error_file': False}
+        if delete_input:
+            deleted['input_file_1'] = JobService._safe_delete_field_file(job.input_file_1)
+            deleted['input_file_2'] = JobService._safe_delete_field_file(job.input_file_2)
+            if job.input_file_1:
+                job.input_file_1 = None
+            if job.input_file_2:
+                job.input_file_2 = None
+        if delete_output:
+            deleted['output_file'] = JobService._safe_delete_field_file(job.output_file)
+            if job.output_file:
+                job.output_file = None
+        if delete_error:
+            deleted['error_file'] = JobService._safe_delete_field_file(job.error_file)
+            if job.error_file:
+                job.error_file = None
+        update_fields = []
+        if delete_input:
+            update_fields += ['input_file_1', 'input_file_2']
+        if delete_output:
+            update_fields += ['output_file']
+        if delete_error:
+            update_fields += ['error_file']
+        if update_fields:
+            job.append_log(f"[{timezone.now().isoformat()}] CLEANUP: delete_input={delete_input} delete_output={delete_output} delete_error={delete_error}")
+            update_fields += ['log_text']
+            job.save(update_fields=update_fields)
+        return deleted
 
-@staticmethod
-def delete_job(job: Job, delete_files: bool = False) -> None:
-    if job.status in {Job.Status.RUNNING, Job.Status.PENDING}:
-        raise RuntimeError('Impossible de supprimer un job en cours.')
-    if job.status == Job.Status.QUEUED and not job.cancellation_requested:
-        raise RuntimeError('Annule d’abord le job avant de le supprimer.')
-    if delete_files:
-        JobService.delete_job_files(job, delete_input=True, delete_output=True, delete_error=True)
-    job.delete()
-
-@staticmethod
-def media_storage_stats() -> dict:
-    from pathlib import Path
-    from django.conf import settings
-
-    media_root = Path(settings.MEDIA_ROOT)
-    buckets = {'inputs': 0, 'outputs': 0, 'errors': 0, 'temp': 0, 'other': 0, 'total': 0}
-    counts = {'inputs': 0, 'outputs': 0, 'errors': 0, 'temp': 0, 'other': 0, 'total': 0}
-    if not media_root.exists():
-        return {'bytes': buckets, 'counts': counts}
-    for file_path in media_root.rglob('*'):
-        if not file_path.is_file():
-            continue
-        size = file_path.stat().st_size
-        rel = file_path.relative_to(media_root).parts
-        bucket = rel[0] if rel and rel[0] in {'inputs', 'outputs', 'errors', 'temp'} else 'other'
-        buckets[bucket] += size
-        buckets['total'] += size
-        counts[bucket] += 1
-        counts['total'] += 1
-    return {'bytes': buckets, 'counts': counts}
-
-@staticmethod
-def human_bytes(value: int) -> str:
-    units = ['B', 'KB', 'MB', 'GB', 'TB']
-    amount = float(value)
-    for unit in units:
-        if amount < 1024 or unit == units[-1]:
-            return f"{amount:.1f} {unit}" if unit != 'B' else f"{int(amount)} B"
-        amount /= 1024
-
-@staticmethod
-def cleanup_old_jobs(days: int = 30, statuses: tuple[str, ...] | None = None, delete_files: bool = True) -> dict:
-    statuses = statuses or (Job.Status.SUCCESS, Job.Status.FAILED, Job.Status.CANCELLED)
-    cutoff = timezone.now() - timezone.timedelta(days=days)
-    qs = Job.objects.filter(status__in=statuses, created_at__lt=cutoff)
-    deleted_jobs = 0
-    deleted_files = 0
-    for job in qs.iterator():
+    @staticmethod
+    def delete_job(job: Job, delete_files: bool = False) -> None:
+        if job.status in {Job.Status.RUNNING, Job.Status.PENDING}:
+            raise RuntimeError('Impossible de supprimer un job en cours.')
+        if job.status == Job.Status.QUEUED and not job.cancellation_requested:
+            raise RuntimeError('Annule d’abord le job avant de le supprimer.')
         if delete_files:
-            result = JobService.delete_job_files(job, delete_input=True, delete_output=True, delete_error=True)
-            deleted_files += sum(1 for v in result.values() if v)
+            JobService.delete_job_files(job, delete_input=True, delete_output=True, delete_error=True)
         job.delete()
-        deleted_jobs += 1
-    return {'deleted_jobs': deleted_jobs, 'deleted_files': deleted_files}
 
-@staticmethod
-def cleanup_orphan_files() -> dict:
-    from pathlib import Path
-    from django.conf import settings
+    @staticmethod
+    def media_storage_stats() -> dict:
+        from pathlib import Path
+        from django.conf import settings
 
-    media_root = Path(settings.MEDIA_ROOT)
-    media_root.mkdir(parents=True, exist_ok=True)
-    referenced = set()
-    for field_name in ['input_file_1', 'input_file_2', 'output_file', 'error_file']:
-        referenced.update(
-            Job.objects.exclude(**{field_name: ''}).exclude(**{f'{field_name}__isnull': True}).values_list(field_name, flat=True)
-        )
-    deleted = []
-    for folder in ['inputs', 'outputs', 'errors', 'temp']:
-        dir_path = media_root / folder
-        if not dir_path.exists():
-            continue
-        for file_path in dir_path.rglob('*'):
+        media_root = Path(settings.MEDIA_ROOT)
+        buckets = {'inputs': 0, 'outputs': 0, 'errors': 0, 'temp': 0, 'other': 0, 'total': 0}
+        counts = {'inputs': 0, 'outputs': 0, 'errors': 0, 'temp': 0, 'other': 0, 'total': 0}
+        if not media_root.exists():
+            return {'bytes': buckets, 'counts': counts}
+        for file_path in media_root.rglob('*'):
             if not file_path.is_file():
                 continue
-            rel = file_path.relative_to(media_root).as_posix()
-            if rel not in referenced:
-                try:
-                    file_path.unlink()
-                    deleted.append(rel)
-                except FileNotFoundError:
-                    pass
-    return {'deleted_count': len(deleted), 'deleted_files': deleted[:50]}
+            size = file_path.stat().st_size
+            rel = file_path.relative_to(media_root).parts
+            bucket = rel[0] if rel and rel[0] in {'inputs', 'outputs', 'errors', 'temp'} else 'other'
+            buckets[bucket] += size
+            buckets['total'] += size
+            counts[bucket] += 1
+            counts['total'] += 1
+        return {'bytes': buckets, 'counts': counts}
+
+    @staticmethod
+    def human_bytes(value: int) -> str:
+        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        amount = float(value)
+        for unit in units:
+            if amount < 1024 or unit == units[-1]:
+                return f"{amount:.1f} {unit}" if unit != 'B' else f"{int(amount)} B"
+            amount /= 1024
+
+    @staticmethod
+    def cleanup_old_jobs(days: int = 30, statuses: tuple[str, ...] | None = None, delete_files: bool = True) -> dict:
+        statuses = statuses or (Job.Status.SUCCESS, Job.Status.FAILED, Job.Status.CANCELLED)
+        cutoff = timezone.now() - timezone.timedelta(days=days)
+        qs = Job.objects.filter(status__in=statuses, created_at__lt=cutoff)
+        deleted_jobs = 0
+        deleted_files = 0
+        for job in qs.iterator():
+            if delete_files:
+                result = JobService.delete_job_files(job, delete_input=True, delete_output=True, delete_error=True)
+                deleted_files += sum(1 for v in result.values() if v)
+            job.delete()
+            deleted_jobs += 1
+        return {'deleted_jobs': deleted_jobs, 'deleted_files': deleted_files}
+
+    @staticmethod
+    def cleanup_orphan_files() -> dict:
+        from pathlib import Path
+        from django.conf import settings
+
+        media_root = Path(settings.MEDIA_ROOT)
+        media_root.mkdir(parents=True, exist_ok=True)
+        referenced = set()
+        for field_name in ['input_file_1', 'input_file_2', 'output_file', 'error_file']:
+            referenced.update(
+                Job.objects.exclude(**{field_name: ''}).exclude(**{f'{field_name}__isnull': True}).values_list(field_name, flat=True)
+            )
+        deleted = []
+        for folder in ['inputs', 'outputs', 'errors', 'temp']:
+            dir_path = media_root / folder
+            if not dir_path.exists():
+                continue
+            for file_path in dir_path.rglob('*'):
+                if not file_path.is_file():
+                    continue
+                rel = file_path.relative_to(media_root).as_posix()
+                if rel not in referenced:
+                    try:
+                        file_path.unlink()
+                        deleted.append(rel)
+                    except FileNotFoundError:
+                        pass
+        return {'deleted_count': len(deleted), 'deleted_files': deleted[:50]}
