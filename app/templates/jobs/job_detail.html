@@ -85,6 +85,34 @@
     <pre id="job-logs">{{ job.log_text|default:'Pas encore de logs.' }}</pre>
 </section>
 
+
+<section class="card">
+    <div class="toolbar">
+        <div>
+            <h2 style="margin-bottom:6px;">Maintenance de ce job</h2>
+            <div class="muted">Supprime seulement les fichiers, ou le job entier une fois terminé.</div>
+        </div>
+    </div>
+    <div class="grid grid-2" style="margin-top:16px;">
+        <div class="sheet-item">
+            <h3 style="margin-top:0;">Nettoyage des fichiers</h3>
+            <div class="toolbar" style="align-items:flex-end;">
+                <form method="post" action="{% url 'jobs:cleanup_files' job.id %}">{% csrf_token %}<input type="hidden" name="mode" value="input"><button class="btn btn-secondary" type="submit">Supprimer input(s)</button></form>
+                <form method="post" action="{% url 'jobs:cleanup_files' job.id %}">{% csrf_token %}<input type="hidden" name="mode" value="output"><button class="btn btn-secondary" type="submit">Supprimer output/error</button></form>
+                <form method="post" action="{% url 'jobs:cleanup_files' job.id %}">{% csrf_token %}<input type="hidden" name="mode" value="both"><button class="btn btn-danger" type="submit">Supprimer tous les fichiers</button></form>
+            </div>
+        </div>
+        <div class="sheet-item">
+            <h3 style="margin-top:0;">Suppression du job</h3>
+            <p class="muted">Possible seulement pour les jobs terminés. Les jobs <span class="code-inline">running</span> et <span class="code-inline">pending</span> sont protégés.</p>
+            <div class="toolbar" style="align-items:flex-end;">
+                <form method="post" action="{% url 'jobs:delete' job.id %}">{% csrf_token %}<input type="hidden" name="delete_files" value="0"><button class="btn btn-secondary" type="submit">Supprimer le job seulement</button></form>
+                <form method="post" action="{% url 'jobs:delete' job.id %}">{% csrf_token %}<input type="hidden" name="delete_files" value="1"><button class="btn btn-danger" type="submit">Supprimer job + fichiers</button></form>
+            </div>
+        </div>
+    </div>
+</section>
+
 <script>
 (function() {
     const apiUrl = '{% url "jobs:api_detail" job.id %}';

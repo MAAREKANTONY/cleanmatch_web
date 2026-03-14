@@ -1,33 +1,64 @@
+
 {% extends 'base.html' %}
 {% block content %}
 <section class="hero">
-    <span class="pill">Itération 10</span>
-    <h1 style="margin:14px 0 10px 0; font-size:2.1rem; letter-spacing:-.04em;">Tableau de bord des jobs — Iteration 10</h1>
+    <span class="pill">Itération 11</span>
+    <h1 style="margin:14px 0 10px 0; font-size:2.1rem; letter-spacing:-.04em;">Tableau de bord des jobs — Iteration 11</h1>
     <p>
-        Cette itération ajoute un tag de version visible dans l'interface et ouvre le module Geocoder V1 en plus du Normalizer et du Matcher.
+        Cette itération ajoute les fonctions de cleaning et de maintenance pour supprimer les jobs passés,
+        nettoyer les fichiers d’input/output et purger les fichiers orphelins du serveur.
     </p>
 </section>
 
 <section class="cards">
-    <div class="kpi">
-        <div class="metric-value">{{ stats.total }}</div>
-        <div class="metric-label">Jobs au total</div>
+    <div class="kpi"><div class="metric-value">{{ stats.total }}</div><div class="metric-label">Jobs au total</div></div>
+    <div class="kpi"><div class="metric-value">{{ stats.running }}</div><div class="metric-label">En cours</div></div>
+    <div class="kpi"><div class="metric-value">{{ stats.queued }}</div><div class="metric-label">En file</div></div>
+    <div class="kpi"><div class="metric-value">{{ stats.success }}</div><div class="metric-label">Terminés</div></div>
+    <div class="kpi"><div class="metric-value">{{ stats.failed }}</div><div class="metric-label">En erreur</div></div>
+</section>
+
+<section class="cards" style="margin-bottom:20px;">
+    <div class="kpi"><div class="metric-value">{{ storage.total_size }}</div><div class="metric-label">Stockage media total</div></div>
+    <div class="kpi"><div class="metric-value">{{ storage.input_size }}</div><div class="metric-label">Inputs ({{ storage.input_count }})</div></div>
+    <div class="kpi"><div class="metric-value">{{ storage.output_size }}</div><div class="metric-label">Outputs ({{ storage.output_count }})</div></div>
+    <div class="kpi"><div class="metric-value">{{ storage.error_size }}</div><div class="metric-label">Errors ({{ storage.error_count }})</div></div>
+</section>
+
+<section class="card">
+    <div class="toolbar">
+        <div>
+            <h2 style="margin-bottom:6px;">Maintenance</h2>
+            <div class="muted">Nettoie les jobs terminés et les fichiers orphelins sans passer par le shell.</div>
+        </div>
     </div>
-    <div class="kpi">
-        <div class="metric-value">{{ stats.running }}</div>
-        <div class="metric-label">En cours</div>
-    </div>
-    <div class="kpi">
-        <div class="metric-value">{{ stats.queued }}</div>
-        <div class="metric-label">En file</div>
-    </div>
-    <div class="kpi">
-        <div class="metric-value">{{ stats.success }}</div>
-        <div class="metric-label">Terminés</div>
-    </div>
-    <div class="kpi">
-        <div class="metric-value">{{ stats.failed }}</div>
-        <div class="metric-label">En erreur</div>
+    <div class="grid grid-2" style="margin-top:16px;">
+        <div class="sheet-item">
+            <h3 style="margin-top:0;">Purger les jobs terminés</h3>
+            <p class="muted">Supprime les jobs <span class="code-inline">success / failed / cancelled</span> plus vieux que X jours, ainsi que leurs fichiers.</p>
+            <form method="post" action="{% url 'jobs:maintenance_cleanup' %}" class="toolbar">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="cleanup_old_jobs">
+                <label class="field" style="min-width:160px;">
+                    <span>Âge minimum (jours)</span>
+                    <select name="days">
+                        <option value="7">7 jours</option>
+                        <option value="30" selected>30 jours</option>
+                        <option value="90">90 jours</option>
+                    </select>
+                </label>
+                <button class="btn btn-danger" type="submit">Purger les jobs passés</button>
+            </form>
+        </div>
+        <div class="sheet-item">
+            <h3 style="margin-top:0;">Supprimer les fichiers orphelins</h3>
+            <p class="muted">Retire du serveur les fichiers présents dans <span class="code-inline">media/</span> qui ne sont plus rattachés à aucun job.</p>
+            <form method="post" action="{% url 'jobs:maintenance_cleanup' %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="cleanup_orphan_files">
+                <button class="btn btn-secondary" type="submit">Nettoyer les fichiers orphelins</button>
+            </form>
+        </div>
     </div>
 </section>
 
