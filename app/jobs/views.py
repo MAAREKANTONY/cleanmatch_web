@@ -10,6 +10,7 @@ from rest_framework.response import Response
 
 from normalizer.services.normalizer_service import CANONICAL_MAPPING_FIELDS, inspect_excel_workbook
 from matcher.services.matcher_service import MATCHER_MAPPING_FIELDS, inspect_table_file
+from geocoder.services.geocoder_service import GEOCODER_MAPPING_FIELDS, inspect_geocoder_file
 
 from .forms import JobCreateForm
 from .models import Job
@@ -76,6 +77,13 @@ def create_job(request):
                     'master_mapping': form.get_matcher_mapping_payload(form.cleaned_data, 'master'),
                     'slave_mapping': form.get_matcher_mapping_payload(form.cleaned_data, 'slave'),
                 })
+            elif form.cleaned_data['job_type'] == Job.JobType.GEOCODER:
+                parameters.update({
+                    'geocoder_sheet_name': (form.cleaned_data.get('geocoder_sheet_name') or '').strip() or None,
+                    'geocoder_provider': (form.cleaned_data.get('geocoder_provider') or 'existing_or_nominatim').strip(),
+                    'country_hint': (form.cleaned_data.get('geocoder_country_hint') or '').strip(),
+                    'geocoder_mapping': form.get_geocoder_mapping_payload(form.cleaned_data),
+                })
 
             try:
                 JobService.ensure_disk_space(str(Path('media').resolve()))
@@ -85,6 +93,7 @@ def create_job(request):
                     'form': form,
                     'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS,
                     'matcher_mapping_fields': MATCHER_MAPPING_FIELDS,
+                'geocoder_mapping_fields': GEOCODER_MAPPING_FIELDS,
                 })
 
             job = Job.objects.create(
@@ -106,6 +115,7 @@ def create_job(request):
         'form': form,
         'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS,
         'matcher_mapping_fields': MATCHER_MAPPING_FIELDS,
+        'geocoder_mapping_fields': GEOCODER_MAPPING_FIELDS,
     })
 
 
@@ -161,4 +171,19 @@ def inspect_matcher_file(request):
         return JsonResponse({'error': f'Impossible d’inspecter le fichier matcher : {exc}'}, status=400)
     payload['role'] = role
     payload['matcher_mapping_fields'] = MATCHER_MAPPING_FIELDS
+    return JsonResponse(payload)
+
+
+
+def inspect_geocoder(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Méthode non autorisée.'}, status=405)
+    uploaded = request.FILES.get('file') or request.FILES.get('input_file_1')
+    if not uploaded:
+        return JsonResponse({'error': 'Aucun fichier fourni.'}, status=400)
+    try:
+        payload = inspect_geocoder_file(uploaded)
+    except Exception as exc:
+        return JsonResponse({'error': f'Impossible d’inspecter le fichier geocoder : {exc}'}, status=400)
+    payload['geocoder_mapping_fields'] = GEOCODER_MAPPING_FIELDS
     return JsonResponse(payload)

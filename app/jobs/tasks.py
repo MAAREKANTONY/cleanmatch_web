@@ -11,6 +11,7 @@ from jobs.models import Job
 from jobs.services import JobCancelledError, JobService
 from normalizer.services.normalizer_service import NormalizerOptions, NormalizerService
 from matcher.services.matcher_service import MatcherOptions, MatcherService
+from geocoder.services.geocoder_service import GeocoderOptions, GeocoderService
 
 
 def _read_text_preview(path: str, limit: int = 4000) -> str:
@@ -42,6 +43,8 @@ def run_uploaded_job(self, job_id: str):
             return _run_normalizer_job(job)
         if job.job_type == Job.JobType.MATCHER:
             return _run_matcher_job(job)
+        if job.job_type == Job.JobType.GEOCODER:
+            return _run_geocoder_job(job)
         return _run_stub_job(job, input_path, second_input_path)
     except JobCancelledError as exc:
         job.refresh_from_db()
@@ -157,6 +160,46 @@ def _run_matcher_job(job: Job):
     return str(job.id)
 
 
+
+def _run_geocoder_job(job: Job):
+    parameters = job.parameters_json or {}
+    input_path = Path(job.input_file_1.path)
+    output_name = f"{input_path.stem}_geocoded.csv"
+    output_path = Path(job.output_file.field.storage.path(f'outputs/{output_name}'))
+
+    def progress(percent: int, message: str) -> None:
+        job.refresh_from_db()
+        JobService.enforce_not_cancelled(job)
+        JobService.ensure_disk_space(_job_storage_root())
+        JobService.update_progress(job, percent, message)
+
+    def log(message: str) -> None:
+        job.refresh_from_db()
+        JobService.enforce_not_cancelled(job)
+        JobService.append_runtime_log(job, message)
+
+    service = GeocoderService(progress_callback=progress, log_callback=log)
+    options = GeocoderOptions(
+        provider=(parameters.get('geocoder_provider') or 'existing_or_nominatim'),
+        geocoder_sheet_name=parameters.get('geocoder_sheet_name') or None,
+        geocoder_mapping=parameters.get('geocoder_mapping') or {},
+        country_hint=parameters.get('country_hint') or '',
+        cache_db_path=Path(settings.MEDIA_ROOT) / 'cache' / 'geocode_cache_web.sqlite3',
+    )
+
+    log('🚀 Lancement du geocoder web V1')
+    log(f'📂 Fichier source : {input_path.name}')
+    log(f"🧭 Provider : {options.provider}")
+    log('💾 Format de sortie : CSV UTF-8 avec lat/lng, geocoder_status, geocoder_source et geocoder_label')
+    result_path = service.run(input_path=input_path, output_path=output_path, options=options)
+
+    job.refresh_from_db()
+    JobService.enforce_not_cancelled(job)
+    with result_path.open('rb') as fh:
+        job.output_file.save(result_path.name, File(fh), save=False)
+    JobService.mark_success(job, message='Geocoder V1 terminé avec succès')
+    return str(job.id)
+
 def _run_stub_job(job: Job, input_path: str, second_input_path: str):
     JobService.update_progress(job, 5, 'Vérification des fichiers uploadés')
     time.sleep(1)
@@ -201,7 +244,7 @@ def _run_stub_job(job: Job, input_path: str, second_input_path: str):
         'Aperçu du fichier principal (premiers octets décodés en UTF-8 avec remplacement) :',
         preview,
         '',
-        'Normalizer branché. Matcher et Geocoder restent encore en stub technique.',
+        'Normalizer et Matcher branchés. Geocoder V1 est désormais disponible.',
     ]
     output_name = f'result_{job.id}.txt'
     output_content = '\n'.join(output_lines)

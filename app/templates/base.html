@@ -50,6 +50,7 @@
         .brand-title { color: white; font-weight: 800; letter-spacing: -.03em; font-size: 1.4rem; }
         .brand-subtitle { color: #cbd5e1; font-size: .95rem; margin-top: 4px; }
         .top-actions { display:flex; gap:10px; flex-wrap:wrap; }
+        .iteration-tag { display:inline-flex; align-items:center; gap:8px; background:#f8fafc; color:#0f172a; border-radius:999px; padding:8px 12px; font-weight:800; border:1px solid rgba(255,255,255,.18); }
         .btn {
             display:inline-flex; align-items:center; justify-content:center; gap:8px;
             border: 0; border-radius: 12px; padding: 12px 18px; font-weight: 700;
@@ -174,9 +175,10 @@
     <div class="container topbar">
         <div>
             <div class="brand-title"><a href="/" style="color:white;">CleanMatch Web</a></div>
-            <div class="brand-subtitle">Itération 8 — Matcher V1 + inspection master/slave</div>
+            <div class="brand-subtitle">Plateforme de traitements longs avec jobs asynchrones</div>
         </div>
         <div class="top-actions">
+            <span class="iteration-tag">Itération 10 — Geocoder V1</span>
             <a class="btn btn-ghost" href="{% url 'jobs:home' %}">Dashboard</a>
             <a class="btn" href="{% url 'jobs:new' %}">Nouveau job</a>
         </div>
