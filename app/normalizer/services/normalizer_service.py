@@ -52,7 +52,7 @@ COUNTRY_PROFILES = {
         'company_suffixes': ['sarl', 'sas', 'sa', 'eurl', 'sasu', 'scop'],
     },
     'IT': {
-        'street_types': ['via', 'viale', 'piazza', 'corso', 'largo', 'strada', 'vicolo', 'piazzale', 'contrada', 'lungomare', 'vicolo', 'galleria'],
+        'street_types': ['via', 'viale', 'piazza', 'corso', 'largo', 'strada', 'vicolo', 'piazzale', 'contrada', 'lungomare', 'galleria'],
         'postcode_regex': r'^\d{5}$',
         'legal_id_type': 'partita_iva_or_codice_fiscale',
         'legal_prefixes': ['it'],
@@ -119,9 +119,9 @@ REQUIRED_MATCHCODE_FIELDS = {'address', 'zipcode', 'city'}
 COLUMN_ALIASES = {
     'id': ['id', 'identifier', 'identifiant', 'outlet_id', 'store_id', 'restaurant_id'],
     'name': ['name', 'nom', 'raison sociale', 'enseigne', 'outlet_name', 'store_name', 'ragione sociale'],
-    'address': ['address', 'adresse', 'adresse1', 'street', 'rue', 'addr', 'full_address', 'indirizzo', 'direccion', 'dirección', 'strasse', 'straat'],
-    'zipcode': ['zipcode', 'zip', 'postal_code', 'code_postal', 'cp', 'post_code', 'cap', 'postcode', 'plz'],
-    'city': ['city', 'ville', 'commune', 'town', 'citta', 'città', 'ciudad', 'stadt', 'gemeente'],
+    'address': ['address', 'adresse', 'adresse1', 'street', 'rue', 'addr', 'full_address', 'final_address', 'legaladdress', 'legal_address', 'indirizzo', 'direccion', 'dirección', 'strasse', 'straat'],
+    'zipcode': ['zipcode', 'zip', 'postal_code', 'code_postal', 'cp', 'post_code', 'cap', 'postcode', 'plz', 'legalzipcode', 'legal_zipcode', 'legalpostalcode', 'legal_postal_code'],
+    'city': ['city', 'ville', 'commune', 'town', 'locality', 'citta', 'città', 'ciudad', 'stadt', 'gemeente', 'legalcity', 'legal_city'],
     'country': ['country', 'pays', 'country_code', 'nation', 'paese', 'pais', 'país', 'land'],
     'legal_id': ['legal_id', 'siret', 'siren', 'vat', 'vat_number', 'partita_iva', 'piva', 'codice_fiscale', 'nif', 'cif', 'btw', 'kvk', 'company_number', 'ust_id', 'ustid'],
     'lat': ['lat', 'latitude'],
@@ -628,11 +628,13 @@ class NormalizerService:
         if options.column_mapping:
             df = self._apply_column_mapping(df, options.column_mapping)
 
-        if 'country' not in df.columns or df['country'].isna().all():
+        df = self._apply_alias_fallbacks(df)
+
+        if 'country' not in df.columns or self._series_is_blank(df, 'country'):
             df['country'] = chosen_country
             self._log(f"🌍 Colonne country injectée avec la valeur par défaut : {chosen_country}")
         else:
-            df['country'] = df['country'].apply(normalize_country_code)
+            df['country'] = self._safe_text_series(df, 'country').apply(normalize_country_code)
             self._log('🌍 Colonne country normalisée à partir du fichier source')
 
         if options.do_matchcode:
@@ -651,12 +653,13 @@ class NormalizerService:
 
         df = self._reorder_output_columns(df)
         self._log('🧱 Ordre final des colonnes aligné avec le normalizer desktop')
+        self._log_runtime_stats(df, chosen_country)
 
         self._progress(95, 'Écriture du fichier résultat CSV')
         df.to_csv(output_path, index=False, encoding='utf-8-sig')
         self._log(f"✓ Fichier CSV sauvegardé : {output_path.name}")
         self._log(f"📊 Résumé : {len(df)} lignes, {len(df.columns)} colonnes")
-        self._log('✅ V14 multi-country Europe : adresses, codes postaux et legal_id normalisés')
+        self._log('✅ V15 stabilisation multi-country : alias, fallbacks et garde-fous anti-régression actifs')
         self._progress(100, 'Traitement terminé')
         return output_path
 
@@ -713,7 +716,49 @@ class NormalizerService:
                     df.drop(columns=df.columns[idx], inplace=True)
             self._log(f"⚠️ Colonnes dupliquées consolidées pour '{column_name}'")
             return df[column_name] if isinstance(df[column_name], pd.Series) else merged
-        return pd.Series(dtype='object')
+        return pd.Series([''] * len(df), index=df.index, dtype='object')
+
+    def _safe_text_series(self, df: pd.DataFrame, column_name: str, default: str = '') -> pd.Series:
+        if column_name not in df.columns:
+            return pd.Series([default] * len(df), index=df.index, dtype='object')
+        series = self._coerce_column_to_series(df, column_name)
+        return series.fillna(default).astype(str)
+
+    def _series_is_blank(self, df: pd.DataFrame, column_name: str) -> bool:
+        series = self._safe_text_series(df, column_name)
+        return bool(series.str.strip().eq('').all())
+
+    def _find_alias_source(self, df: pd.DataFrame, target: str) -> str | None:
+        existing = {normalized_label(col): str(col) for col in df.columns}
+        for alias in COLUMN_ALIASES.get(target, []):
+            candidate = existing.get(normalized_label(alias))
+            if candidate and candidate != target:
+                return candidate
+        return None
+
+    def _merge_prefer_target(self, target_series: pd.Series, source_series: pd.Series) -> pd.Series:
+        target_text = target_series.fillna('').astype(str)
+        source_text = source_series.fillna('').astype(str)
+        target_empty = target_text.str.strip().eq('')
+        return target_text.where(~target_empty, source_text)
+
+    def _apply_alias_fallbacks(self, df: pd.DataFrame) -> pd.DataFrame:
+        applied: list[str] = []
+        for target in CANONICAL_MAPPING_FIELDS:
+            source = self._find_alias_source(df, target)
+            if not source:
+                continue
+            if target not in df.columns:
+                df[target] = self._coerce_column_to_series(df, source)
+                applied.append(f"{source} → {target}")
+                continue
+            merged = self._merge_prefer_target(self._coerce_column_to_series(df, target), self._coerce_column_to_series(df, source))
+            if not merged.equals(self._coerce_column_to_series(df, target)):
+                df[target] = merged
+                applied.append(f"{source} → {target} (fallback)")
+        if applied:
+            self._log('🧩 Fallback alias auto-appliqué : ' + ', '.join(applied))
+        return df
 
     def _perform_cleaning(self, df: pd.DataFrame, chosen_country: str) -> pd.DataFrame:
         self._log('--- Nettoyage des données ---')
@@ -723,7 +768,7 @@ class NormalizerService:
         custom_columns = []
         for col in df.columns:
             if col not in COLUMNS_TO_KEEP:
-                if col in REFERENCE_COLUMNS or 'gmap' in col.lower():
+                if col in REFERENCE_COLUMNS or 'gmap' in str(col).lower():
                     columns_to_remove.append(col)
                 else:
                     custom_columns.append(col)
@@ -733,7 +778,7 @@ class NormalizerService:
             self._log(f"✓ {len(columns_to_remove)} colonnes supprimées")
             self._log('🗑️ Colonnes supprimées : ' + ', '.join(columns_to_remove[:20]) + (' …' if len(columns_to_remove) > 20 else ''))
         if custom_columns:
-            self._log(f"✓ {len(custom_columns)} colonnes personnalisées conservées : {', '.join(custom_columns)}")
+            self._log(f"✓ {len(custom_columns)} colonnes personnalisées conservées : {', '.join(map(str, custom_columns))}")
 
         old_columns_to_drop = []
         if 'hexa' in df.columns and 'hexa_gmap' in df.columns:
@@ -759,16 +804,16 @@ class NormalizerService:
 
         for col in ['name', 'address', 'city']:
             if col in df.columns:
-                df[col] = df[col].fillna('').astype(str).str.strip()
+                df[col] = self._safe_text_series(df, col).str.strip()
         if 'country' in df.columns:
-            df['country'] = df['country'].fillna(chosen_country).astype(str).apply(normalize_country_code)
+            df['country'] = self._safe_text_series(df, 'country', default=chosen_country).apply(normalize_country_code)
         if 'zipcode' in df.columns:
             df['zipcode'] = df.apply(lambda row: normalize_postcode(row.get('zipcode'), row.get('country') or chosen_country), axis=1)
         if 'legal_id' in df.columns:
             df['legal_id'] = df.apply(lambda row: normalize_legal_id(row.get('legal_id'), row.get('country') or chosen_country), axis=1)
             df['legal_id_type'] = df.apply(lambda row: infer_legal_id_type(row.get('legal_id'), row.get('country') or chosen_country), axis=1)
-            legal_series = self._coerce_column_to_series(df, 'legal_id')
-            legal_hits = int(legal_series.fillna('').astype(str).str.len().gt(0).sum())
+            legal_series = self._safe_text_series(df, 'legal_id')
+            legal_hits = int(legal_series.str.len().gt(0).sum())
             self._log(f"🆔 legal_id normalisé ({legal_hits}/{len(df)})")
         else:
             df['legal_id_type'] = ''
@@ -784,10 +829,10 @@ class NormalizerService:
 
         for col in ['name', 'address', 'zipcode', 'city', 'country']:
             if col in df.columns:
-                df[col] = self._coerce_column_to_series(df, col).fillna('').astype(str)
+                df[col] = self._safe_text_series(df, col)
         if 'country' not in df.columns:
             df['country'] = chosen_country
-        df['country'] = df['country'].apply(normalize_country_code)
+        df['country'] = self._safe_text_series(df, 'country', default=chosen_country).apply(normalize_country_code)
         if 'zipcode' in df.columns:
             df['zipcode'] = df.apply(lambda row: normalize_postcode(row['zipcode'], row.get('country') or chosen_country), axis=1)
 
@@ -826,6 +871,19 @@ class NormalizerService:
 
         self._progress(90, 'Réorganisation des colonnes terminée')
         return df
+
+    def _log_runtime_stats(self, df: pd.DataFrame, chosen_country: str) -> None:
+        self._log('--- Audit anti-régression normalizer ---')
+        self._log(f"📈 Lignes traitées : {len(df)}")
+        if 'country' in df.columns:
+            country_counts = self._safe_text_series(df, 'country', default=chosen_country).replace('', chosen_country).value_counts().to_dict()
+            formatted = ', '.join(f"{code}={count}" for code, count in country_counts.items())
+            self._log(f"🌍 Répartition pays : {formatted}")
+        for col in ['address', 'zipcode', 'city', 'legal_id', 'matchcode']:
+            if col in df.columns:
+                series = self._safe_text_series(df, col)
+                missing = int(series.str.strip().eq('').sum())
+                self._log(f"📉 {col} vides : {missing}/{len(df)}")
 
     def _reorder_output_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         preferred = [col for col in PREFERRED_OUTPUT_ORDER if col in df.columns]
