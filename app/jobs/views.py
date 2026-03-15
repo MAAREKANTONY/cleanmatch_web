@@ -203,46 +203,48 @@ def maintenance_cleanup(request):
 
 def inspect_excel(request):
     if request.method != 'POST':
-        return JsonResponse({'error': 'Méthode non autorisée.'}, status=405)
+        return JsonResponse({'ok': False, 'error': 'Méthode non autorisée.'}, status=405)
     uploaded = request.FILES.get('input_file_1')
     if not uploaded:
-        return JsonResponse({'error': 'Aucun fichier fourni.'}, status=400)
+        return JsonResponse({'ok': False, 'error': 'Aucun fichier fourni.'}, status=400)
     filename = uploaded.name.lower()
     allowed_ext = {'.xlsx', '.xlsm', '.xltx', '.xltm'}
     if not any(filename.endswith(ext) for ext in allowed_ext):
-        return JsonResponse({'error': 'Inspection disponible uniquement pour les fichiers Excel.'}, status=400)
+        return JsonResponse({'ok': False, 'error': 'Inspection disponible uniquement pour les fichiers Excel.'}, status=400)
     try:
         sheets = inspect_excel_workbook(uploaded)
     except Exception as exc:
-        return JsonResponse({'error': f'Impossible de lire le fichier Excel : {exc}'}, status=400)
-    return JsonResponse({'filename': Path(uploaded.name).name, 'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS, 'sheets': sheets})
+        return JsonResponse({'ok': False, 'error': f'Impossible de lire le fichier Excel : {exc}'}, status=400)
+    return JsonResponse({'ok': True, 'filename': Path(uploaded.name).name, 'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS, 'sheets': sheets})
 
 
 def inspect_matcher_file(request):
     if request.method != 'POST':
-        return JsonResponse({'error': 'Méthode non autorisée.'}, status=405)
+        return JsonResponse({'ok': False, 'error': 'Méthode non autorisée.'}, status=405)
     uploaded = request.FILES.get('file')
     role = request.POST.get('role', 'master')
     if not uploaded:
-        return JsonResponse({'error': 'Aucun fichier fourni.'}, status=400)
+        return JsonResponse({'ok': False, 'error': 'Aucun fichier fourni.'}, status=400)
     try:
         payload = inspect_table_file(uploaded)
     except Exception as exc:
-        return JsonResponse({'error': f'Impossible d’inspecter le fichier : {exc}'}, status=400)
+        return JsonResponse({'ok': False, 'error': f'Impossible d’inspecter le fichier : {exc}'}, status=400)
     payload['role'] = role
     payload['mapping_fields'] = MATCHER_MAPPING_FIELDS
+    payload['ok'] = True
     return JsonResponse(payload)
 
 
 def inspect_geocoder(request):
     if request.method != 'POST':
-        return JsonResponse({'error': 'Méthode non autorisée.'}, status=405)
+        return JsonResponse({'ok': False, 'error': 'Méthode non autorisée.'}, status=405)
     uploaded = request.FILES.get('file') or request.FILES.get('input_file_1')
     if not uploaded:
-        return JsonResponse({'error': 'Aucun fichier fourni.'}, status=400)
+        return JsonResponse({'ok': False, 'error': 'Aucun fichier fourni.'}, status=400)
     try:
         payload = inspect_geocoder_file(uploaded)
     except Exception as exc:
-        return JsonResponse({'error': f'Impossible d’inspecter le fichier : {exc}'}, status=400)
+        return JsonResponse({'ok': False, 'error': f'Impossible d’inspecter le fichier : {exc}'}, status=400)
     payload['mapping_fields'] = GEOCODER_MAPPING_FIELDS
+    payload['ok'] = True
     return JsonResponse(payload)
