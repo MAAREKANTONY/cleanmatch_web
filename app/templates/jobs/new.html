@@ -3,14 +3,14 @@
 <section class="hero">
     <div style="display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:flex-start;">
         <div>
-            <span class="pill">Itération 13</span>
+            <span class="pill">Itération 14</span>
             <h1 style="margin:14px 0 10px 0; font-size:2rem; letter-spacing:-.04em;">Normalizer + Matcher + Geocoder</h1>
             <p>
-                Cette itération ajoute le <strong>Geocoder V1</strong> avec inspection de fichier, mapping guidé, provider configurable
-                et sortie CSV enrichie en <span class="code-inline">lat</span>/<span class="code-inline">lng</span>.
+                Cette itération finalise le <strong>Normalizer multi-country Europe V1</strong> avec profils pays,
+                normalisation d’adresses, codes postaux et identifiants légaux pour plusieurs pays européens.
             </p>
         </div>
-        <div class="iteration-tag" style="background:rgba(255,255,255,.18); color:white; border-color:rgba(255,255,255,.22);">Version active : Iteration 10</div>
+        <div class="iteration-tag" style="background:rgba(255,255,255,.18); color:white; border-color:rgba(255,255,255,.22);">Version active : Iteration 14 — Normalizer Multi-country Europe</div>
     </div>
 </section>
 
@@ -59,11 +59,18 @@
                 <label class="check-item">{{ form.normalizer_do_clean }} <span><strong>{{ form.normalizer_do_clean.label }}</strong><br><span class="muted small">Nettoyage et harmonisation.</span></span></label>
                 <label class="check-item">{{ form.normalizer_do_matchcode }} <span><strong>{{ form.normalizer_do_matchcode.label }}</strong><br><span class="muted small">Nécessite address, zipcode, city.</span></span></label>
             </div>
-            <div class="field">
-                <label for="id_normalizer_sheet_name">{{ form.normalizer_sheet_name.label }}</label>
-                {{ form.normalizer_sheet_name }}
-                <datalist id="sheet-options"></datalist>
-                <div class="field-help">{{ form.normalizer_sheet_name.help_text }}</div>
+            <div class="grid grid-2">
+                <div class="field">
+                    <label for="id_normalizer_country_code">{{ form.normalizer_country_code.label }}</label>
+                    {{ form.normalizer_country_code }}
+                    <div class="field-help">Profil pays appliqué au parsing d’adresse, au code postal et au legal_id.</div>
+                </div>
+                <div class="field">
+                    <label for="id_normalizer_sheet_name">{{ form.normalizer_sheet_name.label }}</label>
+                    {{ form.normalizer_sheet_name }}
+                    <datalist id="sheet-options"></datalist>
+                    <div class="field-help">{{ form.normalizer_sheet_name.help_text }}</div>
+                </div>
             </div>
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
                 <button class="btn btn-secondary" type="button" id="inspect-btn">Inspecter la feuille de calcul</button>

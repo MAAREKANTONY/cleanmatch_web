@@ -1,6 +1,6 @@
 from django import forms
 
-from normalizer.services.normalizer_service import CANONICAL_MAPPING_FIELDS, REQUIRED_MATCHCODE_FIELDS
+from normalizer.services.normalizer_service import CANONICAL_MAPPING_FIELDS, REQUIRED_MATCHCODE_FIELDS, EUROPE_COUNTRY_CHOICES
 from matcher.services.matcher_service import MATCHER_MAPPING_FIELDS, MATCHER_REQUIRED_FIELDS
 from geocoder.services.geocoder_service import GEOCODER_MAPPING_FIELDS, GEOCODER_REQUIRED_FIELDS
 
@@ -12,7 +12,7 @@ class JobCreateForm(forms.Form):
         label='Type de job',
         choices=[
             (Job.JobType.DEMO, 'Test pipeline'),
-            (Job.JobType.NORMALIZER, 'Normalizer (moteur réel V2)'),
+            (Job.JobType.NORMALIZER, 'Normalizer (moteur réel V14 Europe)'),
             (Job.JobType.MATCHER, 'Matcher (moteur réel V3)'),
             (Job.JobType.GEOCODER, 'Geocoder (moteur réel V1)'),
         ],
@@ -22,6 +22,7 @@ class JobCreateForm(forms.Form):
     input_file_2 = forms.FileField(label='Second fichier (optionnel)', required=False)
     normalizer_do_clean = forms.BooleanField(label='Nettoyage des colonnes', required=False, initial=True)
     normalizer_do_matchcode = forms.BooleanField(label='Génération matchcode / voie / num_voie', required=False, initial=True)
+    normalizer_country_code = forms.ChoiceField(label='Pays principal', required=False, choices=EUROPE_COUNTRY_CHOICES, initial='FR')
     normalizer_sheet_name = forms.CharField(
         label='Nom de l’onglet Excel (optionnel)',
         required=False,

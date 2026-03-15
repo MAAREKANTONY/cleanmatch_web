@@ -77,6 +77,7 @@ def create_job(request):
                     'do_clean': form.cleaned_data['normalizer_do_clean'],
                     'do_matchcode': form.cleaned_data['normalizer_do_matchcode'],
                     'sheet_name': form.cleaned_data['normalizer_sheet_name'].strip(),
+                    'country_code': (form.cleaned_data.get('normalizer_country_code') or 'FR').strip() or 'FR',
                     'column_mapping': form.get_mapping_payload(form.cleaned_data),
                 })
             elif form.cleaned_data['job_type'] == Job.JobType.MATCHER:

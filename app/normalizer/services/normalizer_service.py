@@ -19,17 +19,111 @@ CHAINES_DATA_AVAILABLE = False
 CHAINES_REGEX = None
 CHAINES_LOOKUP: dict[str, str] = {}
 
+EUROPE_COUNTRY_CHOICES = [
+    ('', 'Auto / non précisé'),
+    ('FR', 'France'),
+    ('IT', 'Italie'),
+    ('ES', 'Espagne'),
+    ('DE', 'Allemagne'),
+    ('BE', 'Belgique'),
+    ('NL', 'Pays-Bas'),
+    ('GB', 'Royaume-Uni'),
+    ('PT', 'Portugal'),
+]
+
+COUNTRY_NAME_TO_CODE = {
+    'france': 'FR', 'fr': 'FR',
+    'italy': 'IT', 'italia': 'IT', 'italie': 'IT', 'it': 'IT',
+    'spain': 'ES', 'espana': 'ES', 'españa': 'ES', 'espagne': 'ES', 'es': 'ES',
+    'germany': 'DE', 'deutschland': 'DE', 'allemagne': 'DE', 'de': 'DE',
+    'belgium': 'BE', 'belgique': 'BE', 'belgie': 'BE', 'belgië': 'BE', 'be': 'BE',
+    'netherlands': 'NL', 'pays bas': 'NL', 'pays-bas': 'NL', 'nederland': 'NL', 'holland': 'NL', 'nl': 'NL',
+    'united kingdom': 'GB', 'uk': 'GB', 'gb': 'GB', 'great britain': 'GB', 'royaume uni': 'GB', 'royaume-uni': 'GB', 'england': 'GB',
+    'portugal': 'PT', 'pt': 'PT',
+}
+
+COUNTRY_PROFILES = {
+    'FR': {
+        'street_types': ['rue', 'avenue', 'av', 'boulevard', 'bd', 'route', 'rte', 'chemin', 'allée', 'allee', 'place', 'impasse', 'quai', 'cours', 'route nationale', 'route departementale', 'parking', 'zone', 'zac', 'zi', 'zc'],
+        'postcode_regex': r'^\d{5}$',
+        'legal_id_type': 'siret_or_siren',
+        'legal_prefixes': ['fr'],
+        'number_suffixes': ['bis', 'ter', 'quater', 'quinquies', 'sexies'],
+        'company_suffixes': ['sarl', 'sas', 'sa', 'eurl', 'sasu', 'scop'],
+    },
+    'IT': {
+        'street_types': ['via', 'viale', 'piazza', 'corso', 'largo', 'strada', 'vicolo', 'piazzale', 'contrada', 'lungomare', 'vicolo', 'galleria'],
+        'postcode_regex': r'^\d{5}$',
+        'legal_id_type': 'partita_iva_or_codice_fiscale',
+        'legal_prefixes': ['it'],
+        'number_suffixes': ['bis', 'ter'],
+        'company_suffixes': ['srl', 'spa', 'snc', 'sas', 'societa', 'società'],
+    },
+    'ES': {
+        'street_types': ['calle', 'avenida', 'avda', 'plaza', 'paseo', 'camino', 'carretera', 'ronda', 'carrer', 'travessia', 'travesia'],
+        'postcode_regex': r'^\d{5}$',
+        'legal_id_type': 'nif_or_cif',
+        'legal_prefixes': ['es'],
+        'number_suffixes': ['bis'],
+        'company_suffixes': ['sl', 'slu', 'sa', 'scoop'],
+    },
+    'DE': {
+        'street_types': ['strasse', 'straße', 'platz', 'weg', 'allee', 'chaussee', 'ring', 'ufer', 'damm', 'gasse', 'markt'],
+        'postcode_regex': r'^\d{5}$',
+        'legal_id_type': 'vat_or_company_id',
+        'legal_prefixes': ['de'],
+        'number_suffixes': [],
+        'company_suffixes': ['gmbh', 'ag', 'ug', 'kg', 'ohg'],
+    },
+    'BE': {
+        'street_types': ['rue', 'avenue', 'chaussée', 'chaussee', 'boulevard', 'place', 'steenweg', 'straat', 'laan', 'plein'],
+        'postcode_regex': r'^\d{4}$',
+        'legal_id_type': 'vat_or_enterprise_number',
+        'legal_prefixes': ['be'],
+        'number_suffixes': ['bis'],
+        'company_suffixes': ['sprl', 'srl', 'sa', 'bv', 'nv'],
+    },
+    'NL': {
+        'street_types': ['straat', 'laan', 'plein', 'weg', 'markt', 'kade', 'hof', 'singel'],
+        'postcode_regex': r'^\d{4}\s?[A-Z]{2}$',
+        'legal_id_type': 'kvk_or_vat',
+        'legal_prefixes': ['nl'],
+        'number_suffixes': [],
+        'company_suffixes': ['bv', 'nv', 'vof'],
+    },
+    'GB': {
+        'street_types': ['street', 'st', 'road', 'rd', 'avenue', 'ave', 'lane', 'ln', 'close', 'court', 'way', 'drive', 'dr', 'high street'],
+        'postcode_regex': r'^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$',
+        'legal_id_type': 'company_or_vat',
+        'legal_prefixes': ['gb', 'uk'],
+        'number_suffixes': [],
+        'company_suffixes': ['ltd', 'limited', 'plc', 'llp'],
+    },
+    'PT': {
+        'street_types': ['rua', 'avenida', 'av', 'travessa', 'largo', 'praça', 'praca', 'estrada', 'alameda'],
+        'postcode_regex': r'^\d{4}-?\d{3}$',
+        'legal_id_type': 'nif',
+        'legal_prefixes': ['pt'],
+        'number_suffixes': [],
+        'company_suffixes': ['lda', 'sa'],
+    },
+}
+DEFAULT_COUNTRY_CODE = 'FR'
+SUPPORTED_COUNTRY_CODES = [code for code, _ in EUROPE_COUNTRY_CHOICES if code]
+
 CANONICAL_MAPPING_FIELDS = [
-    'id', 'name', 'address', 'zipcode', 'city',
+    'id', 'name', 'address', 'zipcode', 'city', 'country', 'legal_id',
     'lat', 'lng', 'hexa_gmap', 'phone_gmap', 'social_link_gmap',
 ]
 REQUIRED_MATCHCODE_FIELDS = {'address', 'zipcode', 'city'}
 COLUMN_ALIASES = {
     'id': ['id', 'identifier', 'identifiant', 'outlet_id', 'store_id', 'restaurant_id'],
-    'name': ['name', 'nom', 'raison sociale', 'enseigne', 'outlet_name', 'store_name'],
-    'address': ['address', 'adresse', 'adresse1', 'street', 'rue', 'addr', 'full_address'],
-    'zipcode': ['zipcode', 'zip', 'postal_code', 'code_postal', 'cp', 'post_code'],
-    'city': ['city', 'ville', 'commune', 'town'],
+    'name': ['name', 'nom', 'raison sociale', 'enseigne', 'outlet_name', 'store_name', 'ragione sociale'],
+    'address': ['address', 'adresse', 'adresse1', 'street', 'rue', 'addr', 'full_address', 'indirizzo', 'direccion', 'dirección', 'strasse', 'straat'],
+    'zipcode': ['zipcode', 'zip', 'postal_code', 'code_postal', 'cp', 'post_code', 'cap', 'postcode', 'plz'],
+    'city': ['city', 'ville', 'commune', 'town', 'citta', 'città', 'ciudad', 'stadt', 'gemeente'],
+    'country': ['country', 'pays', 'country_code', 'nation', 'paese', 'pais', 'país', 'land'],
+    'legal_id': ['legal_id', 'siret', 'siren', 'vat', 'vat_number', 'partita_iva', 'piva', 'codice_fiscale', 'nif', 'cif', 'btw', 'kvk', 'company_number', 'ust_id', 'ustid'],
     'lat': ['lat', 'latitude'],
     'lng': ['lng', 'lon', 'long', 'longitude'],
     'hexa_gmap': ['hexa_gmap', 'hexa', 'hexa_code'],
@@ -38,8 +132,8 @@ COLUMN_ALIASES = {
 }
 
 REFERENCE_COLUMNS = {
-    'id', 'hexa', 'name', 'address', 'zipcode', 'city', 'lat', 'lng',
-    'vat', 'siren', 'siret', 'phone', 'email', 'website', 'voie',
+    'id', 'hexa', 'name', 'address', 'zipcode', 'city', 'country', 'lat', 'lng',
+    'vat', 'siren', 'siret', 'phone', 'email', 'website', 'voie', 'legal_id', 'legal_id_type',
     'num_voie', 'accessibility_gmap', 'activities_gmap', 'activity_gmap',
     'address_gmap', 'address_comp_gmap', 'advice_gmap', 'all_bookings_gmap',
     'all_deliveries_gmap', 'all_services_gmap', 'amenities_gmap',
@@ -64,29 +158,28 @@ REFERENCE_COLUMNS = {
 }
 
 COLUMNS_TO_KEEP = {
-    'id', 'name', 'address', 'zipcode', 'city', 'lat', 'lng',
+    'id', 'name', 'address', 'zipcode', 'city', 'country', 'legal_id', 'lat', 'lng',
     'hexa_gmap', 'phone_gmap', 'social_link_gmap'
 }
 
 PREFERRED_OUTPUT_ORDER = [
-    'id', 'name', 'address', 'zipcode', 'city',
+    'id', 'name', 'address', 'zipcode', 'city', 'country',
+    'legal_id_type', 'legal_id',
     'chaine', 'matchcode', 'voie', 'num_voie',
     'lat', 'lng', 'hexa', 'phone', 'website',
 ]
 
-_VOIE_STOP_WORDS_LIST = sorted([
-    'CENTRE COMMERCIAL', 'DEPARTEMENTALE', 'BOULEVARD', 'AVENUE', 'NATIONALE',
-    'CHEMIN', 'ALLEE', 'ROUTE', 'PLACE', 'PL', 'PARKING', 'IMPASSE', 'QUAI',
-    'CCIAL', 'LES', 'DES', 'AUX', 'BVD', 'RTE', 'AVE', 'IMP', 'CHEM', 'CHE',
-    'ALL', 'LE', 'LA', 'DU', 'DE', 'ET', 'DES', 'AU', 'AUX', 'LES', 'BD',
-    'BLD', 'BLVD', 'AV', 'B', 'A', 'D', 'L', 'R', 'RUE', 'NAT', 'DPT', 'NTL',
-    'RN', 'RD', 'AIRE', 'ZONE', 'ZAC', 'ZI', 'ZC'
-], key=len, reverse=True)
 
-_VOIE_STOP_WORDS_PATTERN = re.compile(
-    r'(' + '|'.join(re.escape(w) for w in _VOIE_STOP_WORDS_LIST) + r'|[a-zA-Z]\.)',
-    flags=re.IGNORECASE,
-)
+def _build_stopword_pattern(street_types: list[str]) -> re.Pattern:
+    sorted_words = sorted(set(street_types), key=len, reverse=True)
+    escaped = '|'.join(re.escape(word) for word in sorted_words)
+    return re.compile(rf'\b({escaped}|[a-zA-Z]\.)\b', flags=re.IGNORECASE)
+
+
+COUNTRY_STOPWORD_PATTERNS = {
+    code: _build_stopword_pattern(profile['street_types'])
+    for code, profile in COUNTRY_PROFILES.items()
+}
 
 
 def _noop_progress(percent: int, message: str) -> None:
@@ -99,6 +192,20 @@ def _noop_log(message: str) -> None:
 
 def normalized_label(value: str) -> str:
     return slugify(str(value or ''), separator='_')
+
+
+def normalize_country_code(value: str | None) -> str:
+    raw = slugify(str(value or ''), separator=' ')
+    raw = re.sub(r'\s+', ' ', raw).strip()
+    if not raw:
+        return DEFAULT_COUNTRY_CODE
+    if raw.upper() in COUNTRY_PROFILES:
+        return raw.upper()
+    return COUNTRY_NAME_TO_CODE.get(raw, DEFAULT_COUNTRY_CODE)
+
+
+def country_profile(country_code: str | None) -> dict:
+    return COUNTRY_PROFILES.get(normalize_country_code(country_code), COUNTRY_PROFILES[DEFAULT_COUNTRY_CODE])
 
 
 def suggest_column_mapping(columns: list[str]) -> dict[str, str]:
@@ -195,6 +302,14 @@ def _sample_validation_warnings(ws, detected_columns: list[str], suggestions: di
                 f"{invalid_points} coordonnées lat/lng semblent invalides sur {checked_points} lignes de l’échantillon."
             )
 
+    legal_col = suggestions.get('legal_id')
+    if legal_col and sample_rows:
+        ratio = emptiness_ratio(legal_col)
+        if ratio >= 0.6:
+            warnings.append(
+                f"La colonne suggérée '{legal_col}' pour legal_id semble vide à {int(ratio * 100)}% sur l’échantillon."
+            )
+
     return warnings
 
 
@@ -246,7 +361,7 @@ def load_chaines_data() -> tuple[bool, str | None]:
         df = df.sort_values(by='keyword_len', ascending=False)
 
         CHAINES_LOOKUP = pd.Series(df.name.values, index=df.slug_keyword).to_dict()
-        bounded_keywords = [r'' + re.escape(k) + r'' for k in df['slug_keyword']]
+        bounded_keywords = [r'\b' + re.escape(k) + r'\b' for k in df['slug_keyword']]
         CHAINES_REGEX = re.compile('|'.join(bounded_keywords)) if bounded_keywords else None
         CHAINES_DATA_AVAILABLE = True
         return True, f"Chaînes chargées : {len(df)} mots-clés"
@@ -260,37 +375,139 @@ def contains_at_least_one_number(value) -> bool:
     return bool(re.search(r'\d', str(value)))
 
 
-def _find_raw_num_voie_match(address) -> str | None:
+def normalize_postcode(value, country_code: str | None) -> str:
+    if pd.isna(value) or value is None:
+        return ''
+    country_code = normalize_country_code(country_code)
+    raw = str(value).strip().upper()
+    raw = re.sub(r'\.0$', '', raw)
+    raw = re.sub(r'[^A-Z0-9\- ]', '', raw)
+    compact = re.sub(r'\s+', '', raw)
+    if country_code in {'FR', 'IT', 'ES', 'DE'}:
+        digits = re.sub(r'\D', '', compact)
+        return digits.zfill(5) if digits and len(digits) <= 5 else digits[:5]
+    if country_code == 'BE':
+        digits = re.sub(r'\D', '', compact)
+        return digits.zfill(4) if digits and len(digits) <= 4 else digits[:4]
+    if country_code == 'NL':
+        m = re.match(r'^(\d{4})([A-Z]{2})$', compact)
+        return f"{m.group(1)} {m.group(2)}" if m else compact
+    if country_code == 'GB':
+        compact = compact.replace(' ', '')
+        return f"{compact[:-3]} {compact[-3:]}".strip() if len(compact) > 3 else compact
+    if country_code == 'PT':
+        digits = re.sub(r'\D', '', compact)
+        return f"{digits[:4]}-{digits[4:7]}" if len(digits) >= 7 else digits
+    return compact
+
+
+def infer_legal_id_type(value, country_code: str | None) -> str:
+    country_code = normalize_country_code(country_code)
+    cleaned = normalize_legal_id(value, country_code)
+    if not cleaned:
+        return ''
+    if country_code == 'FR':
+        if cleaned.isdigit() and len(cleaned) == 14:
+            return 'siret'
+        if cleaned.isdigit() and len(cleaned) == 9:
+            return 'siren'
+    if country_code == 'IT':
+        if cleaned.isdigit() and len(cleaned) == 11:
+            return 'partita_iva'
+        if len(cleaned) == 16:
+            return 'codice_fiscale'
+    if country_code == 'ES' and len(cleaned) == 9:
+        return 'nif_cif'
+    if country_code == 'BE' and cleaned.isdigit() and len(cleaned) == 10:
+        return 'enterprise_number'
+    if country_code == 'NL':
+        if cleaned.isdigit() and len(cleaned) == 8:
+            return 'kvk'
+        return 'btw_or_kvk'
+    if country_code == 'GB':
+        if cleaned.isdigit() and len(cleaned) == 8:
+            return 'company_number'
+        return 'vat_or_company_number'
+    if country_code == 'PT' and cleaned.isdigit() and len(cleaned) == 9:
+        return 'nif'
+    return country_profile(country_code).get('legal_id_type', 'legal_id')
+
+
+def normalize_legal_id(value, country_code: str | None) -> str:
+    if pd.isna(value) or value is None:
+        return ''
+    country_code = normalize_country_code(country_code)
+    raw = str(value).upper().strip()
+    raw = re.sub(r'[^A-Z0-9]', '', raw)
+    for prefix in country_profile(country_code).get('legal_prefixes', []):
+        prefix_upper = prefix.upper()
+        if raw.startswith(prefix_upper) and len(raw) > len(prefix_upper):
+            raw = raw[len(prefix_upper):]
+            break
+    if country_code == 'FR':
+        digits = re.sub(r'\D', '', raw)
+        if len(digits) >= 14:
+            return digits[:14]
+        if len(digits) >= 9:
+            return digits[:9]
+        return digits
+    if country_code == 'IT':
+        if raw.isdigit() and len(raw) >= 11:
+            return raw[:11]
+        return raw[:16]
+    if country_code == 'ES':
+        return raw[:9]
+    if country_code == 'BE':
+        digits = re.sub(r'\D', '', raw)
+        return digits[:10]
+    if country_code == 'NL':
+        if raw.isdigit():
+            return raw[:8]
+        return raw[:14]
+    if country_code == 'GB':
+        return raw[:12]
+    if country_code == 'PT':
+        digits = re.sub(r'\D', '', raw)
+        return digits[:9]
+    return raw
+
+
+def _find_raw_num_voie_match(address, country_code: str | None = None) -> str | None:
     if pd.isna(address):
         return None
     address = str(address)
-    patterns = [r'(\d+)', r'(\d+[a-zA-Z]*)|([a-zA-Z]+\d+)']
+    patterns = [
+        r'\b(\d+[A-Z]?)\b',
+        r'\b(\d+[/\-]\d+)\b',
+        r'\b([A-Z]?\d+[A-Z]?)\b',
+    ]
     for pattern in patterns:
-        match = re.search(pattern, address)
+        match = re.search(pattern, address, flags=re.IGNORECASE)
         if match:
-            return match.group(0)
+            return match.group(1)
     return None
 
 
-def detect_num_voie(address) -> str | None:
-    raw_match = _find_raw_num_voie_match(address)
+def detect_num_voie(address, country_code: str | None = None) -> str | None:
+    raw_match = _find_raw_num_voie_match(address, country_code)
     if raw_match:
-        return re.sub(r'[\s\-_]', '', raw_match)
+        return re.sub(r'[\s_]', '', raw_match).upper()
     return None
 
 
-def detect_voie(address) -> str | None:
+def detect_voie(address, country_code: str | None = None) -> str | None:
     if pd.isna(address):
         return None
+    country_code = normalize_country_code(country_code)
     address_str = str(address)
-    raw_num_voie = _find_raw_num_voie_match(address_str)
+    raw_num_voie = _find_raw_num_voie_match(address_str, country_code)
     if raw_num_voie:
-        initial_voie = address_str.replace(raw_num_voie, '', 1).strip()
+        initial_voie = address_str.replace(raw_num_voie, '', 1).strip(' ,-/')
     else:
         initial_voie = address_str.strip()
     if not initial_voie:
         return initial_voie
-    cleaned_voie = _VOIE_STOP_WORDS_PATTERN.sub('', initial_voie)
+    cleaned_voie = COUNTRY_STOPWORD_PATTERNS.get(country_code, COUNTRY_STOPWORD_PATTERNS[DEFAULT_COUNTRY_CODE]).sub('', initial_voie)
     processed_voie = slugify(cleaned_voie, separator=' ').upper()
     processed_voie = ' '.join(processed_voie.split())
     if not processed_voie:
@@ -298,10 +515,11 @@ def detect_voie(address) -> str | None:
     return processed_voie
 
 
-def make_matchcode(address, zipcode) -> str | None:
+def make_matchcode(address, zipcode, country_code: str | None = None) -> str | None:
     if pd.isna(address) or pd.isna(zipcode) or not address or not zipcode:
         return None
-    zipcode = str(zipcode).replace(' ', '').strip()
+    country_code = normalize_country_code(country_code)
+    zipcode = normalize_postcode(zipcode, country_code)
     address_proc = str(address).replace('-', ' ').replace("'", ' ')
     words = [word for word in address_proc.split() if word]
     if not words:
@@ -322,7 +540,7 @@ def make_matchcode(address, zipcode) -> str | None:
         number_candidate = words[-2]
 
     if not number_candidate:
-        match = re.search(r'(\d+[a-zA-Z]*)', address_proc)
+        match = re.search(r'\b(\d+[A-Z]?)\b', address_proc, flags=re.IGNORECASE)
         if match:
             number_candidate = match.group(1)
             parts = address_proc.split(number_candidate, 1)
@@ -334,12 +552,12 @@ def make_matchcode(address, zipcode) -> str | None:
 
     final_number = number_candidate
     addr_slug = slugify(address_proc, separator=' ')
-    for suffix in ["bis", "ter", "quater", "quinquies", "sexies"]:
+    for suffix in country_profile(country_code).get('number_suffixes', []):
         if f"{slugify(final_number)} {suffix}" in addr_slug:
             final_number = f"{final_number}{suffix}"
             break
 
-    return f"{zipcode}-{slugify(last_word)}-{slugify(final_number)}"
+    return f"{country_code}-{zipcode}-{slugify(last_word)}-{slugify(final_number)}"
 
 
 def find_chaine_local(name: str) -> str | None:
@@ -360,6 +578,7 @@ class NormalizerOptions:
     do_matchcode: bool = True
     sheet_name: str | None = None
     column_mapping: dict[str, str] = field(default_factory=dict)
+    country_code: str | None = None
 
 
 class NormalizerService:
@@ -383,6 +602,11 @@ class NormalizerService:
         if input_path.suffix.lower() not in {'.xlsx', '.xlsm', '.xltx', '.xltm'}:
             raise ValueError('Le normalizer V1 web supporte uniquement les fichiers Excel .xlsx/.xlsm/.xltx/.xltm.')
 
+        chosen_country = normalize_country_code(options.country_code)
+        profile = country_profile(chosen_country)
+        self._log(f"🌍 Profil pays utilisé : {chosen_country} ({dict(EUROPE_COUNTRY_CHOICES).get(chosen_country, chosen_country)})")
+        self._log(f"🧾 Spécificités actives : adresses={len(profile['street_types'])} types de voie, legal_id={profile['legal_id_type']}")
+
         self._progress(5, 'Analyse du fichier Excel')
         xls = pd.ExcelFile(input_path)
         sheet_names = xls.sheet_names
@@ -404,6 +628,13 @@ class NormalizerService:
         if options.column_mapping:
             df = self._apply_column_mapping(df, options.column_mapping)
 
+        if 'country' not in df.columns or df['country'].isna().all():
+            df['country'] = chosen_country
+            self._log(f"🌍 Colonne country injectée avec la valeur par défaut : {chosen_country}")
+        else:
+            df['country'] = df['country'].apply(normalize_country_code)
+            self._log('🌍 Colonne country normalisée à partir du fichier source')
+
         if options.do_matchcode:
             missing = sorted(REQUIRED_MATCHCODE_FIELDS - set(df.columns))
             if missing:
@@ -413,10 +644,10 @@ class NormalizerService:
                 )
 
         if options.do_clean:
-            df = self._perform_cleaning(df)
+            df = self._perform_cleaning(df, chosen_country)
 
         if options.do_matchcode:
-            df = self._perform_matchcode(df)
+            df = self._perform_matchcode(df, chosen_country)
 
         df = self._reorder_output_columns(df)
         self._log('🧱 Ordre final des colonnes aligné avec le normalizer desktop')
@@ -425,7 +656,7 @@ class NormalizerService:
         df.to_csv(output_path, index=False, encoding='utf-8-sig')
         self._log(f"✓ Fichier CSV sauvegardé : {output_path.name}")
         self._log(f"📊 Résumé : {len(df)} lignes, {len(df.columns)} colonnes")
-        self._log('✅ Parité normalizer V12 : cleaning, matchcode, chaîne et ordre de sortie consolidés')
+        self._log('✅ V14 multi-country Europe : adresses, codes postaux et legal_id normalisés')
         self._progress(100, 'Traitement terminé')
         return output_path
 
@@ -449,7 +680,7 @@ class NormalizerService:
             df = df.rename(columns=reverse_mapping)
         return df
 
-    def _perform_cleaning(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _perform_cleaning(self, df: pd.DataFrame, chosen_country: str) -> pd.DataFrame:
         self._log('--- Nettoyage des données ---')
         self._progress(25, 'Nettoyage des colonnes')
 
@@ -486,29 +717,46 @@ class NormalizerService:
             'social_link_gmap': 'website',
         }
         df = df.rename(columns=rename_mapping)
-        self._log('✓ Colonnes renommées avec succès')
+
+        for col in ['name', 'address', 'city']:
+            if col in df.columns:
+                df[col] = df[col].fillna('').astype(str).str.strip()
+        if 'country' in df.columns:
+            df['country'] = df['country'].fillna(chosen_country).apply(normalize_country_code)
+        if 'zipcode' in df.columns:
+            df['zipcode'] = df.apply(lambda row: normalize_postcode(row.get('zipcode'), row.get('country') or chosen_country), axis=1)
+        if 'legal_id' in df.columns:
+            df['legal_id'] = df.apply(lambda row: normalize_legal_id(row.get('legal_id'), row.get('country') or chosen_country), axis=1)
+            df['legal_id_type'] = df.apply(lambda row: infer_legal_id_type(row.get('legal_id'), row.get('country') or chosen_country), axis=1)
+            legal_hits = int(df['legal_id'].astype(str).str.len().gt(0).sum())
+            self._log(f"🆔 legal_id normalisé ({legal_hits}/{len(df)})")
+        else:
+            df['legal_id_type'] = ''
+
+        self._log('✓ Colonnes renommées et harmonisées avec succès')
         self._log('🧽 Colonnes après nettoyage : ' + ', '.join(map(str, df.columns.tolist()[:20])) + (' …' if len(df.columns) > 20 else ''))
         self._progress(40, 'Nettoyage terminé')
         return df
 
-    def _perform_matchcode(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _perform_matchcode(self, df: pd.DataFrame, chosen_country: str) -> pd.DataFrame:
         self._log('--- Génération des matchcodes ---')
         self._progress(50, 'Préparation des colonnes address/zipcode/city')
 
-        for col in ["name", "address", "zipcode", "city"]:
+        for col in ['name', 'address', 'zipcode', 'city', 'country']:
             if col in df.columns:
                 df[col] = df[col].fillna('').astype(str)
-                if col == 'zipcode':
-                    df[col] = df[col].str.replace(r'\.0$', '', regex=True)
-                    df[col] = df[col].str.strip()
-                    df[col] = df[col].apply(lambda x: x.zfill(5) if x.isdigit() and len(x) > 0 else x)
+        if 'country' not in df.columns:
+            df['country'] = chosen_country
+        df['country'] = df['country'].apply(normalize_country_code)
+        if 'zipcode' in df.columns:
+            df['zipcode'] = df.apply(lambda row: normalize_postcode(row['zipcode'], row.get('country') or chosen_country), axis=1)
 
         self._progress(60, 'Calcul des colonnes num_voie et voie')
-        df['num_voie'] = df['address'].apply(detect_num_voie)
-        df['voie'] = df['address'].apply(detect_voie)
+        df['num_voie'] = df.apply(lambda row: detect_num_voie(row['address'], row.get('country') or chosen_country), axis=1)
+        df['voie'] = df.apply(lambda row: detect_voie(row['address'], row.get('country') or chosen_country), axis=1)
 
         self._progress(72, 'Calcul des matchcodes')
-        df['matchcode'] = df.apply(lambda row: make_matchcode(row['address'], row['zipcode']), axis=1)
+        df['matchcode'] = df.apply(lambda row: make_matchcode(row['address'], row['zipcode'], row.get('country') or chosen_country), axis=1)
         matchcode_count = int(df['matchcode'].notna().sum())
         self._log(f'✓ Matchcodes générés ({matchcode_count}/{len(df)})')
 
@@ -527,7 +775,7 @@ class NormalizerService:
         cols = df.columns.tolist()
         if 'city' in cols:
             city_index = cols.index('city')
-            new_cols_order = ['chaine', 'matchcode', 'voie', 'num_voie']
+            new_cols_order = ['country', 'legal_id_type', 'legal_id', 'chaine', 'matchcode', 'voie', 'num_voie']
             for column in new_cols_order:
                 if column in cols:
                     cols.remove(column)
