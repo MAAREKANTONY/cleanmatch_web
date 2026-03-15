@@ -70,3 +70,9 @@ docker compose exec web python manage.py cleanup_files
 - `diagnostics.csv` ajouté dans le ZIP matcher
 - statistiques supplémentaires dans `summary.json`
 - tag UI mis à jour vers `Itération 13 — Matcher Parity Audit`
+
+
+## Iteration 14 — Normalizer Multi-country Europe V1
+- profils pays: FR, IT, ES, DE, BE, NL, GB, PT
+- normalisation address / postcode / legal_id
+- nouveau champ `country_code` dans le flow normalizer

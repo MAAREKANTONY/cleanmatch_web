@@ -84,9 +84,10 @@ def _run_normalizer_job(job: Job):
         do_matchcode=bool(parameters.get('do_matchcode', True)),
         sheet_name=(parameters.get('sheet_name') or '').strip() or None,
         column_mapping=parameters.get('column_mapping') or {},
+        country_code=(parameters.get('country_code') or 'FR'),
     )
 
-    log('🚀 Lancement du normalizer web V1')
+    log('🚀 Lancement du normalizer web V14 Europe')
     log(f'📂 Fichier source : {input_path.name}')
     log('💾 Format de sortie : CSV UTF-8 (compatible gros volumes)')
     result_path = service.run(input_path=input_path, output_path=output_path, options=options)
