@@ -281,19 +281,28 @@
 
     function buildMappingCard(grid, fields, requiredSet, prefix, columns, suggestions) {
         grid.innerHTML = '';
-        const options = ['<option value="__ignore__">Ignorer</option>'].concat(columns.map(col => `<option value="${escapeHtml(col)}">${escapeHtml(col)}</option>`)).join('');
+        const safeColumns = Array.isArray(columns) ? columns : [];
+        const safeSuggestions = suggestions && typeof suggestions === 'object' ? suggestions : {};
+        const options = ['<option value="__ignore__">Ignorer</option>']
+            .concat(safeColumns.map(col => `<option value="${escapeHtml(col)}">${escapeHtml(col)}</option>`))
+            .join('');
         fields.forEach(field => {
             const hidden = document.getElementById(`${prefix}${field}`);
+            const currentValue = hidden ? hidden.value : '';
             const card = document.createElement('div');
             card.className = 'mapping-item' + (requiredSet.has(field) ? ' required' : '');
             card.innerHTML = `
                 <strong>${titleForField(field)}</strong>
-                <div class="preview-labels">${requiredSet.has(field) ? '<span class="mini-badge required">Requis</span>' : ''}${suggestions[field] ? '<span class="mini-badge">Auto-détecté</span>' : ''}</div>
+                <div class="preview-labels">${requiredSet.has(field) ? '<span class="mini-badge required">Requis</span>' : ''}${safeSuggestions[field] ? '<span class="mini-badge">Auto-détecté</span>' : ''}</div>
                 <select>${options}</select>`;
             const select = card.querySelector('select');
-            select.value = suggestions[field] || hidden.value || '__ignore__';
-            hidden.value = select.value === '__ignore__' ? '' : select.value;
-            select.addEventListener('change', () => { hidden.value = select.value === '__ignore__' ? '' : select.value; });
+            select.value = safeSuggestions[field] || currentValue || '__ignore__';
+            if (hidden) {
+                hidden.value = select.value === '__ignore__' ? '' : select.value;
+                select.addEventListener('change', () => {
+                    hidden.value = select.value === '__ignore__' ? '' : select.value;
+                });
+            }
             grid.appendChild(card);
         });
     }
@@ -392,9 +401,9 @@
         try {
             const response = await fetch('{% url "jobs:inspect_excel" %}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
             const data = await response.json();
-            if (!response.ok) { inspectStatus.textContent = data.error || 'Inspection impossible.'; return; }
+            if (!response.ok || data.ok === false) { inspectStatus.textContent = data.error || 'Inspection impossible.'; return; }
             renderNormalizerInspection(data); inspectStatus.textContent = `${data.sheets.length} onglet(s) détecté(s) dans ${data.filename}.`;
-        } catch (error) { inspectStatus.textContent = 'Erreur réseau pendant l’inspection.'; }
+        } catch (error) { inspectStatus.textContent = error && error.message ? error.message : 'Erreur pendant l’inspection.'; }
         finally { inspectBtn.disabled = false; }
     }
 
@@ -403,7 +412,7 @@
         formData.append('file', file); formData.append('role', role);
         const response = await fetch('{% url "jobs:inspect_matcher_file" %}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Inspection matcher impossible.');
+        if (!response.ok || data.ok === false) throw new Error(data.error || 'Inspection matcher impossible.');
         return data;
     }
 
@@ -446,7 +455,7 @@
         try {
             const response = await fetch('{% url "jobs:inspect_geocoder" %}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
             const data = await response.json();
-            if (!response.ok) { inspectGeocoderStatus.textContent = data.error || 'Inspection geocoder impossible.'; return; }
+            if (!response.ok || data.ok === false) { inspectGeocoderStatus.textContent = data.error || 'Inspection geocoder impossible.'; return; }
             data.sheets.forEach((sheet, index) => geocoderInspectionResults.appendChild(renderGeocoderSheetCard(sheet, index)));
             const selected = data.sheets[0];
             geocoderSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
@@ -455,7 +464,7 @@
             geocoderMappingCard.classList.remove('hidden');
             inspectGeocoderStatus.textContent = `Inspection prête — ${data.filename}.`;
         } catch (error) {
-            inspectGeocoderStatus.textContent = 'Erreur réseau pendant l’inspection geocoder.';
+            inspectGeocoderStatus.textContent = error && error.message ? error.message : 'Erreur pendant l’inspection geocoder.';
         } finally {
             inspectGeocoderBtn.disabled = false;
         }

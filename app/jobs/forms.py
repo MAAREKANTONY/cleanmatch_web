@@ -47,16 +47,8 @@ class JobCreateForm(forms.Form):
     geocoder_country_hint = forms.CharField(label='Pays / hint (optionnel)', required=False, initial='')
 
     # Normalizer hidden mappings
-    mapping_id = forms.CharField(required=False, widget=forms.HiddenInput())
-    mapping_name = forms.CharField(required=False, widget=forms.HiddenInput())
-    mapping_address = forms.CharField(required=False, widget=forms.HiddenInput())
-    mapping_zipcode = forms.CharField(required=False, widget=forms.HiddenInput())
-    mapping_city = forms.CharField(required=False, widget=forms.HiddenInput())
-    mapping_lat = forms.CharField(required=False, widget=forms.HiddenInput())
-    mapping_lng = forms.CharField(required=False, widget=forms.HiddenInput())
-    mapping_hexa_gmap = forms.CharField(required=False, widget=forms.HiddenInput())
-    mapping_phone_gmap = forms.CharField(required=False, widget=forms.HiddenInput())
-    mapping_social_link_gmap = forms.CharField(required=False, widget=forms.HiddenInput())
+    for field in CANONICAL_MAPPING_FIELDS:
+        locals()[f'mapping_{field}'] = forms.CharField(required=False, widget=forms.HiddenInput())
 
     # Matcher hidden mappings
     for field in MATCHER_MAPPING_FIELDS:
