@@ -674,11 +674,46 @@ class NormalizerService:
         if duplicates:
             raise ValueError('Une même colonne source ne peut pas être mappée plusieurs fois : ' + ', '.join(sorted(set(duplicates))))
 
-        reverse_mapping = {source: target for target, source in cleaned_mapping.items() if source != target}
-        if reverse_mapping:
-            self._log('🧭 Mapping appliqué : ' + ', '.join(f"{src} → {dst}" for src, dst in reverse_mapping.items()))
-            df = df.rename(columns=reverse_mapping)
+        applied_logs: list[str] = []
+        for target, source in cleaned_mapping.items():
+            if source == target:
+                continue
+            if target in df.columns:
+                target_series = self._coerce_column_to_series(df, target)
+                source_series = self._coerce_column_to_series(df, source)
+                target_empty = target_series.fillna('').astype(str).str.strip().eq('')
+                merged = target_series.where(~target_empty, source_series)
+                df[target] = merged
+                if source in df.columns:
+                    df = df.drop(columns=[source], errors='ignore')
+                applied_logs.append(f"{source} → {target} (fusion)")
+            else:
+                df = df.rename(columns={source: target})
+                applied_logs.append(f"{source} → {target}")
+
+        if applied_logs:
+            self._log('🧭 Mapping appliqué : ' + ', '.join(applied_logs))
+
+        for canonical in CANONICAL_MAPPING_FIELDS:
+            if canonical in df.columns:
+                df[canonical] = self._coerce_column_to_series(df, canonical)
         return df
+
+    def _coerce_column_to_series(self, df: pd.DataFrame, column_name: str) -> pd.Series:
+        column = df[column_name]
+        if isinstance(column, pd.Series):
+            return column
+        if isinstance(column, pd.DataFrame):
+            merged = column.bfill(axis=1).iloc[:, 0].fillna('')
+            keep_indices = [idx for idx, col in enumerate(df.columns) if col == column_name]
+            if keep_indices:
+                first_idx = keep_indices[0]
+                df.iloc[:, first_idx] = merged
+                for idx in reversed(keep_indices[1:]):
+                    df.drop(columns=df.columns[idx], inplace=True)
+            self._log(f"⚠️ Colonnes dupliquées consolidées pour '{column_name}'")
+            return df[column_name] if isinstance(df[column_name], pd.Series) else merged
+        return pd.Series(dtype='object')
 
     def _perform_cleaning(self, df: pd.DataFrame, chosen_country: str) -> pd.DataFrame:
         self._log('--- Nettoyage des données ---')
@@ -718,17 +753,22 @@ class NormalizerService:
         }
         df = df.rename(columns=rename_mapping)
 
+        for canonical in ['name', 'address', 'city', 'country', 'zipcode', 'legal_id']:
+            if canonical in df.columns:
+                df[canonical] = self._coerce_column_to_series(df, canonical)
+
         for col in ['name', 'address', 'city']:
             if col in df.columns:
                 df[col] = df[col].fillna('').astype(str).str.strip()
         if 'country' in df.columns:
-            df['country'] = df['country'].fillna(chosen_country).apply(normalize_country_code)
+            df['country'] = df['country'].fillna(chosen_country).astype(str).apply(normalize_country_code)
         if 'zipcode' in df.columns:
             df['zipcode'] = df.apply(lambda row: normalize_postcode(row.get('zipcode'), row.get('country') or chosen_country), axis=1)
         if 'legal_id' in df.columns:
             df['legal_id'] = df.apply(lambda row: normalize_legal_id(row.get('legal_id'), row.get('country') or chosen_country), axis=1)
             df['legal_id_type'] = df.apply(lambda row: infer_legal_id_type(row.get('legal_id'), row.get('country') or chosen_country), axis=1)
-            legal_hits = int(df['legal_id'].astype(str).str.len().gt(0).sum())
+            legal_series = self._coerce_column_to_series(df, 'legal_id')
+            legal_hits = int(legal_series.fillna('').astype(str).str.len().gt(0).sum())
             self._log(f"🆔 legal_id normalisé ({legal_hits}/{len(df)})")
         else:
             df['legal_id_type'] = ''
@@ -744,7 +784,7 @@ class NormalizerService:
 
         for col in ['name', 'address', 'zipcode', 'city', 'country']:
             if col in df.columns:
-                df[col] = df[col].fillna('').astype(str)
+                df[col] = self._coerce_column_to_series(df, col).fillna('').astype(str)
         if 'country' not in df.columns:
             df['country'] = chosen_country
         df['country'] = df['country'].apply(normalize_country_code)
