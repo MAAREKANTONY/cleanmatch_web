@@ -10,7 +10,7 @@
                 normalisation d’adresses, codes postaux et identifiants légaux pour plusieurs pays européens.
             </p>
         </div>
-        <div class="iteration-tag" style="background:rgba(255,255,255,.18); color:white; border-color:rgba(255,255,255,.22);">Version active : Iteration 15 — Stabilisation Multi-country Europe</div>
+        <div class="iteration-tag" style="background:rgba(255,255,255,.18); color:white; border-color:rgba(255,255,255,.22);">Version active : Iteration 16 — Matcher Multi-country</div>
     </div>
 </section>
 
@@ -81,7 +81,7 @@
         <div class="card stack hidden" id="matcher-panel">
             <div>
                 <h2>2B. Options Matcher</h2>
-                <div class="muted">Deux fichiers, mapping master/slave, scoring amélioré et livrable ZIP.</div>
+                <div class="muted">Deux fichiers, mapping master/slave, scoring multi-country et livrable ZIP.</div>
             </div>
             <section class="grid grid-3">
                 <div class="field">
@@ -101,7 +101,7 @@
                 <button class="btn btn-secondary" type="button" id="inspect-matcher-btn">Inspecter master + slave</button>
                 <div class="muted small" id="inspect-matcher-status">Aucune inspection Matcher lancée.</div>
             </div>
-            <div class="muted small">Colonnes minimales à mapper des deux côtés : <span class="code-inline">id</span>, <span class="code-inline">name</span>, <span class="code-inline">address</span>, <span class="code-inline">zipcode</span>, <span class="code-inline">city</span>.</div>
+            <div class="muted small">Colonnes minimales à mapper des deux côtés : <span class="code-inline">id</span>, <span class="code-inline">name</span>, <span class="code-inline">address</span>, <span class="code-inline">zipcode</span>, <span class="code-inline">city</span>. Colonnes recommandées : <span class="code-inline">country</span>, <span class="code-inline">legal_id</span>, <span class="code-inline">legal_id_type</span>.</div>
         </div>
 
         <div class="card stack hidden" id="geocoder-panel">
@@ -162,7 +162,7 @@
         <div class="toolbar">
             <div>
                 <h2 style="margin-bottom:6px;">4B. Mapping master / slave</h2>
-                <div class="muted">Le matcher V2 produit un ZIP avec <span class="code-inline">all_matches.csv</span>, <span class="code-inline">automatch.csv</span>, <span class="code-inline">review.csv</span> et <span class="code-inline">unmatched.csv</span>.</div>
+                <div class="muted">Le matcher V4 multi-country produit un ZIP avec <span class="code-inline">all_matches.csv</span>, <span class="code-inline">automatch.csv</span>, <span class="code-inline">review.csv</span>, <span class="code-inline">unmatched.csv</span>, <span class="code-inline">diagnostics.csv</span> et <span class="code-inline">summary.json</span>.</div>
             </div>
         </div>
         <div class="grid grid-2">

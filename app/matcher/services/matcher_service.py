@@ -12,23 +12,34 @@ import pandas as pd
 from rapidfuzz import fuzz
 from slugify import slugify
 
-from normalizer.services.normalizer_service import detect_num_voie, detect_voie, make_matchcode
+from normalizer.services.normalizer_service import (
+    country_profile,
+    detect_num_voie,
+    detect_voie,
+    infer_legal_id_type,
+    make_matchcode,
+    normalize_country_code,
+    normalize_legal_id,
+)
 
 ProgressCallback = Callable[[int, str], None]
 LogCallback = Callable[[str], None]
 
 MATCHER_MAPPING_FIELDS = [
-    'id', 'name', 'address', 'zipcode', 'city',
+    'id', 'name', 'address', 'zipcode', 'city', 'country', 'legal_id', 'legal_id_type',
     'voie', 'num_voie', 'matchcode',
     'phone', 'cellular', 'siret', 'hexa', 'lat', 'lng',
 ]
 MATCHER_REQUIRED_FIELDS = {'id', 'name', 'address', 'zipcode', 'city'}
 MATCHER_COLUMN_ALIASES = {
     'id': ['id', 'identifier', 'identifiant', 'outlet_id', 'store_id', 'restaurant_id'],
-    'name': ['name', 'nom', 'enseigne', 'raison sociale', 'outlet_name', 'store_name'],
-    'address': ['address', 'adresse', 'adresse1', 'street', 'rue', 'full_address'],
-    'zipcode': ['zipcode', 'zip', 'postal_code', 'code_postal', 'cp', 'post_code'],
-    'city': ['city', 'ville', 'commune', 'town'],
+    'name': ['name', 'nom', 'enseigne', 'raison sociale', 'outlet_name', 'store_name', 'ragione sociale'],
+    'address': ['address', 'adresse', 'adresse1', 'street', 'rue', 'full_address', 'final_address', 'legaladdress', 'legal_address', 'indirizzo', 'direccion', 'dirección', 'strasse', 'straat'],
+    'zipcode': ['zipcode', 'zip', 'postal_code', 'code_postal', 'cp', 'post_code', 'cap', 'postcode', 'plz', 'legalzipcode', 'legal_zipcode', 'legalpostalcode', 'legal_postal_code'],
+    'city': ['city', 'ville', 'commune', 'town', 'locality', 'citta', 'città', 'ciudad', 'stadt', 'gemeente', 'legalcity', 'legal_city'],
+    'country': ['country', 'pays', 'country_code', 'nation', 'paese', 'pais', 'país', 'land'],
+    'legal_id': ['legal_id', 'siret', 'siren', 'vat', 'vat_number', 'partita_iva', 'piva', 'codice_fiscale', 'nif', 'cif', 'btw', 'kvk', 'company_number', 'ust_id', 'ustid'],
+    'legal_id_type': ['legal_id_type', 'id_type', 'vat_type', 'company_id_type'],
     'voie': ['voie', 'street_name', 'road_name'],
     'num_voie': ['num_voie', 'street_number', 'house_number', 'numero'],
     'matchcode': ['matchcode'],
@@ -40,19 +51,24 @@ MATCHER_COLUMN_ALIASES = {
     'lng': ['lng', 'lon', 'long', 'longitude'],
 }
 
-FRENCH_STOP_WORDS = {
+COMMON_STOP_WORDS = {
     'le', 'la', 'les', 'du', 'des', 'au', 'aux', 'de', 'et', 'a', 'l', 'd', 'un', 'une', 'en', 'dans', 'sur',
     'pour', 'par', 'avec', 'ce', 'ces', 'cette', 'cet', 'sans', 'ne', 'pas', 'plus', 'que', 'qui', 'quoi',
     'ou', 'donc', 'car', 'bar', 'restaurant', 'hotel', 'brasserie', 'camping', 'cafe', 'boulangerie',
     'patisserie', 'pizzeria', 'tabac', 'presse', 'boucherie', 'charcuterie', 'epicerie', 'pharmacie',
     'garage', 'salon', 'coiffure', 'karaoke', 'discotheque', 'cinema', 'cine', 'disco', 'creperie', 'pub',
-    'hotels', 'bistrot', 'pizza', 'crepe', 'sandwich', 'bowling', 'billard', 'club', 'sarl', 'eurl', 'sas',
-    'sasu', 'sa', 'snc', 'sci', 'gaec', 'entreprise', 'societe', 'etablissements', 'ets', 'cie', 'groupe',
-    'maison', 'chez', 'association'
+    'hotels', 'bistrot', 'pizza', 'crepe', 'sandwich', 'bowling', 'billard', 'club', 'maison', 'chez',
+    'association', 'group', 'store', 'shop', 'outlet', 'retail'
 }
-
+LEGAL_STOP_WORDS = {
+    'sarl', 'eurl', 'sas', 'sasu', 'sa', 'snc', 'sci', 'gaec', 'entreprise', 'societe', 'società', 'societa',
+    'etablissements', 'ets', 'cie', 'groupe', 'srl', 'spa', 'sl', 'slu', 'gmbh', 'ag', 'ug', 'kg', 'ohg',
+    'sprl', 'bv', 'nv', 'vof', 'ltd', 'limited', 'plc', 'llp', 'lda'
+}
+MATCHER_STOP_WORDS = COMMON_STOP_WORDS | LEGAL_STOP_WORDS
 
 AUTO_REASONS = {
+    'legal_id_match': 'Identifiant légal identique',
     'matchcode_name': 'Matchcode identique + nom fort',
     'algo_score': 'Nom + voie très proches',
     'hexa_match': 'Hexa identique',
@@ -112,6 +128,7 @@ def inspect_table_file(uploaded_file, sheet_name: str | None = None) -> dict:
         xls = pd.ExcelFile(uploaded_file)
         sheets = []
         for name in xls.sheet_names[:10]:
+            uploaded_file.seek(0)
             df = pd.read_excel(uploaded_file, sheet_name=name, nrows=20)
             columns = [str(col) for col in df.columns]
             suggestions = suggest_column_mapping(columns)
@@ -147,36 +164,63 @@ def inspect_table_file(uploaded_file, sheet_name: str | None = None) -> dict:
     raise ValueError('Inspection matcher disponible uniquement pour CSV et Excel.')
 
 
-def clean_zipcode(zipcode) -> str:
+def clean_zipcode(zipcode, country_code: str | None = None) -> str:
     if pd.isna(zipcode):
         return ''
-    zip_str = str(zipcode).split('.')[0]
-    return ''.join(ch for ch in zip_str if ch.isalnum()).lower()
+    zip_str = str(zipcode).split('.')[0].strip()
+    if not zip_str:
+        return ''
+    cleaned = ''.join(ch for ch in zip_str.upper() if ch.isalnum())
+    profile = country_profile(country_code)
+    regex = profile.get('postcode_regex') or ''
+    if regex:
+        with_space = ' '.join(cleaned[i:i + 4] for i in range(0, len(cleaned), 4)).strip()
+        if cleaned and (pd.notna(cleaned)):
+            if country_code == 'NL' and len(cleaned) >= 6:
+                with_space = f'{cleaned[:4]} {cleaned[4:6]}'
+            if country_code == 'GB' and len(cleaned) >= 5:
+                with_space = f'{cleaned[:-3]} {cleaned[-3:]}'
+        import re
+        if re.match(regex, cleaned, flags=re.IGNORECASE):
+            return cleaned.lower()
+        if re.match(regex, with_space, flags=re.IGNORECASE):
+            return with_space.replace(' ', '').lower()
+    return cleaned.lower()
 
 
-def clean_phone_number(phone) -> str:
+def clean_phone_number(phone, country_code: str | None = None) -> str:
     if pd.isna(phone) or phone == '':
         return ''
     s_phone = str(phone)
     if '.' in s_phone:
         s_phone = s_phone.split('.')[0]
     clean = ''.join(ch for ch in s_phone if ch.isdigit())
-    if clean.startswith('33') and len(clean) == 11:
+    if clean.startswith('00'):
+        clean = clean[2:]
+    country_code = normalize_country_code(country_code) if country_code else ''
+    if country_code == 'FR' and clean.startswith('33') and len(clean) == 11:
         clean = '0' + clean[2:]
+    elif country_code == 'BE' and clean.startswith('32') and len(clean) >= 10:
+        clean = '0' + clean[2:]
+    elif country_code in {'ES', 'PT', 'IT'} and clean.startswith({'34':'34','351':'351','39':'39'}.get(country_code,'')):
+        pass
     return clean if len(clean) >= 6 else ''
 
 
-def clean_name_for_matching(name, city) -> str:
+def clean_name_for_matching(name, city, country_code: str | None = None) -> str:
     name_slug = slugify(str(name or ''), separator=' ')
     city_words = set(slugify(str(city or ''), separator=' ').split())
-    words = [w for w in name_slug.split() if w not in FRENCH_STOP_WORDS and w not in city_words]
+    words = [w for w in name_slug.split() if w not in MATCHER_STOP_WORDS and w not in city_words]
     final_name = ' '.join(words).strip()
     return final_name or name_slug
 
 
 def haversine_meters(lat1, lon1, lat2, lon2):
     try:
-        lat1 = float(lat1); lon1 = float(lon1); lat2 = float(lat2); lon2 = float(lon2)
+        lat1 = float(lat1)
+        lon1 = float(lon1)
+        lat2 = float(lat2)
+        lon2 = float(lon2)
     except Exception:
         return math.nan
     r = 6371000
@@ -227,28 +271,36 @@ class MatcherService:
         self.progress(25, 'Enrichissement des colonnes dérivées')
         df_master = self._prepare_dataframe(df_master)
         df_slave = self._prepare_dataframe(df_slave)
+        self.log(f"🌍 Pays master détectés: {sorted(set(x for x in df_master['country'].dropna().astype(str).tolist() if x))[:12]}")
+        self.log(f"🌍 Pays slave détectés: {sorted(set(x for x in df_slave['country'].dropna().astype(str).tolist() if x))[:12]}")
 
         self.progress(35, 'Déduplication et indexation')
         df_master = df_master.drop_duplicates(subset=['id'], keep='first').copy()
         df_slave = df_slave.drop_duplicates(subset=['id'], keep='first').copy()
+        slave_by_country_zip = {(country, zipc): grp.copy() for (country, zipc), grp in df_slave.groupby(['country', 'zipcode_clean']) if country and zipc}
+        slave_by_country_city = {(country, city): grp.copy() for (country, city), grp in df_slave.groupby(['country', 'city_clean']) if country and city}
         slave_by_zip = {zipc: grp.copy() for zipc, grp in df_slave.groupby('zipcode_clean') if zipc}
         slave_by_city = {city: grp.copy() for city, grp in df_slave.groupby('city_clean') if city}
-        self.log(f'🧭 Groupes slave indexés: {len(slave_by_zip)} zipcodes, {len(slave_by_city)} villes')
+        slave_by_legal_id = {legal_id: grp.copy() for legal_id, grp in df_slave.groupby('legal_id_clean') if legal_id}
+        self.log(f'🧭 Groupes slave indexés: {len(slave_by_country_zip)} pays+zip, {len(slave_by_country_city)} pays+ville, {len(slave_by_legal_id)} legal_id')
 
-        all_matches = []
-        candidate_source_stats = {'zipcode': 0, 'city': 0, 'fallback': 0}
+        all_matches: list[dict] = []
+        candidate_source_stats = {'legal_id': 0, 'country_zipcode': 0, 'country_city': 0, 'zipcode': 0, 'city': 0, 'fallback': 0}
         strongest_reason_stats: dict[str, int] = {}
+        country_pair_stats: dict[str, int] = {}
         review_rows = []
         unmatched_rows = []
         total = max(len(df_master), 1)
         for idx, (_, master_row) in enumerate(df_master.iterrows(), start=1):
-            candidates, candidate_source = self._get_candidates(master_row, df_slave, slave_by_zip, slave_by_city)
+            candidates, candidate_source = self._get_candidates(master_row, df_slave, slave_by_country_zip, slave_by_country_city, slave_by_zip, slave_by_city, slave_by_legal_id)
             candidate_source_stats[candidate_source] = candidate_source_stats.get(candidate_source, 0) + 1
             matches = self._score_candidates(master_row, candidates, options, candidate_source) if not candidates.empty else []
             classification = self._classify_master(master_row, matches, options)
             if classification['best_row'] is not None:
                 strongest_reason = classification['best_row'].get('match_reason') or 'N/A'
                 strongest_reason_stats[strongest_reason] = strongest_reason_stats.get(strongest_reason, 0) + 1
+                pair_key = f"{classification['best_row'].get('master_country','')}->{classification['best_row'].get('slave_country','')}"
+                country_pair_stats[pair_key] = country_pair_stats.get(pair_key, 0) + 1
                 review_rows.append(classification['best_row']) if classification['best_row']['match_status'] == 'review' else None
             if classification['unmatched_row'] is not None:
                 unmatched_rows.append(classification['unmatched_row'])
@@ -258,14 +310,14 @@ class MatcherService:
                 pct = 35 + int((idx / total) * 50)
                 self.progress(min(pct, 90), f'Matching en cours: {idx}/{total} master')
 
-        self.progress(92, 'Construction des livrables Matcher V2')
+        self.progress(92, 'Construction des livrables Matcher V4')
         all_matches_df = pd.DataFrame(all_matches)
         if all_matches_df.empty:
             all_matches_df = pd.DataFrame(columns=self._result_columns())
         else:
             all_matches_df = all_matches_df.sort_values(
-                by=['automatch', 'composite_score', 'score_name', 'score_voie', 'score_city', 'score_phone'],
-                ascending=[False, False, False, False, False, False],
+                by=['automatch', 'composite_score', 'score_legal_id', 'score_name', 'score_voie', 'score_city', 'score_phone'],
+                ascending=[False, False, False, False, False, False, False],
             )
 
         review_df = pd.DataFrame(review_rows)
@@ -288,13 +340,16 @@ class MatcherService:
             'top_k_per_master': int(options.top_k_per_master),
             'candidate_source_stats': candidate_source_stats,
             'strongest_reason_stats': strongest_reason_stats,
+            'country_pair_stats': country_pair_stats,
+            'master_country_stats': df_master['country'].fillna('').astype(str).value_counts().to_dict(),
+            'slave_country_stats': df_slave['country'].fillna('').astype(str).value_counts().to_dict(),
         }
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         if output_path.suffix.lower() != '.zip':
             output_path = output_path.with_suffix('.zip')
 
-        with tempfile.TemporaryDirectory(prefix='matcher_v2_') as tmpdir:
+        with tempfile.TemporaryDirectory(prefix='matcher_v4_') as tmpdir:
             tmpdir_path = Path(tmpdir)
             all_path = tmpdir_path / 'all_matches.csv'
             auto_path = tmpdir_path / 'automatch.csv'
@@ -322,8 +377,16 @@ class MatcherService:
         self.log(f"✅ Livrable ZIP écrit: {output_path.name}")
         self.log(f"📊 Résumé matcher: {summary['automatch_rows']} automatch, {summary['review_rows']} review, {summary['unmatched_rows']} unmatched")
         self.log(f"🧪 Sources de candidats: {candidate_source_stats}")
-        self.progress(100, 'Matcher V2 terminé')
+        self.progress(100, 'Matcher V4 terminé')
         return output_path
+
+    def _safe_text_series(self, df: pd.DataFrame, column: str, default: str = '') -> pd.Series:
+        if column not in df.columns:
+            return pd.Series([default] * len(df), index=df.index, dtype='object')
+        series = df[column]
+        if isinstance(series, pd.DataFrame):
+            series = series.iloc[:, 0]
+        return series.fillna(default).astype(str)
 
     def _apply_mapping(self, df: pd.DataFrame, mapping: dict[str, str], side: str) -> pd.DataFrame:
         df = df.copy()
@@ -345,19 +408,56 @@ class MatcherService:
         for field in MATCHER_REQUIRED_FIELDS:
             if field not in df.columns:
                 raise ValueError(f'Colonne requise absente: {field}')
-        df['zipcode_clean'] = df['zipcode'].apply(clean_zipcode)
+        df['country'] = self._safe_text_series(df, 'country').apply(normalize_country_code)
+        df['zipcode'] = self._safe_text_series(df, 'zipcode')
+        df['city'] = self._safe_text_series(df, 'city')
+        df['name'] = self._safe_text_series(df, 'name')
+        df['address'] = self._safe_text_series(df, 'address')
+        df['phone'] = self._safe_text_series(df, 'phone')
+        df['cellular'] = self._safe_text_series(df, 'cellular')
+        df['legal_id'] = self._safe_text_series(df, 'legal_id')
+        df['legal_id_type'] = self._safe_text_series(df, 'legal_id_type')
+        siret_series = self._safe_text_series(df, 'siret')
+        df['legal_id'] = df.apply(
+            lambda row: normalize_legal_id(row.get('legal_id') or row.get('siret') or '', row.get('country')),
+            axis=1,
+        )
+        df['legal_id_type'] = df.apply(
+            lambda row: (str(row.get('legal_id_type') or '').strip() or infer_legal_id_type(row.get('legal_id') or row.get('siret') or '', row.get('country'))),
+            axis=1,
+        )
+        df['zipcode_clean'] = df.apply(lambda row: clean_zipcode(row.get('zipcode'), row.get('country')), axis=1)
         df['city_clean'] = df['city'].apply(lambda value: slugify(str(value or ''), separator=' '))
-        df['name_clean'] = df.apply(lambda row: clean_name_for_matching(row.get('name', ''), row.get('city', '')), axis=1)
-        df['voie'] = df.apply(lambda row: row.get('voie') or detect_voie(row.get('address')), axis=1)
-        df['num_voie'] = df.apply(lambda row: row.get('num_voie') or detect_num_voie(row.get('address')), axis=1)
-        df['matchcode'] = df.apply(lambda row: row.get('matchcode') or make_matchcode(row.get('address'), row.get('zipcode')), axis=1)
-        df['phone_clean'] = df['phone'].apply(clean_phone_number)
-        df['cellular_clean'] = df['cellular'].apply(clean_phone_number)
+        df['name_clean'] = df.apply(lambda row: clean_name_for_matching(row.get('name', ''), row.get('city', ''), row.get('country')), axis=1)
+        df['voie'] = df.apply(lambda row: row.get('voie') or detect_voie(row.get('address'), row.get('country')), axis=1)
+        df['num_voie'] = df.apply(lambda row: row.get('num_voie') or detect_num_voie(row.get('address'), row.get('country')), axis=1)
+        df['matchcode'] = df.apply(lambda row: row.get('matchcode') or make_matchcode(row.get('address'), row.get('zipcode'), row.get('country')), axis=1)
+        df['phone_clean'] = df.apply(lambda row: clean_phone_number(row.get('phone'), row.get('country')), axis=1)
+        df['cellular_clean'] = df.apply(lambda row: clean_phone_number(row.get('cellular'), row.get('country')), axis=1)
+        df['siret_clean'] = siret_series.apply(lambda value: normalize_legal_id(value, 'FR'))
+        df['legal_id_clean'] = df['legal_id'].apply(lambda value: str(value or '').strip())
         return df
 
-    def _get_candidates(self, master_row: pd.Series, df_slave: pd.DataFrame, slave_by_zip: dict[str, pd.DataFrame], slave_by_city: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, str]:
-        zipcode = master_row.get('zipcode_clean', '')
-        city = master_row.get('city_clean', '')
+    def _get_candidates(
+        self,
+        master_row: pd.Series,
+        df_slave: pd.DataFrame,
+        slave_by_country_zip: dict[tuple[str, str], pd.DataFrame],
+        slave_by_country_city: dict[tuple[str, str], pd.DataFrame],
+        slave_by_zip: dict[str, pd.DataFrame],
+        slave_by_city: dict[str, pd.DataFrame],
+        slave_by_legal_id: dict[str, pd.DataFrame],
+    ) -> tuple[pd.DataFrame, str]:
+        country = str(master_row.get('country', '') or '')
+        zipcode = str(master_row.get('zipcode_clean', '') or '')
+        city = str(master_row.get('city_clean', '') or '')
+        legal_id = str(master_row.get('legal_id_clean', '') or '')
+        if legal_id and legal_id in slave_by_legal_id:
+            return slave_by_legal_id[legal_id], 'legal_id'
+        if country and zipcode and (country, zipcode) in slave_by_country_zip:
+            return slave_by_country_zip[(country, zipcode)], 'country_zipcode'
+        if country and city and (country, city) in slave_by_country_city:
+            return slave_by_country_city[(country, city)], 'country_city'
         if zipcode and zipcode in slave_by_zip:
             return slave_by_zip[zipcode], 'zipcode'
         if city and city in slave_by_city:
@@ -368,13 +468,18 @@ class MatcherService:
         out = []
         master_name = str(master_row.get('name', ''))
         master_city = str(master_row.get('city', ''))
+        master_country = str(master_row.get('country', ''))
         master_voie = slugify(str(master_row.get('voie', '') or ''), separator=' ')
         master_phones = [p for p in [master_row.get('phone_clean', ''), master_row.get('cellular_clean', '')] if p]
         master_matchcode = master_row.get('matchcode')
         master_hexa = master_row.get('hexa')
-        master_siret = str(master_row.get('siret', '')).strip()
+        master_siret = str(master_row.get('siret_clean', '')).strip()
+        master_legal_id = str(master_row.get('legal_id_clean', '')).strip()
+        master_legal_type = str(master_row.get('legal_id_type', '')).strip()
 
         for _, slave_row in candidates.iterrows():
+            slave_country = str(slave_row.get('country', ''))
+            country_match = bool(master_country and slave_country and master_country == slave_country)
             score_name = fuzz.token_sort_ratio(master_row.get('name_clean', ''), slave_row.get('name_clean', ''))
             phone_scores = []
             for mp in master_phones:
@@ -382,14 +487,17 @@ class MatcherService:
                     if mp and sp:
                         phone_scores.append(fuzz.ratio(mp, sp))
             score_phone = max(phone_scores) if phone_scores else 0
-            if score_name < 50 and score_phone < 100:
+            if score_name < 50 and score_phone < 100 and not (master_legal_id and master_legal_id == str(slave_row.get('legal_id_clean', '')).strip()):
                 continue
 
             score_voie = fuzz.token_set_ratio(master_voie, slugify(str(slave_row.get('voie', '') or ''), separator=' '))
             score_city = fuzz.token_set_ratio(slugify(master_city, separator=' '), slugify(str(slave_row.get('city', '')), separator=' '))
             same_matchcode = bool(master_matchcode and slave_row.get('matchcode') and master_matchcode == slave_row.get('matchcode'))
             same_hexa = bool(master_hexa and slave_row.get('hexa') and str(master_hexa) == str(slave_row.get('hexa')))
-            same_siret = bool(master_siret and str(slave_row.get('siret', '')).strip() and master_siret == str(slave_row.get('siret', '')).strip())
+            same_siret = bool(master_siret and str(slave_row.get('siret_clean', '')).strip() and master_siret == str(slave_row.get('siret_clean', '')).strip())
+            same_legal_id = bool(master_legal_id and str(slave_row.get('legal_id_clean', '')).strip() and master_legal_id == str(slave_row.get('legal_id_clean', '')).strip())
+            same_legal_id_type = bool(master_legal_type and str(slave_row.get('legal_id_type', '')).strip() and master_legal_type == str(slave_row.get('legal_id_type', '')).strip())
+            score_legal_id = 100 if same_legal_id else 0
 
             distance = math.nan
             if str(master_row.get('lat', '')).strip() and str(master_row.get('lng', '')).strip() and str(slave_row.get('lat', '')).strip() and str(slave_row.get('lng', '')).strip():
@@ -397,24 +505,40 @@ class MatcherService:
 
             automatch = 0
             method = ''
-            if same_matchcode and score_name >= options.threshold_name:
-                automatch = 1; method = 'matchcode_name'
-            elif score_name == 100 and score_voie >= options.threshold_voie:
-                automatch = 1; method = 'algo_score'
-            elif score_name >= options.threshold_name and score_voie >= 80:
-                automatch = 1; method = 'algo_score'
-            elif same_hexa:
-                automatch = 1; method = 'hexa_match'
-            elif score_phone == 100 and (master_row.get('zipcode_clean') == slave_row.get('zipcode_clean') or (not math.isnan(distance) and distance <= 50)):
-                automatch = 1; method = 'phone_match'
+            if same_legal_id and (country_match or not master_country or not slave_country):
+                automatch = 1
+                method = 'legal_id_match'
+            elif same_matchcode and score_name >= options.threshold_name and (country_match or score_city >= 80):
+                automatch = 1
+                method = 'matchcode_name'
+            elif score_name == 100 and score_voie >= options.threshold_voie and (country_match or score_city >= 80):
+                automatch = 1
+                method = 'algo_score'
+            elif score_name >= options.threshold_name and score_voie >= 80 and (country_match or score_city >= 80):
+                automatch = 1
+                method = 'algo_score'
+            elif same_hexa and (country_match or not master_country or not slave_country):
+                automatch = 1
+                method = 'hexa_match'
+            elif score_phone == 100 and (master_row.get('zipcode_clean') == slave_row.get('zipcode_clean') or (not math.isnan(distance) and distance <= 50)) and (country_match or score_city >= 80):
+                automatch = 1
+                method = 'phone_match'
             elif same_siret:
-                automatch = 1; method = 'siret_match'
-            elif not math.isnan(distance) and distance <= 15 and score_name >= 75:
-                automatch = 1; method = 'distance_match'
+                automatch = 1
+                method = 'siret_match'
+            elif not math.isnan(distance) and distance <= 15 and score_name >= 75 and (country_match or score_city >= 90):
+                automatch = 1
+                method = 'distance_match'
 
-            composite_score = round((score_name * 0.44) + (score_voie * 0.22) + (score_city * 0.12) + (score_phone * 0.12) + (10 if same_matchcode else 0) + (8 if same_hexa else 0) + (10 if same_siret else 0), 1)
-            match_status = 'automatch' if automatch else self._review_status(score_name, score_voie, score_city, score_phone, same_matchcode, same_hexa, same_siret)
-            reason = AUTO_REASONS.get(method, '') if automatch else self._review_reason(score_name, score_voie, score_city, score_phone, same_matchcode, same_hexa, same_siret)
+            country_bonus = 8 if country_match else -10 if (master_country and slave_country and master_country != slave_country) else 0
+            legal_type_bonus = 4 if same_legal_id_type and same_legal_id else 0
+            composite_score = round(
+                (score_name * 0.36) + (score_voie * 0.18) + (score_city * 0.12) + (score_phone * 0.10) + score_legal_id * 0.14
+                + (10 if same_matchcode else 0) + (8 if same_hexa else 0) + (10 if same_siret else 0) + country_bonus + legal_type_bonus,
+                1,
+            )
+            match_status = 'automatch' if automatch else self._review_status(score_name, score_voie, score_city, score_phone, same_matchcode, same_hexa, same_siret, same_legal_id, country_match)
+            reason = AUTO_REASONS.get(method, '') if automatch else self._review_reason(score_name, score_voie, score_city, score_phone, same_matchcode, same_hexa, same_siret, same_legal_id, country_match)
 
             out.append({
                 'master_id': master_row.get('id'),
@@ -422,19 +546,29 @@ class MatcherService:
                 'master_address': master_row.get('address', ''),
                 'master_zipcode': master_row.get('zipcode', ''),
                 'master_city': master_city,
+                'master_country': master_country,
+                'master_legal_id': master_legal_id,
+                'master_legal_id_type': master_legal_type,
                 'slave_id': slave_row.get('id'),
                 'slave_name': slave_row.get('name', ''),
                 'slave_address': slave_row.get('address', ''),
                 'slave_zipcode': slave_row.get('zipcode', ''),
                 'slave_city': slave_row.get('city', ''),
+                'slave_country': slave_country,
+                'slave_legal_id': str(slave_row.get('legal_id_clean', '') or ''),
+                'slave_legal_id_type': str(slave_row.get('legal_id_type', '') or ''),
                 'score_name': round(score_name, 1),
                 'score_voie': round(score_voie, 1),
                 'score_city': round(score_city, 1),
                 'score_phone': round(score_phone, 1),
+                'score_legal_id': score_legal_id,
                 'composite_score': composite_score,
                 'same_matchcode': same_matchcode,
                 'same_hexa': same_hexa,
                 'same_siret': same_siret,
+                'same_legal_id': same_legal_id,
+                'same_legal_id_type': same_legal_id_type,
+                'country_match': country_match,
                 'distance_meters': None if math.isnan(distance) else round(distance, 2),
                 'candidate_source': candidate_source,
                 'automatch': automatch,
@@ -442,26 +576,30 @@ class MatcherService:
                 'match_method': method,
                 'match_reason': reason,
             })
-        out.sort(key=lambda item: (item['automatch'], item['composite_score'], item['score_name'], item['score_voie'], item['score_city'], item['score_phone']), reverse=True)
+        out.sort(key=lambda item: (item['automatch'], item['composite_score'], item['score_legal_id'], item['score_name'], item['score_voie'], item['score_city'], item['score_phone']), reverse=True)
         for rank, row in enumerate(out, start=1):
             row['rank_for_master'] = rank
         return out
 
-    def _review_status(self, score_name: float, score_voie: float, score_city: float, score_phone: float, same_matchcode: bool, same_hexa: bool, same_siret: bool) -> str:
+    def _review_status(self, score_name: float, score_voie: float, score_city: float, score_phone: float, same_matchcode: bool, same_hexa: bool, same_siret: bool, same_legal_id: bool, country_match: bool) -> str:
+        if same_legal_id:
+            return 'review'
         if same_siret or same_hexa:
             return 'review'
-        if same_matchcode and score_name >= 70:
+        if same_matchcode and score_name >= 70 and country_match:
             return 'review'
-        if score_name >= 82 and score_voie >= 60:
+        if score_name >= 82 and score_voie >= 60 and (country_match or score_city >= 85):
             return 'review'
         if score_name >= 75 and score_voie >= 75 and score_city >= 80:
             return 'review'
-        if score_phone >= 100:
+        if score_phone >= 100 and (country_match or score_city >= 80):
             return 'review'
         return 'candidate'
 
-    def _review_reason(self, score_name: float, score_voie: float, score_city: float, score_phone: float, same_matchcode: bool, same_hexa: bool, same_siret: bool) -> str:
+    def _review_reason(self, score_name: float, score_voie: float, score_city: float, score_phone: float, same_matchcode: bool, same_hexa: bool, same_siret: bool, same_legal_id: bool, country_match: bool) -> str:
         reasons = []
+        if same_legal_id:
+            reasons.append('Identifiant légal identique')
         if same_siret:
             reasons.append('SIRET identique')
         if same_hexa:
@@ -470,13 +608,15 @@ class MatcherService:
             reasons.append('Matchcode identique')
         if score_phone >= 100:
             reasons.append('Téléphone identique')
+        if country_match:
+            reasons.append('Pays identique')
         if score_name >= 80:
             reasons.append('Nom proche')
         if score_voie >= 70:
             reasons.append('Voie proche')
         if score_city >= 80:
             reasons.append('Ville proche')
-        return ' + '.join(reasons[:4]) if reasons else 'À vérifier'
+        return ' + '.join(reasons[:5]) if reasons else 'À vérifier'
 
     def _classify_master(self, master_row: pd.Series, matches: list[dict], options: MatcherOptions) -> dict:
         if not matches:
@@ -488,6 +628,7 @@ class MatcherService:
                     'master_address': master_row.get('address', ''),
                     'master_zipcode': master_row.get('zipcode', ''),
                     'master_city': master_row.get('city', ''),
+                    'master_country': master_row.get('country', ''),
                     'reason': 'Aucun candidat retenu',
                 },
             }
@@ -501,6 +642,7 @@ class MatcherService:
                     'master_address': master_row.get('address', ''),
                     'master_zipcode': master_row.get('zipcode', ''),
                     'master_city': master_row.get('city', ''),
+                    'master_country': master_row.get('country', ''),
                     'reason': f"Meilleur candidat insuffisant (score composite {best['composite_score']})",
                 },
             }
@@ -509,19 +651,19 @@ class MatcherService:
     @staticmethod
     def _result_columns() -> list[str]:
         return [
-            'master_id', 'master_name', 'master_address', 'master_zipcode', 'master_city',
-            'slave_id', 'slave_name', 'slave_address', 'slave_zipcode', 'slave_city',
-            'score_name', 'score_voie', 'score_city', 'score_phone', 'composite_score',
-            'same_matchcode', 'same_hexa', 'same_siret', 'distance_meters', 'candidate_source',
+            'master_id', 'master_name', 'master_address', 'master_zipcode', 'master_city', 'master_country', 'master_legal_id', 'master_legal_id_type',
+            'slave_id', 'slave_name', 'slave_address', 'slave_zipcode', 'slave_city', 'slave_country', 'slave_legal_id', 'slave_legal_id_type',
+            'score_name', 'score_voie', 'score_city', 'score_phone', 'score_legal_id', 'composite_score',
+            'same_matchcode', 'same_hexa', 'same_siret', 'same_legal_id', 'same_legal_id_type', 'country_match', 'distance_meters', 'candidate_source',
             'automatch', 'match_status', 'match_method', 'match_reason', 'rank_for_master'
         ]
 
     @staticmethod
     def _diagnostic_columns() -> list[str]:
         return [
-            'master_id', 'slave_id', 'match_status', 'match_reason', 'candidate_source',
-            'score_name', 'score_voie', 'score_city', 'score_phone', 'composite_score',
-            'same_matchcode', 'same_hexa', 'same_siret', 'distance_meters', 'rank_for_master'
+            'master_id', 'slave_id', 'master_country', 'slave_country', 'match_status', 'match_reason', 'candidate_source',
+            'score_name', 'score_voie', 'score_city', 'score_phone', 'score_legal_id', 'composite_score',
+            'same_matchcode', 'same_hexa', 'same_siret', 'same_legal_id', 'same_legal_id_type', 'country_match', 'distance_meters', 'rank_for_master'
         ]
 
     @staticmethod
@@ -530,4 +672,4 @@ class MatcherService:
 
     @staticmethod
     def _unmatched_columns() -> list[str]:
-        return ['master_id', 'master_name', 'master_address', 'master_zipcode', 'master_city', 'reason']
+        return ['master_id', 'master_name', 'master_address', 'master_zipcode', 'master_city', 'master_country', 'reason']

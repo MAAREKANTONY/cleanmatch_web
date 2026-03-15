@@ -87,7 +87,7 @@ def _run_normalizer_job(job: Job):
         country_code=(parameters.get('country_code') or 'FR'),
     )
 
-    log('🚀 Lancement du normalizer web V15 Stabilisation Europe')
+    log('🚀 Lancement du normalizer web V16 Matcher Multi-country')
     log(f'📂 Fichier source : {input_path.name}')
     log('💾 Format de sortie : CSV UTF-8 (compatible gros volumes)')
     result_path = service.run(input_path=input_path, output_path=output_path, options=options)
@@ -147,7 +147,7 @@ def _run_matcher_job(job: Job):
         slave_mapping=parameters.get('slave_mapping') or {},
     )
 
-    log('🚀 Lancement du matcher web V3')
+    log('🚀 Lancement du matcher web V4 Multi-country')
     log(f'📂 Master : {master_path.name}')
     log(f'📂 Slave : {slave_path.name}')
     log('💾 Format de sortie : ZIP contenant all_matches.csv, automatch.csv, review.csv, unmatched.csv, diagnostics.csv et summary.json')
@@ -157,7 +157,7 @@ def _run_matcher_job(job: Job):
     JobService.enforce_not_cancelled(job)
     with result_path.open('rb') as fh:
         job.output_file.save(result_path.name, File(fh), save=False)
-    JobService.mark_success(job, message='Matcher V3 terminé avec succès')
+    JobService.mark_success(job, message='Matcher V4 terminé avec succès')
     return str(job.id)
 
 
