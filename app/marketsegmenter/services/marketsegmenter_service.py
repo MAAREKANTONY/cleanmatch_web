@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 import pandas as pd
+from openpyxl import load_workbook
 
 ProgressCallback = Callable[[int, str], None]
 LogCallback = Callable[[str], None]
@@ -270,15 +271,93 @@ def suggest_column_mapping(columns: list[str]) -> dict[str, str]:
     return suggestions
 
 
-def _read_table(path: Path, sheet_name: str | None = None) -> pd.DataFrame:
+
+def _detect_csv_delimiter(path: Path) -> str:
+    sample = path.read_text(encoding='utf-8-sig', errors='ignore')[:8192]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=',;	|')
+        return dialect.delimiter
+    except Exception:
+        return ','
+
+
+def _iter_source_rows(path: Path, sheet_name: str | None = None):
     suffix = path.suffix.lower()
     if suffix in {'.csv', '.txt'}:
-        return pd.read_csv(path)
+        delimiter = _detect_csv_delimiter(path)
+        with path.open('r', encoding='utf-8-sig', newline='') as fh:
+            reader = csv.DictReader(fh, delimiter=delimiter)
+            headers = list(reader.fieldnames or [])
+            for row in reader:
+                yield headers, {str(k): '' if v is None else str(v) for k, v in row.items()}
+        return
     if suffix in {'.xlsx', '.xlsm', '.xltx', '.xltm', '.xls'}:
-        return pd.read_excel(path, sheet_name=sheet_name)
+        wb = load_workbook(path, read_only=True, data_only=True)
+        ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb[wb.sheetnames[0]]
+        rows = ws.iter_rows(values_only=True)
+        try:
+            raw_headers = next(rows)
+        except StopIteration:
+            wb.close()
+            return
+        headers = ['' if v is None else str(v) for v in raw_headers]
+        for values in rows:
+            row = {}
+            for idx, header in enumerate(headers):
+                value = values[idx] if idx < len(values) else ''
+                row[header] = '' if value is None else str(value)
+            yield headers, row
+        wb.close()
+        return
     raise ValueError(f'Format non supporté pour le market segmenter: {path.suffix}')
 
 
+def _estimate_total_rows(path: Path, sheet_name: str | None = None) -> int | None:
+    suffix = path.suffix.lower()
+    try:
+        if suffix in {'.csv', '.txt'}:
+            with path.open('r', encoding='utf-8-sig', errors='ignore') as fh:
+                total = sum(1 for _ in fh)
+            return max(total - 1, 0)
+        if suffix in {'.xlsx', '.xlsm', '.xltx', '.xltm', '.xls'}:
+            wb = load_workbook(path, read_only=True, data_only=True)
+            ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb[wb.sheetnames[0]]
+            total = max((ws.max_row or 1) - 1, 0)
+            wb.close()
+            return total
+    except Exception:
+        return None
+    return None
+
+
+def _prepare_output_headers(source_headers: list[str], mapping: dict[str, str]) -> list[str]:
+    reverse = {source: target for target, source in mapping.items() if source in source_headers}
+    output_headers = [reverse.get(col, col) for col in source_headers]
+    existing = set(output_headers)
+    for field in MARKETSEGMENTER_MAPPING_FIELDS:
+        if field not in existing:
+            output_headers.append(field)
+            existing.add(field)
+    return output_headers
+
+
+def _map_row_dict(row: dict[str, str], source_headers: list[str], mapping: dict[str, str], output_headers: list[str]) -> dict[str, str]:
+    reverse = {source: target for target, source in mapping.items() if source in source_headers}
+    out: dict[str, str] = {}
+    for col in source_headers:
+        out[reverse.get(col, col)] = '' if row.get(col) is None else str(row.get(col, ''))
+    for field in output_headers:
+        out.setdefault(field, '')
+    return out
+
+
+def _csv_safe(value: object) -> str:
+    if value is None:
+        return ''
+    if isinstance(value, (dict, list)):
+        value = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    text = str(value)
+    return text.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
 def inspect_marketsegmenter_file(uploaded_file) -> dict:
     suffix = Path(uploaded_file.name).suffix.lower()
     if suffix in {'.xlsx', '.xlsm', '.xltx', '.xltm', '.xls'}:
@@ -338,6 +417,9 @@ class MarketSegmenterService:
             for _, row in self.type_mapping_df.fillna('').iterrows()
             if str(row.get('type', '')).strip()
         }
+        self.compiled_keyword_rules = self._compile_keyword_rules(KEYWORD_RULES)
+        self.compiled_country_keyword_rules = self._compile_keyword_rules(COUNTRY_KEYWORD_RULES)
+        self.compiled_negative_keyword_rules = self._compile_keyword_rules(NEGATIVE_KEYWORDS)
 
     def progress(self, percent: int, message: str) -> None:
         self.progress_callback(percent, message)
@@ -347,34 +429,50 @@ class MarketSegmenterService:
 
     def run(self, input_path: Path, output_path: Path, options: MarketSegmenterOptions) -> Path:
         self.progress(5, 'Chargement du fichier source du market segmenter')
-        df = self._apply_mapping(_read_table(input_path, options.marketsegmenter_sheet_name), options.marketsegmenter_mapping)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         debug_cols = DEBUG_OUTPUT_COLUMNS if options.emit_debug_columns else []
-        output_columns = list(df.columns) + [
-            'fyre_market_segment_type0', 'fyre_market_segment_type1',
-            'fyre_market_segment_type2', 'fyre_market_segment_type3',
-            'segmentation_confidence', 'segmentation_reasons',
-            'base_main_type_path', 'all_types_paths_considered',
-            'keyword_hits', 'language_scope',
-        ] + debug_cols
-
         stats = defaultdict(int)
-        total = max(len(df), 1)
+        total = _estimate_total_rows(input_path, options.marketsegmenter_sheet_name) or 0
+        processed = 0
+        source_headers: list[str] | None = None
+        projected_headers: list[str] | None = None
+
         with output_path.open('w', newline='', encoding='utf-8-sig') as fh:
-            writer = csv.DictWriter(fh, fieldnames=output_columns)
-            writer.writeheader()
-            for index, (_, row) in enumerate(df.iterrows(), start=1):
+            writer = None
+            for raw_headers, raw_row in _iter_source_rows(input_path, options.marketsegmenter_sheet_name):
+                if source_headers is None:
+                    source_headers = list(raw_headers)
+                    projected_headers = _prepare_output_headers(source_headers, options.marketsegmenter_mapping)
+                    output_columns = list(projected_headers) + [
+                        'fyre_market_segment_type0', 'fyre_market_segment_type1',
+                        'fyre_market_segment_type2', 'fyre_market_segment_type3',
+                        'segmentation_confidence', 'segmentation_reasons',
+                        'base_main_type_path', 'all_types_paths_considered',
+                        'keyword_hits', 'language_scope',
+                    ] + debug_cols
+                    writer = csv.DictWriter(
+                        fh,
+                        fieldnames=output_columns,
+                        delimiter=';',
+                        quotechar='"',
+                        quoting=csv.QUOTE_ALL,
+                        lineterminator='\n',
+                    )
+                    writer.writeheader()
+
+                row = _map_row_dict(raw_row, source_headers or [], options.marketsegmenter_mapping, projected_headers or [])
                 classified = self._classify_row(row, options)
-                out = {col: row.get(col, '') for col in df.columns}
-                out.update(classified)
+                out = {col: _csv_safe(row.get(col, '')) for col in (projected_headers or [])}
+                out.update({k: _csv_safe(v) for k, v in classified.items()})
                 writer.writerow(out)
+                processed += 1
                 stats[classified.get('fyre_market_segment_type0') or 'unknown'] += 1
-                if index == 1 or index % 100 == 0 or index == total:
-                    self.progress(min(96, 15 + int(index / total * 80)), f'Segmentation en cours : {index}/{total}')
+                if processed == 1 or processed % 1000 == 0 or (total and processed == total):
+                    self.progress(min(96, 15 + int((processed / max(total, processed)) * 80)), f'Segmentation en cours : {processed}/{total or "?"}')
 
         summary = {
-            'rows': int(len(df)),
+            'rows': int(processed),
             'macro_stats': dict(stats),
             'type_mapping_coverage': int(self.type_mapping_df['marketsegment0'].astype(str).str.strip().ne('').sum()),
             'typo_tolerance': bool(options.enable_typo_tolerance),
@@ -382,6 +480,8 @@ class MarketSegmenterService:
             'country_scope_enabled': True,
             'price_signal_enabled': True,
             'culinary_keywords_enabled': True,
+            'streaming_mode_enabled': True,
+            'safe_csv_export': True,
         }
         output_path.with_name(output_path.stem + '_summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
         self.progress(100, 'Market segmenter terminé')
@@ -395,18 +495,31 @@ class MarketSegmenterService:
 
     def _apply_mapping(self, df: pd.DataFrame, mapping: dict[str, str]) -> pd.DataFrame:
         reverse = {source: target for target, source in mapping.items() if source in df.columns}
-        df = df.rename(columns=reverse).copy()
+        df = df.rename(columns=reverse)
         for field in MARKETSEGMENTER_MAPPING_FIELDS:
             if field not in df.columns:
                 df[field] = ''
             df[field] = df[field].fillna('').astype(str)
         return df
 
+    def _compile_keyword_rules(self, rules: list[dict]) -> list[dict]:
+        compiled = []
+        for rule in rules:
+            normalized_keywords = []
+            for kw in rule.get('keywords', []):
+                nkw = _normalize_text(kw)
+                if nkw:
+                    normalized_keywords.append(nkw)
+            compiled.append({**rule, 'normalized_keywords': tuple(dict.fromkeys(normalized_keywords))})
+        return compiled
+
     def _classify_row(self, row: pd.Series, options: MarketSegmenterOptions) -> dict:
         country_code = self._resolve_country_code(row, options)
         langs = COUNTRY_LANGS.get(country_code, ['en'])
         haystack = _normalize_text(' | '.join(str(row.get(k, '')) for k in ALL_TEXT_FIELDS))
+        fuzzy_haystack = _normalize_text(' | '.join(str(row.get(k, '')) for k in ['name', 'main_type', 'all_types', 'description_1', 'description_2', 'description_3']))
         tokens = haystack.split()
+        fuzzy_tokens = tuple(sorted(set(fuzzy_haystack.split())))
 
         detailed_scores: dict[tuple[str, str, str, str], float] = defaultdict(float)
         family_scores: dict[tuple[str, str], float] = dict(BASE_FAMILY_SCORE_RULES)
@@ -434,8 +547,12 @@ class MarketSegmenterService:
                 if reason:
                     reasons.append(f"all_types_reason[{idx}]:{reason}")
 
-        for rule in KEYWORD_RULES:
-            hits = self._match_rule_hits(haystack, tokens, rule, options.enable_typo_tolerance)
+        ordered_pre = sorted(family_scores.values(), reverse=True)
+        prelim_gap = ordered_pre[0] - ordered_pre[1] if len(ordered_pre) > 1 else (ordered_pre[0] if ordered_pre else 0.0)
+        deep_scan = prelim_gap < 18.0
+
+        for rule in self.compiled_keyword_rules:
+            hits = self._match_rule_hits(haystack, fuzzy_tokens, rule, options.enable_typo_tolerance and deep_scan)
             if hits:
                 segment = tuple((rule.get('segment') or ['', '', '', ''])[:4])
                 detailed_scores[segment] += float(rule.get('weight', 10))
@@ -445,10 +562,10 @@ class MarketSegmenterService:
                 cuisine_hits.extend(hits[:3])
                 reasons.append(f"keywords:{'/'.join(hits[:3])}=>{' > '.join([p for p in segment if p])}")
 
-        for rule in COUNTRY_KEYWORD_RULES:
+        for rule in self.compiled_country_keyword_rules:
             if country_code and country_code not in set(rule.get('countries', [])):
                 continue
-            hits = self._match_rule_hits(haystack, tokens, rule, options.enable_typo_tolerance)
+            hits = self._match_rule_hits(haystack, fuzzy_tokens, rule, options.enable_typo_tolerance and deep_scan)
             if hits:
                 segment = tuple((rule.get('segment') or ['', '', '', ''])[:4])
                 detailed_scores[segment] += float(rule.get('weight', 10))
@@ -458,8 +575,8 @@ class MarketSegmenterService:
                 cuisine_hits.extend(hits[:3])
                 reasons.append(f"country_keywords[{country_code}]:{'/'.join(hits[:3])}=>{' > '.join([p for p in segment if p])}")
 
-        for rule in NEGATIVE_KEYWORDS:
-            hits = self._match_rule_hits(haystack, tokens, rule, options.enable_typo_tolerance)
+        for rule in self.compiled_negative_keyword_rules:
+            hits = self._match_rule_hits(haystack, fuzzy_tokens, rule, False)
             if hits:
                 family = tuple(rule['family'])
                 family_scores[family] = family_scores.get(family, 0.0) + float(rule.get('weight', 0.0))
@@ -526,8 +643,9 @@ class MarketSegmenterService:
                 return 'low'
         return ''
 
-    def _match_rule_hits(self, haystack: str, tokens: list[str], rule: dict, typo_tolerance: bool) -> list[str]:
-        return [kw for kw in rule.get('keywords', []) if self._contains_keyword(haystack, tokens, kw, typo_tolerance)]
+    def _match_rule_hits(self, haystack: str, fuzzy_tokens: tuple[str, ...], rule: dict, typo_tolerance: bool) -> list[str]:
+        keywords = rule.get('normalized_keywords') or tuple(_normalize_text(kw) for kw in rule.get('keywords', []))
+        return [kw for kw in keywords if self._contains_keyword(haystack, fuzzy_tokens, kw, typo_tolerance)]
 
     def _compute_confidence(self, best_score: float, family_scores: dict[tuple[str, str], float], has_main_type: bool) -> float:
         ordered = sorted(family_scores.values(), reverse=True)
