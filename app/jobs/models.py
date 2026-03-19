@@ -9,6 +9,8 @@ class Job(models.Model):
         NORMALIZER = 'normalizer', 'Normalizer'
         MATCHER = 'matcher', 'Matcher'
         GEOCODER = 'geocoder', 'Geocoder'
+        GEOCLASS = 'geoclass', 'Geoclass'
+        MARKETSEGMENTER = 'marketsegmenter', 'Market Segmenter'
 
     class Status(models.TextChoices):
         PENDING = 'pending', 'Pending'

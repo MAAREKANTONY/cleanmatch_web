@@ -12,6 +12,8 @@ from rest_framework.response import Response
 from normalizer.services.normalizer_service import CANONICAL_MAPPING_FIELDS, inspect_excel_workbook
 from matcher.services.matcher_service import MATCHER_MAPPING_FIELDS, inspect_table_file
 from geocoder.services.geocoder_service import GEOCODER_MAPPING_FIELDS, inspect_geocoder_file
+from geoclass.services.geoclass_service import GEOCLASS_MAPPING_FIELDS
+from marketsegmenter.services.marketsegmenter_service import MARKETSEGMENTER_MAPPING_FIELDS, inspect_marketsegmenter_file
 
 from .forms import JobCreateForm
 from .models import Job
@@ -97,6 +99,17 @@ def create_job(request):
                     'country_hint': (form.cleaned_data.get('geocoder_country_hint') or '').strip(),
                     'geocoder_mapping': form.get_geocoder_mapping_payload(form.cleaned_data),
                 })
+            elif form.cleaned_data['job_type'] == Job.JobType.MARKETSEGMENTER:
+                parameters.update({
+                    'marketsegmenter_sheet_name': (form.cleaned_data.get('marketsegmenter_sheet_name') or '').strip() or None,
+                    'marketsegmenter_country_default': (form.cleaned_data.get('marketsegmenter_country_default') or '').strip(),
+                    'marketsegmenter_mapping': form.get_marketsegmenter_mapping_payload(form.cleaned_data),
+                })
+            elif form.cleaned_data['job_type'] == Job.JobType.GEOCLASS:
+                parameters.update({
+                    'geoclass_sheet_name': (form.cleaned_data.get('geoclass_sheet_name') or '').strip() or None,
+                    'geoclass_mapping': form.get_geoclass_mapping_payload(form.cleaned_data),
+                })
 
             try:
                 JobService.ensure_disk_space(str(Path('media').resolve()))
@@ -107,6 +120,8 @@ def create_job(request):
                     'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS,
                     'matcher_mapping_fields': MATCHER_MAPPING_FIELDS,
                     'geocoder_mapping_fields': GEOCODER_MAPPING_FIELDS,
+                    'geoclass_mapping_fields': GEOCLASS_MAPPING_FIELDS,
+                    'marketsegmenter_mapping_fields': MARKETSEGMENTER_MAPPING_FIELDS,
                 })
 
             job = Job.objects.create(
@@ -129,8 +144,29 @@ def create_job(request):
         'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS,
         'matcher_mapping_fields': MATCHER_MAPPING_FIELDS,
         'geocoder_mapping_fields': GEOCODER_MAPPING_FIELDS,
+                    'geoclass_mapping_fields': GEOCLASS_MAPPING_FIELDS,
+                    'marketsegmenter_mapping_fields': MARKETSEGMENTER_MAPPING_FIELDS,
     })
 
+
+
+def help_page(request):
+    context = {
+        'processes': [
+            {'name': 'Normalizer', 'status': 'advanced', 'outputs': 'CSV UTF-8', 'notes': 'mapping, matchcode, multi-country Europe V1'},
+            {'name': 'Matcher', 'status': 'advanced', 'outputs': 'ZIP multi-fichiers', 'notes': 'parity hardening, diagnostics enrichis'},
+            {'name': 'Geocoder', 'status': 'intermediate', 'outputs': 'CSV + summary JSON', 'notes': 'checkpoint, reprise, cache'},
+            {'name': 'Geoclass', 'status': 'initial', 'outputs': 'CSV + summary JSON', 'notes': 'classification heuristique addititve'},
+            {'name': 'Market Segmenter FYRE', 'status': 'initial', 'outputs': 'CSV + summary JSON', 'notes': 'Google Places vers taxonomie FYRE avec types + mots-clés multilingues pays-aware + signal prix'},
+        ],
+        'contracts': [
+            'Conserver les contrats JSON côté inspection avec le flag ok.',
+            'Ne jamais casser les hidden fields de mapping attendus par le front.',
+            'Privilégier les exports CSV/ZIP plutôt que XLSX pour les gros volumes.',
+            'Toujours rester additif sur .env, routes, structure et conventions de nommage.',
+        ],
+    }
+    return render(request, 'jobs/help.html', context)
 
 def job_detail(request, job_id):
     job = get_object_or_404(Job, id=job_id)
@@ -246,5 +282,19 @@ def inspect_geocoder(request):
     except Exception as exc:
         return JsonResponse({'ok': False, 'error': f'Impossible d’inspecter le fichier : {exc}'}, status=400)
     payload['mapping_fields'] = GEOCODER_MAPPING_FIELDS
+    payload['ok'] = True
+    return JsonResponse(payload)
+
+def inspect_marketsegmenter(request):
+    if request.method != 'POST':
+        return JsonResponse({'ok': False, 'error': 'Méthode non autorisée.'}, status=405)
+    uploaded = request.FILES.get('file') or request.FILES.get('input_file_1')
+    if not uploaded:
+        return JsonResponse({'ok': False, 'error': 'Aucun fichier fourni.'}, status=400)
+    try:
+        payload = inspect_marketsegmenter_file(uploaded)
+    except Exception as exc:
+        return JsonResponse({'ok': False, 'error': f'Impossible d’inspecter le fichier : {exc}'}, status=400)
+    payload['mapping_fields'] = MARKETSEGMENTER_MAPPING_FIELDS
     payload['ok'] = True
     return JsonResponse(payload)

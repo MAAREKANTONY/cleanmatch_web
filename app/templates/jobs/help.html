@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+    <div>
+        <span class="eyebrow">Iteration 20</span>
+        <h1 style="margin:14px 0 10px 0; font-size:2rem; letter-spacing:-.04em;">Aide d'exploitation CleanMatch Web</h1>
+        <p class="muted" style="max-width:900px;">Résumé transverse des process, des livrables, des contraintes anti-régression et des conventions à préserver.</p>
+    </div>
+    <div class="hero-actions">
+        <a class="btn" href="{% url 'jobs:new' %}">Nouveau job</a>
+        <a class="btn btn-secondary" href="{% url 'jobs:home' %}">Dashboard</a>
+    </div>
+</section>
+<section class="card stack">
+    <h2>Process disponibles</h2>
+    <div class="grid grid-2">
+        {% for process in processes %}
+        <div class="sheet-item active">
+            <strong>{{ process.name }}</strong>
+            <div class="muted small">Statut : {{ process.status }}</div>
+            <div class="muted small">Livrable : {{ process.outputs }}</div>
+            <div class="muted small">{{ process.notes }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+<section class="card stack">
+    <h2>Contrats à préserver</h2>
+    {% for item in contracts %}<div class="muted">• {{ item }}</div>{% endfor %}
+</section>
+{% endblock %}

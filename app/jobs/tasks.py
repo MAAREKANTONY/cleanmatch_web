@@ -12,6 +12,8 @@ from jobs.services import JobCancelledError, JobService
 from normalizer.services.normalizer_service import NormalizerOptions, NormalizerService
 from matcher.services.matcher_service import MatcherOptions, MatcherService
 from geocoder.services.geocoder_service import GeocoderOptions, GeocoderService
+from geoclass.services.geoclass_service import GeoclassOptions, GeoclassService
+from marketsegmenter.services.marketsegmenter_service import MarketSegmenterOptions, MarketSegmenterService
 
 
 def _read_text_preview(path: str, limit: int = 4000) -> str:
@@ -45,6 +47,10 @@ def run_uploaded_job(self, job_id: str):
             return _run_matcher_job(job)
         if job.job_type == Job.JobType.GEOCODER:
             return _run_geocoder_job(job)
+        if job.job_type == Job.JobType.GEOCLASS:
+            return _run_geoclass_job(job)
+        if job.job_type == Job.JobType.MARKETSEGMENTER:
+            return _run_marketsegmenter_job(job)
         return _run_stub_job(job, input_path, second_input_path)
     except JobCancelledError as exc:
         job.refresh_from_db()
@@ -188,7 +194,7 @@ def _run_geocoder_job(job: Job):
         cache_db_path=Path(settings.MEDIA_ROOT) / 'cache' / 'geocode_cache_web.sqlite3',
     )
 
-    log('🚀 Lancement du geocoder web V1')
+    log('🚀 Lancement du geocoder web V2 checkpoint')
     log(f'📂 Fichier source : {input_path.name}')
     log(f"🧭 Provider : {options.provider}")
     log('💾 Format de sortie : CSV UTF-8 avec lat/lng, geocoder_status, geocoder_source et geocoder_label')
@@ -198,7 +204,66 @@ def _run_geocoder_job(job: Job):
     JobService.enforce_not_cancelled(job)
     with result_path.open('rb') as fh:
         job.output_file.save(result_path.name, File(fh), save=False)
-    JobService.mark_success(job, message='Geocoder V1 terminé avec succès')
+    JobService.mark_success(job, message='Geocoder V2 checkpoint terminé avec succès')
+    return str(job.id)
+
+
+def _run_geoclass_job(job: Job):
+    parameters = job.parameters_json or {}
+    input_path = Path(job.input_file_1.path)
+    output_name = f"{input_path.stem}_geoclass.csv"
+    output_path = Path(job.output_file.field.storage.path(f'outputs/{output_name}'))
+
+    def progress(percent: int, message: str) -> None:
+        job.refresh_from_db()
+        JobService.enforce_not_cancelled(job)
+        JobService.ensure_disk_space(_job_storage_root())
+        JobService.update_progress(job, percent, message)
+
+    def log(message: str) -> None:
+        job.refresh_from_db()
+        JobService.enforce_not_cancelled(job)
+        JobService.append_runtime_log(job, message)
+
+    service = GeoclassService(progress_callback=progress, log_callback=log)
+    options = GeoclassOptions(
+        geoclass_sheet_name=parameters.get('geoclass_sheet_name') or None,
+        geoclass_mapping=parameters.get('geoclass_mapping') or {},
+    )
+
+    log('🚀 Lancement du geoclass web V1 heuristique')
+    log(f'📂 Fichier source : {input_path.name}')
+    log('💾 Format de sortie : CSV UTF-8 avec geoclass_code, geoclass_category, geoclass_subcategory et score')
+    result_path = service.run(input_path=input_path, output_path=output_path, options=options)
+
+    job.refresh_from_db()
+    JobService.enforce_not_cancelled(job)
+    with result_path.open('rb') as fh:
+        job.output_file.save(result_path.name, File(fh), save=False)
+    JobService.mark_success(job, message='Geoclass V1 terminé avec succès')
+    return str(job.id)
+
+
+def _run_marketsegmenter_job(job: Job):
+    parameters = job.parameters_json or {}
+    input_path = Path(job.input_file_1.path)
+    output_name = f"{input_path.stem}_market_segmented.csv"
+    output_path = Path(job.output_file.field.storage.path(f'outputs/{output_name}'))
+    def progress(percent: int, message: str) -> None:
+        job.refresh_from_db(); JobService.enforce_not_cancelled(job); JobService.ensure_disk_space(_job_storage_root()); JobService.update_progress(job, percent, message)
+    def log(message: str) -> None:
+        job.refresh_from_db(); JobService.enforce_not_cancelled(job); JobService.append_runtime_log(job, message)
+    service = MarketSegmenterService(progress_callback=progress, log_callback=log)
+    options = MarketSegmenterOptions(
+        marketsegmenter_sheet_name=parameters.get('marketsegmenter_sheet_name') or None,
+        marketsegmenter_mapping=parameters.get('marketsegmenter_mapping') or {},
+        country_default=parameters.get('marketsegmenter_country_default') or '',
+    )
+    result_path = service.run(input_path=input_path, output_path=output_path, options=options)
+    job.refresh_from_db(); JobService.enforce_not_cancelled(job)
+    with result_path.open('rb') as fh:
+        job.output_file.save(result_path.name, File(fh), save=False)
+    JobService.mark_success(job, message='Market segmenter FYRE terminé avec succès')
     return str(job.id)
 
 def _run_stub_job(job: Job, input_path: str, second_input_path: str):
@@ -245,7 +310,7 @@ def _run_stub_job(job: Job, input_path: str, second_input_path: str):
         'Aperçu du fichier principal (premiers octets décodés en UTF-8 avec remplacement) :',
         preview,
         '',
-        'Normalizer et Matcher branchés. Geocoder V1 est désormais disponible.',
+        'Normalizer et Matcher branchés. Geocoder V2 checkpoint est désormais disponible.',
     ]
     output_name = f'result_{job.id}.txt'
     output_content = '\n'.join(output_lines)

@@ -3,6 +3,8 @@ from django import forms
 from normalizer.services.normalizer_service import CANONICAL_MAPPING_FIELDS, REQUIRED_MATCHCODE_FIELDS, EUROPE_COUNTRY_CHOICES
 from matcher.services.matcher_service import MATCHER_MAPPING_FIELDS, MATCHER_REQUIRED_FIELDS
 from geocoder.services.geocoder_service import GEOCODER_MAPPING_FIELDS, GEOCODER_REQUIRED_FIELDS
+from geoclass.services.geoclass_service import GEOCLASS_MAPPING_FIELDS, GEOCLASS_REQUIRED_FIELDS
+from marketsegmenter.services.marketsegmenter_service import MARKETSEGMENTER_MAPPING_FIELDS, MARKETSEGMENTER_REQUIRED_FIELDS
 
 from .models import Job
 
@@ -12,9 +14,11 @@ class JobCreateForm(forms.Form):
         label='Type de job',
         choices=[
             (Job.JobType.DEMO, 'Test pipeline'),
-            (Job.JobType.NORMALIZER, 'Normalizer (moteur réel V16 Matcher Multi-country)'),
+            (Job.JobType.NORMALIZER, 'Normalizer (moteur réel V2 checkpoint6 Matcher Multi-country)'),
             (Job.JobType.MATCHER, 'Matcher (moteur réel V4 Multi-country)'),
-            (Job.JobType.GEOCODER, 'Geocoder (moteur réel V1)'),
+            (Job.JobType.GEOCODER, 'Geocoder (moteur réel V2 checkpoint)'),
+            (Job.JobType.GEOCLASS, 'Geoclass (moteur réel V1 heuristique)'),
+            (Job.JobType.MARKETSEGMENTER, 'Market Segmenter FYRE (Google Places -> market segments)'),
         ],
         initial=Job.JobType.NORMALIZER,
     )
@@ -45,6 +49,8 @@ class JobCreateForm(forms.Form):
         initial='existing_or_nominatim',
     )
     geocoder_country_hint = forms.CharField(label='Pays / hint (optionnel)', required=False, initial='')
+    marketsegmenter_sheet_name = forms.CharField(required=False, widget=forms.HiddenInput())
+    marketsegmenter_country_default = forms.CharField(label='Pays par défaut (optionnel)', required=False, initial='')
 
     # Normalizer hidden mappings
     for field in CANONICAL_MAPPING_FIELDS:
@@ -58,6 +64,14 @@ class JobCreateForm(forms.Form):
     # Geocoder hidden mappings
     for field in GEOCODER_MAPPING_FIELDS:
         locals()[f'geocoder_{field}'] = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    # Market Segmenter hidden mappings
+    for field in MARKETSEGMENTER_MAPPING_FIELDS:
+        locals()[f'marketsegmenter_{field}'] = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    # Geoclass hidden mappings
+    for field in GEOCLASS_MAPPING_FIELDS:
+        locals()[f'geoclass_{field}'] = forms.CharField(required=False, widget=forms.HiddenInput())
     del field
 
     def clean_input_file_1(self):
@@ -111,6 +125,24 @@ class JobCreateForm(forms.Form):
             missing_required = [field for field in GEOCODER_REQUIRED_FIELDS if field not in geocoder_mapping]
             if missing_required:
                 self.add_error(None, 'Le geocoder nécessite un mapping des colonnes : ' + ', '.join(sorted(missing_required)))
+        if job_type == Job.JobType.MARKETSEGMENTER and input_file_1:
+            marketsegmenter_mapping = self.get_marketsegmenter_mapping_payload(cleaned)
+            values = list(marketsegmenter_mapping.values())
+            duplicates = [src for src in values if values.count(src) > 1]
+            if duplicates:
+                self.add_error(None, 'Le mapping market segmenter contient une colonne source utilisée plusieurs fois.')
+            missing_required = [field for field in MARKETSEGMENTER_REQUIRED_FIELDS if field not in marketsegmenter_mapping]
+            if missing_required:
+                self.add_error(None, 'Le market segmenter nécessite un mapping des colonnes : ' + ', '.join(sorted(missing_required)))
+        if job_type == Job.JobType.GEOCLASS and input_file_1:
+            geoclass_mapping = self.get_geoclass_mapping_payload(cleaned)
+            values = list(geoclass_mapping.values())
+            duplicates = [src for src in values if values.count(src) > 1]
+            if duplicates:
+                self.add_error(None, 'Le mapping geoclass contient une colonne source utilisée plusieurs fois.')
+            missing_required = [field for field in GEOCLASS_REQUIRED_FIELDS if field not in geoclass_mapping]
+            if missing_required:
+                self.add_error(None, 'Le geoclass nécessite un mapping des colonnes : ' + ', '.join(sorted(missing_required)))
         return cleaned
 
     @staticmethod
@@ -137,6 +169,26 @@ class JobCreateForm(forms.Form):
         mapping = {}
         for canonical in GEOCODER_MAPPING_FIELDS:
             value = (cleaned_data.get(f'geocoder_{canonical}') or '').strip()
+            if value and value != '__ignore__':
+                mapping[canonical] = value
+        return mapping
+
+    geoclass_sheet_name = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    @staticmethod
+    def get_marketsegmenter_mapping_payload(cleaned_data):
+        mapping = {}
+        for canonical in MARKETSEGMENTER_MAPPING_FIELDS:
+            value = (cleaned_data.get(f'marketsegmenter_{canonical}') or '').strip()
+            if value and value != '__ignore__':
+                mapping[canonical] = value
+        return mapping
+
+    @staticmethod
+    def get_geoclass_mapping_payload(cleaned_data):
+        mapping = {}
+        for canonical in GEOCLASS_MAPPING_FIELDS:
+            value = (cleaned_data.get(f'geoclass_{canonical}') or '').strip()
             if value and value != '__ignore__':
                 mapping[canonical] = value
         return mapping

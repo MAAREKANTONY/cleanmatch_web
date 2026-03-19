@@ -4,13 +4,13 @@
     <div style="display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:flex-start;">
         <div>
             <span class="pill">Itération 14</span>
-            <h1 style="margin:14px 0 10px 0; font-size:2rem; letter-spacing:-.04em;">Normalizer + Matcher + Geocoder</h1>
+            <h1 style="margin:14px 0 10px 0; font-size:2rem; letter-spacing:-.04em;">Normalizer + Matcher + Geocoder + Geoclass + Market Segmenter FYRE</h1>
             <p>
                 Cette itération finalise le <strong>Normalizer multi-country Europe V1</strong> avec profils pays,
                 normalisation d’adresses, codes postaux et identifiants légaux pour plusieurs pays européens.
             </p>
         </div>
-        <div class="iteration-tag" style="background:rgba(255,255,255,.18); color:white; border-color:rgba(255,255,255,.22);">Version active : Iteration 16 — Matcher Multi-country</div>
+        <div class="iteration-tag" style="background:rgba(255,255,255,.18); color:white; border-color:rgba(255,255,255,.22);">Version active : Iteration 23 — Market Segmenter FYRE country-aware + prix + spécialités culinaires</div>
     </div>
 </section>
 
@@ -38,7 +38,7 @@
             <div class="field">
                 <label for="id_input_file_1">{{ form.input_file_1.label }}</label>
                 {{ form.input_file_1 }}
-                <div class="field-help">Normalizer : Excel. Matcher / Geocoder : CSV ou Excel.</div>
+                <div class="field-help">Normalizer : Excel. Matcher / Geocoder / Geoclass : CSV ou Excel.</div>
                 {% if form.input_file_1.errors %}{{ form.input_file_1.errors }}{% endif %}
             </div>
 
@@ -106,8 +106,8 @@
 
         <div class="card stack hidden" id="geocoder-panel">
             <div>
-                <h2>2C. Options Geocoder</h2>
-                <div class="muted">Inspection du fichier, mapping guidé et enrichissement lat/lng.</div>
+                <h2>2C. Options Geocoder / Geoclass / Market Segmenter</h2>
+                <div class="muted">Inspection du fichier, mapping guidé et enrichissement lat/lng, classification heuristique ou segmentation FYRE.</div>
             </div>
             <div class="grid grid-2">
                 <div class="field">
@@ -121,8 +121,8 @@
                 </div>
             </div>
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-                <button class="btn btn-secondary" type="button" id="inspect-geocoder-btn">Inspecter le fichier Geocoder</button>
-                <div class="muted small" id="inspect-geocoder-status">Aucune inspection Geocoder lancée.</div>
+                <button class="btn btn-secondary" type="button" id="inspect-geocoder-btn">Inspecter le fichier Geocoder / Segmenter</button>
+                <div class="muted small" id="inspect-geocoder-status">Aucune inspection Geocoder / Segmenter lancée.</div>
             </div>
             <div class="muted small">Colonnes minimales : <span class="code-inline">id</span>, <span class="code-inline">address</span>, <span class="code-inline">zipcode</span>, <span class="code-inline">city</span>. Si <span class="code-inline">lat/lng</span> sont déjà présents, ils seront réutilisés.</div>
         </div>
@@ -191,7 +191,7 @@
         <div class="toolbar">
             <div>
                 <h2 style="margin-bottom:6px;">4C. Mapping Geocoder</h2>
-                <div class="muted">Le geocoder réutilise d'abord les coordonnées existantes, puis peut tenter Nominatim si nécessaire. Sortie en CSV.</div>
+                <div class="muted">Le geocoder réutilise d'abord les coordonnées existantes, puis peut tenter Nominatim si nécessaire. Le geoclass réutilise la même inspection pour une classification heuristique. Sortie en CSV.</div>
             </div>
         </div>
         <div class="mapping-grid" id="geocoder-mapping-grid"></div>
@@ -216,9 +216,11 @@
     const normalizerFields = {{ canonical_mapping_fields|safe }};
     const matcherFields = {{ matcher_mapping_fields|safe }};
     const geocoderFields = {{ geocoder_mapping_fields|safe }};
+    const marketsegmenterFields = {{ marketsegmenter_mapping_fields|safe }};
     const normalizerRequired = new Set(['address', 'zipcode', 'city']);
     const matcherRequired = new Set(['id', 'name', 'address', 'zipcode', 'city']);
     const geocoderRequired = new Set(['id', 'address', 'zipcode', 'city']);
+    const marketsegmenterRequired = new Set(['name', 'main_type']);
     const jobType = document.getElementById('id_job_type');
     const inputFile = document.getElementById('id_input_file_1');
     const inputFile2 = document.getElementById('id_input_file_2');
@@ -253,6 +255,7 @@
     const geocoderMappingCard = document.getElementById('geocoder-mapping-card');
     const geocoderMappingGrid = document.getElementById('geocoder-mapping-grid');
     const geocoderSheetInput = document.getElementById('id_geocoder_sheet_name');
+    const marketsegmenterSheetInput = document.getElementById('id_marketsegmenter_sheet_name');
 
     function escapeHtml(value) {
         return String(value || '')
@@ -445,21 +448,27 @@
     }
 
     async function inspectGeocoderFile() {
-        if (jobType.value !== 'geocoder') return;
+        if (!(jobType.value === 'geocoder' || jobType.value === 'geoclass' || jobType.value === 'marketsegmenter')) return;
         if (!inputFile.files.length) { inspectGeocoderStatus.textContent = 'Sélectionne d’abord un fichier source.'; return; }
-        inspectGeocoderStatus.textContent = 'Inspection geocoder en cours...';
+        inspectGeocoderStatus.textContent = jobType.value === 'marketsegmenter' ? 'Inspection market segmenter en cours...' : 'Inspection geocoder en cours...';
         inspectGeocoderBtn.disabled = true;
         geocoderInspectionResults.innerHTML = '';
         const formData = new FormData();
         formData.append('file', inputFile.files[0]);
         try {
-            const response = await fetch('{% url "jobs:inspect_geocoder" %}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
+            const inspectUrl = jobType.value === 'marketsegmenter' ? '{% url "jobs:inspect_marketsegmenter" %}' : '{% url "jobs:inspect_geocoder" %}';
+            const response = await fetch(inspectUrl, { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
             const data = await response.json();
             if (!response.ok || data.ok === false) { inspectGeocoderStatus.textContent = data.error || 'Inspection geocoder impossible.'; return; }
             data.sheets.forEach((sheet, index) => geocoderInspectionResults.appendChild(renderGeocoderSheetCard(sheet, index)));
             const selected = data.sheets[0];
-            geocoderSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
-            buildMappingCard(geocoderMappingGrid, geocoderFields, geocoderRequired, 'id_geocoder_', selected.detected_columns, selected.mapping_suggestions || {});
+            if (jobType.value === 'marketsegmenter') {
+                marketsegmenterSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
+                buildMappingCard(geocoderMappingGrid, marketsegmenterFields, marketsegmenterRequired, 'id_marketsegmenter_', selected.detected_columns, selected.mapping_suggestions || {});
+            } else {
+                geocoderSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
+                buildMappingCard(geocoderMappingGrid, geocoderFields, geocoderRequired, 'id_geocoder_', selected.detected_columns, selected.mapping_suggestions || {});
+            }
             geocoderInspectionCard.classList.remove('hidden');
             geocoderMappingCard.classList.remove('hidden');
             inspectGeocoderStatus.textContent = `Inspection prête — ${data.filename}.`;
@@ -473,7 +482,7 @@
     function togglePanels() {
         const isNormalizer = jobType.value === 'normalizer';
         const isMatcher = jobType.value === 'matcher';
-        const isGeocoder = jobType.value === 'geocoder';
+        const isGeocoder = jobType.value === 'geocoder' || jobType.value === 'geoclass' || jobType.value === 'marketsegmenter';
         normalizerPanel.classList.toggle('hidden', !isNormalizer);
         inspectionCard.classList.toggle('hidden', !isNormalizer || !inspectionResults.children.length);
         mappingCard.classList.toggle('hidden', !isNormalizer || !mappingGrid.children.length);

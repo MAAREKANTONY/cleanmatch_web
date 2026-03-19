@@ -18,21 +18,23 @@ LogCallback = Callable[[str], None]
 
 GEOCODER_MAPPING_FIELDS = [
     'id', 'name', 'address', 'zipcode', 'city',
-    'lat', 'lng', 'phone', 'email', 'website', 'country',
+    'lat', 'lng', 'phone', 'email', 'website', 'country', 'hexa', 'legal_id'
 ]
 GEOCODER_REQUIRED_FIELDS = {'id', 'address', 'zipcode', 'city'}
 GEOCODER_COLUMN_ALIASES = {
     'id': ['id', 'identifier', 'identifiant', 'outlet_id', 'store_id', 'restaurant_id'],
     'name': ['name', 'nom', 'enseigne', 'raison sociale', 'outlet_name', 'store_name'],
-    'address': ['address', 'adresse', 'adresse1', 'street', 'rue', 'full_address'],
-    'zipcode': ['zipcode', 'zip', 'postal_code', 'code_postal', 'cp', 'post_code'],
-    'city': ['city', 'ville', 'commune', 'town'],
+    'address': ['address', 'adresse', 'adresse1', 'street', 'rue', 'full_address', 'final_address', 'legaladdress', 'legal_address', 'indirizzo', 'direccion', 'dirección'],
+    'zipcode': ['zipcode', 'zip', 'postal_code', 'code_postal', 'cp', 'post_code', 'postcode', 'cap', 'plz', 'legalzipcode', 'legalpostalcode'],
+    'city': ['city', 'ville', 'commune', 'town', 'locality', 'legalcity', 'legal_city', 'citta', 'città', 'ciudad'],
     'lat': ['lat', 'latitude'],
     'lng': ['lng', 'lon', 'long', 'longitude'],
     'phone': ['phone', 'telephone', 'tel', 'mobile', 'cellular'],
     'email': ['email', 'mail', 'e-mail'],
     'website': ['website', 'url', 'web', 'site'],
-    'country': ['country', 'pays', 'country_code'],
+    'country': ['country', 'pays', 'country_code', 'nation', 'paese', 'pais', 'país'],
+    'hexa': ['hexa', 'hexa_gmap', 'hexa_code'],
+    'legal_id': ['legal_id', 'siret', 'siren', 'vat', 'vat_number', 'partita_iva', 'piva', 'cif', 'nif', 'company_number'],
 }
 
 
@@ -86,6 +88,7 @@ def inspect_geocoder_file(uploaded_file) -> dict:
         xls = pd.ExcelFile(uploaded_file)
         sheets = []
         for name in xls.sheet_names[:10]:
+            uploaded_file.seek(0)
             df = pd.read_excel(uploaded_file, sheet_name=name, nrows=20)
             columns = [str(col) for col in df.columns]
             suggestions = suggest_column_mapping(columns)
@@ -133,8 +136,21 @@ def _clean_zip(zipcode) -> str:
     return ''.join(ch for ch in str(zipcode).split('.')[0] if ch.isalnum())
 
 
+def _clean_country(country) -> str:
+    value = str(country or '').strip().upper()
+    aliases = {'UK': 'GB', 'ENGLAND': 'GB', 'FRANCE': 'FR', 'ITALY': 'IT', 'SPAIN': 'ES', 'GERMANY': 'DE'}
+    return aliases.get(value, value)
+
+
 def _full_query(row: pd.Series, country_hint: str = '') -> str:
-    parts = [str(row.get('address', '')).strip(), _clean_zip(row.get('zipcode', '')), str(row.get('city', '')).strip(), country_hint.strip()]
+    country = _clean_country(row.get('country') or country_hint)
+    parts = [
+        str(row.get('name', '')).strip(),
+        str(row.get('address', '')).strip(),
+        _clean_zip(row.get('zipcode', '')),
+        str(row.get('city', '')).strip(),
+        country.strip(),
+    ]
     return ', '.join([part for part in parts if part])
 
 
@@ -174,6 +190,24 @@ class GeocodeCache:
             conn.commit()
 
 
+class GeocodeCheckpoint:
+    def __init__(self, checkpoint_path: Path):
+        self.path = checkpoint_path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def load(self) -> dict[str, dict]:
+        if not self.path.exists():
+            return {}
+        try:
+            data = json.loads(self.path.read_text(encoding='utf-8'))
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def save(self, payload: dict[str, dict]) -> None:
+        self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
 @dataclass
 class GeocoderOptions:
     provider: str = 'existing_or_nominatim'
@@ -182,6 +216,8 @@ class GeocoderOptions:
     country_hint: str = ''
     user_agent: str = 'cleanmatch-web'
     cache_db_path: Path | None = None
+    checkpoint_every: int = 50
+    resume_enabled: bool = True
 
 
 class GeocoderService:
@@ -200,9 +236,12 @@ class GeocoderService:
         df = _read_table(input_path, options.geocoder_sheet_name)
         self.log(f'📘 Geocoder source : {input_path.name} - {len(df)} lignes')
         df = self._apply_mapping(df, options.geocoder_mapping)
-        self.progress(15, 'Préparation des colonnes et du cache')
+        self.progress(15, 'Préparation des colonnes, du cache et du checkpoint')
         cache = GeocodeCache(options.cache_db_path or (output_path.parent / 'geocode_cache_web.sqlite3'))
-        geolocator = None
+        checkpoint = GeocodeCheckpoint(output_path.with_suffix('.checkpoint.json'))
+        checkpoint_data = checkpoint.load() if options.resume_enabled else {}
+        if checkpoint_data:
+            self.log(f'♻️ Checkpoint détecté : {len(checkpoint_data)} lignes déjà résolues ou tentées')
         geocode_fn = None
         if options.provider == 'existing_or_nominatim':
             geolocator = Nominatim(user_agent=options.user_agent, timeout=10)
@@ -217,9 +256,16 @@ class GeocoderService:
         resolved_remote = 0
         unresolved = 0
         cache_hits = 0
+        resumed_rows = 0
         for index, (_, row) in enumerate(df.iterrows(), start=1):
             base = {field: row.get(field, '') for field in GEOCODER_MAPPING_FIELDS if field in row.index}
-            result = self._resolve_row(base, cache, geocode_fn, options)
+            row_key = str(base.get('id') or index)
+            if row_key in checkpoint_data:
+                result = checkpoint_data[row_key]
+                resumed_rows += 1
+            else:
+                result = self._resolve_row(base, cache, geocode_fn, options)
+                checkpoint_data[row_key] = result
             if result['geocoder_status'] == 'resolved_existing':
                 resolved_existing += 1
             elif result['geocoder_status'] in {'resolved_nominatim', 'resolved_cache'}:
@@ -230,6 +276,8 @@ class GeocoderService:
             else:
                 unresolved += 1
             rows.append({**base, **result})
+            if index % max(options.checkpoint_every, 1) == 0 or index == total:
+                checkpoint.save(checkpoint_data)
             if index == 1 or index % 25 == 0 or index == total:
                 pct = 15 + int(index / total * 75)
                 self.progress(min(pct, 92), f'Geocoding en cours : {index}/{total}')
@@ -237,33 +285,48 @@ class GeocoderService:
         out_df = pd.DataFrame(rows)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         out_df.to_csv(output_path, index=False, encoding='utf-8-sig')
-        self.log(f'✅ Lignes traitées : {len(out_df)} | existing={resolved_existing} | nominatim={resolved_remote} | cache={cache_hits} | unresolved={unresolved}')
+        summary_path = output_path.with_name(output_path.stem + '_summary.json')
+        summary = {
+            'rows': int(len(out_df)),
+            'resolved_existing': int(resolved_existing),
+            'resolved_remote': int(resolved_remote),
+            'cache_hits': int(cache_hits),
+            'unresolved': int(unresolved),
+            'resumed_rows': int(resumed_rows),
+            'provider': options.provider,
+            'country_hint': options.country_hint,
+        }
+        summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
+        self.log(f'✅ Lignes traitées : {len(out_df)} | existing={resolved_existing} | nominatim={resolved_remote} | cache={cache_hits} | resumed={resumed_rows} | unresolved={unresolved}')
+        self.log(f'🧾 Summary geocoder : {summary_path.name}')
         self.progress(100, 'Geocoder terminé')
         return output_path
 
     def _apply_mapping(self, df: pd.DataFrame, mapping: dict[str, str]) -> pd.DataFrame:
-        mapped = pd.DataFrame(index=df.index)
-        for canonical, source in mapping.items():
-            if source in df.columns:
-                mapped[canonical] = df[source]
+        df = df.copy()
+        missing_mapping_sources = [source for source in mapping.values() if source not in df.columns]
+        if missing_mapping_sources:
+            raise ValueError(f'Le fichier geocoder ne contient pas certaines colonnes mappées: {", ".join(sorted(set(missing_mapping_sources)))}')
+        reverse = {source: target for target, source in mapping.items() if source in df.columns}
+        df = df.rename(columns=reverse)
         for field in GEOCODER_MAPPING_FIELDS:
-            if field not in mapped.columns:
-                mapped[field] = ''
-        return mapped.fillna('')
+            if field not in df.columns:
+                df[field] = ''
+        for field in ['id', 'name', 'address', 'zipcode', 'city', 'country', 'phone', 'email', 'website', 'hexa', 'legal_id']:
+            df[field] = df[field].fillna('').astype(str)
+        return df
 
     def _resolve_row(self, base: dict, cache: GeocodeCache, geocode_fn, options: GeocoderOptions) -> dict:
-        lat = base.get('lat', '')
-        lng = base.get('lng', '')
-        if _is_valid_coord(lat, True) and _is_valid_coord(lng, False):
+        if _is_valid_coord(base.get('lat'), True) and _is_valid_coord(base.get('lng'), False):
             return {
-                'lat': float(lat), 'lng': float(lng), 'geocoder_status': 'resolved_existing',
+                'lat': base.get('lat'), 'lng': base.get('lng'), 'geocoder_status': 'resolved_existing',
                 'geocoder_source': 'input', 'geocoder_query': '', 'geocoder_label': '',
             }
         query = _full_query(pd.Series(base), options.country_hint)
         cache_key = hashlib.sha256(f'{options.provider}|{query}'.encode('utf-8')).hexdigest()
         cached = cache.get(cache_key)
         if cached:
-            return cached
+            return cached | {'geocoder_status': 'resolved_cache'}
         unresolved_payload = {
             'lat': '', 'lng': '', 'geocoder_status': 'unresolved',
             'geocoder_source': options.provider, 'geocoder_query': query, 'geocoder_label': '',
