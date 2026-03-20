@@ -8,19 +8,19 @@ from typing import Callable
 import pandas as pd
 from slugify import slugify
 
+from core.config_loader import load_yaml_config
+
 ProgressCallback = Callable[[int, str], None]
 LogCallback = Callable[[str], None]
 
-GEOCLASS_MAPPING_FIELDS = ['id', 'name', 'address', 'zipcode', 'city', 'country', 'website', 'email', 'phone', 'hexa', 'legal_id']
-GEOCLASS_REQUIRED_FIELDS = {'id', 'name'}
+_GEOCLASS_MAPPING = load_yaml_config('geoclass/mapping_fields.yaml')
+_GEOCLASS_RULES = load_yaml_config('geoclass/keyword_rules.yaml')
 
+GEOCLASS_MAPPING_FIELDS = list(_GEOCLASS_MAPPING.get('mapping_fields', []))
+GEOCLASS_REQUIRED_FIELDS = set(_GEOCLASS_MAPPING.get('required_fields', []))
 KEYWORD_RULES = [
-    ('hotel', 'hospitality', 'hotel', ['hotel', 'hostel', 'resort']),
-    ('restaurant', 'food_service', 'restaurant', ['restaurant', 'ristorante', 'restaurante', 'brasserie', 'bistrot']),
-    ('bar', 'food_service', 'bar', ['bar', 'pub', 'cocktail', 'taverna']),
-    ('bakery', 'food_retail', 'bakery', ['boulangerie', 'bakery', 'patisserie', 'pasteleria']),
-    ('pharmacy', 'retail', 'pharmacy', ['pharmacie', 'farmacia', 'apotheek']),
-    ('supermarket', 'retail', 'supermarket', ['supermarket', 'supermercato', 'supermercado', 'market']),
+    (rule.get('code', ''), rule.get('category', ''), rule.get('subcategory', ''), list(rule.get('keywords', [])))
+    for rule in _GEOCLASS_RULES.get('keyword_rules', [])
 ]
 
 

@@ -1,0 +1,19 @@
+country_code: PT
+street_types:
+- rua
+- avenida
+- av
+- travessa
+- largo
+- praça
+- praca
+- estrada
+- alameda
+postcode_regex: ^\d{4}-?\d{3}$
+legal_id_type: nif
+legal_prefixes:
+- pt
+number_suffixes: []
+company_suffixes:
+- lda
+- sa

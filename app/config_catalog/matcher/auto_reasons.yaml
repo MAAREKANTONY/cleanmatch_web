@@ -1,0 +1,8 @@
+auto_reasons:
+  legal_id_match: Identifiant légal identique
+  matchcode_name: Matchcode identique + nom fort
+  algo_score: Nom + voie très proches
+  hexa_match: Hexa identique
+  phone_match: Téléphone identique + proximité
+  siret_match: SIRET identique
+  distance_match: Coordonnées très proches

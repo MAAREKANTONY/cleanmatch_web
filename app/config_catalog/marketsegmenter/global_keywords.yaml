@@ -1,0 +1,701 @@
+keyword_rules:
+- segment:
+  - horeca
+  - fast_food
+  - fast_food_burgers_chicken
+  - ''
+  family:
+  - horeca
+  - fast_food
+  weight: 14
+  keywords:
+  - burger
+  - burgers
+  - hamburger
+  - cheeseburger
+  - fried chicken
+  - crispy chicken
+  - wings
+  - nuggets
+  - chicken burger
+  - hamburgr
+  - burguer
+  - berger
+  - bruger
+- segment:
+  - horeca
+  - fast_food
+  - fast_food_kebab_tacos_mexican
+  - ''
+  family:
+  - horeca
+  - fast_food
+  weight: 14
+  keywords:
+  - kebab
+  - kebap
+  - shawarma
+  - shawerma
+  - tacos
+  - taco
+  - burrito
+  - quesadilla
+  - doner
+  - dürüm
+  - durum
+  - gyro
+  - gyros
+- segment:
+  - horeca
+  - fast_food
+  - fast_food_sandwiches_bagels_salads
+  - ''
+  family:
+  - horeca
+  - fast_food
+  weight: 12
+  keywords:
+  - sandwich
+  - sandwiche
+  - bagel
+  - bagels
+  - salad bar
+  - salads
+  - wrap
+  - panini
+  - bocadillo
+  - sub
+  - subs
+  - hoagie
+  - poke bowl
+  - poké
+  - bowl
+  - boul
+- segment:
+  - horeca
+  - fast_food
+  - pizza_pasta
+  - ''
+  family:
+  - horeca
+  - fast_food
+  weight: 12
+  keywords:
+  - pizza
+  - pizzas
+  - slice
+  - slices
+  - pasta
+  - lasagna
+  - spaghetti
+  - tagliatelle
+  - pizzeria
+  - pizzaria
+  - pizzaa
+- segment:
+  - horeca
+  - fast_food
+  - asian
+  - ''
+  family:
+  - horeca
+  - fast_food
+  weight: 11
+  keywords:
+  - ramen
+  - udon
+  - wok
+  - noodle
+  - noodles
+  - yakisoba
+  - sushi burrito
+  - bao
+  - gyoza
+  - bento
+  - bento box
+- segment:
+  - horeca
+  - fast_food
+  - coffee_shops_ice_cream_parlors_kiosks
+  - ''
+  family:
+  - horeca
+  - fast_food
+  weight: 12
+  keywords:
+  - coffee
+  - cafe
+  - café
+  - espresso
+  - latte
+  - cappuccino
+  - barista
+  - tea room
+  - ice cream
+  - gelato
+  - frozen yogurt
+  - froyo
+  - smoothie
+  - juice bar
+  - kiosk
+  - kiosque
+  - cafee
+  - cofee
+- segment:
+  - horeca
+  - fast_food
+  - self_service_cafeterias
+  - ''
+  family:
+  - horeca
+  - fast_food
+  weight: 11
+  keywords:
+  - self service
+  - self-service
+  - cafeteria
+  - canteen
+  - buffet line
+  - tray service
+  - counter service
+  - service au comptoir
+- segment:
+  - horeca
+  - fast_food
+  - other_fast_food
+  - ''
+  family:
+  - horeca
+  - fast_food
+  weight: 9
+  keywords:
+  - takeaway
+  - take away
+  - take-out
+  - takeout
+  - delivery only
+  - quick bite
+  - grab and go
+  - grab&go
+  - street food
+  - snack bar
+  - snack
+  - food truck
+  - drive thru
+  - drive-thru
+  - drive in
+- segment:
+  - horeca
+  - table_service
+  - fine_dining
+  - ''
+  family:
+  - horeca
+  - table_service
+  weight: 16
+  keywords:
+  - fine dining
+  - chef tasting
+  - degustation
+  - menu degustation
+  - michelin
+  - sommelier
+  - gourmet
+  - haute cuisine
+  - signature menu
+  - reservation recommended
+  - white tablecloth
+- segment:
+  - horeca
+  - table_service
+  - brasseries_cafe_restaurants
+  - ''
+  family:
+  - horeca
+  - table_service
+  weight: 10
+  keywords:
+  - brasserie
+  - bistrot
+  - bistro
+  - cafe restaurant
+  - café restaurant
+  - trattoria
+  - osteria
+  - pub food
+  - family restaurant
+  - diner
+  - sit-down
+  - table service
+  - service en salle
+- segment:
+  - horeca
+  - table_service
+  - creperies
+  - ''
+  family:
+  - horeca
+  - table_service
+  weight: 13
+  keywords:
+  - crepe
+  - crêpe
+  - creperie
+  - crêperie
+  - galette
+  - galettes
+- segment:
+  - horeca
+  - table_service
+  - themed_dining_asian
+  - ''
+  family:
+  - horeca
+  - table_service
+  weight: 14
+  keywords:
+  - sushi
+  - sashimi
+  - ramen restaurant
+  - thai curry
+  - pho
+  - dim sum
+  - dumpling
+  - izakaya
+  - teppanyaki
+  - bibimbap
+  - kimchi
+  - pad thai
+  - bao buns
+  - wonton
+  - yakitori
+- segment:
+  - horeca
+  - table_service
+  - themed_dining_fish_seafood
+  - ''
+  family:
+  - horeca
+  - table_service
+  weight: 14
+  keywords:
+  - seafood
+  - fish
+  - oyster
+  - oysters
+  - lobster
+  - crab
+  - shrimp
+  - prawns
+  - moules
+  - fruits de mer
+  - poisson
+  - ceviche
+- segment:
+  - horeca
+  - table_service
+  - themed_dining_grills_meat_specialties
+  - ''
+  family:
+  - horeca
+  - table_service
+  weight: 14
+  keywords:
+  - steak
+  - steakhouse
+  - bbq
+  - barbecue
+  - grill
+  - grillades
+  - ribs
+  - smoked meat
+  - rotisserie
+  - churrasco
+  - asado
+  - meat lovers
+  - braai
+- segment:
+  - horeca
+  - table_service
+  - themed_dining_italian_pizzerias
+  - ''
+  family:
+  - horeca
+  - table_service
+  weight: 14
+  keywords:
+  - italian
+  - italiano
+  - ristorante
+  - trattoria
+  - pizzeria
+  - pizza napolitaine
+  - napoletana
+  - gnocchi
+  - risotto
+  - antipasti
+  - pasta fresca
+  - pizza oven
+- segment:
+  - horeca
+  - table_service
+  - themed_dining_other_specialties
+  - ''
+  family:
+  - horeca
+  - table_service
+  weight: 13
+  keywords:
+  - lebanese
+  - libanais
+  - shawarma plate
+  - mezze
+  - mezzeh
+  - hummus
+  - falafel
+  - turkish
+  - greek
+  - mexican restaurant
+  - indian
+  - curry house
+  - ethiopian
+  - peruvian
+  - argentinian
+  - moroccan
+  - tagine
+  - couscous
+  - georgian
+  - armenian
+  - israeli
+  - mediterranean restaurant
+  - halal grill
+  - syrian
+  - afghani
+- segment:
+  - horeca
+  - table_service
+  - traditional_dining
+  - ''
+  family:
+  - horeca
+  - table_service
+  weight: 9
+  keywords:
+  - restaurant
+  - restaurante
+  - ristorante
+  - resto
+  - family meals
+  - dining room
+  - plat du jour
+  - menu du jour
+  - sit down meal
+  - reservation
+  - terrace dining
+- segment:
+  - horeca
+  - cafes_bars_discotheques
+  - beer_bars_beer_temples_pubs
+  - ''
+  family:
+  - horeca
+  - cafes_bars_discotheques
+  weight: 13
+  keywords:
+  - pub
+  - ale
+  - beer
+  - brewery
+  - brewpub
+  - taproom
+  - craft beer
+  - irish pub
+  - sports pub
+  - bier
+  - cerveza artesanal
+- segment:
+  - horeca
+  - cafes_bars_discotheques
+  - cocktail_bars
+  - ''
+  family:
+  - horeca
+  - cafes_bars_discotheques
+  weight: 13
+  keywords:
+  - cocktail
+  - mixology
+  - speakeasy
+  - martini
+  - negroni
+  - mojito
+  - bartender
+  - signature cocktails
+- segment:
+  - horeca
+  - cafes_bars_discotheques
+  - wine_tapas_bars
+  - ''
+  family:
+  - horeca
+  - cafes_bars_discotheques
+  weight: 13
+  keywords:
+  - wine bar
+  - wine list
+  - wines by the glass
+  - tapas
+  - pinchos
+  - enoteca
+  - vinoteca
+  - charcuterie board
+  - apero
+- segment:
+  - horeca
+  - cafes_bars_discotheques
+  - clubs_nightclubs_party_bars
+  - ''
+  family:
+  - horeca
+  - cafes_bars_discotheques
+  weight: 13
+  keywords:
+  - nightclub
+  - night club
+  - dj set
+  - dance floor
+  - vip table
+  - party bar
+  - karaoke
+  - late night
+  - discotheque
+- segment:
+  - horeca
+  - cafes_bars_discotheques
+  - traditional_bars
+  - ''
+  family:
+  - horeca
+  - cafes_bars_discotheques
+  weight: 10
+  keywords:
+  - bar
+  - bar tabac
+  - tabac
+  - café-bar
+  - local bar
+  - bar lounge
+- segment:
+  - horeca
+  - hotel_lodging
+  - hotels
+  - ''
+  family:
+  - horeca
+  - hotel_lodging
+  weight: 14
+  keywords:
+  - hotel
+  - resort
+  - spa hotel
+  - boutique hotel
+  - rooms available
+  - check-in
+  - concierge
+  - room service
+- segment:
+  - horeca
+  - hotel_lodging
+  - campsites
+  - ''
+  family:
+  - horeca
+  - hotel_lodging
+  weight: 13
+  keywords:
+  - camping
+  - campground
+  - caravan
+  - rv park
+  - glamping
+  - pitch
+  - bungalow park
+- segment:
+  - horeca
+  - hotel_lodging
+  - other_accommodations
+  - ''
+  family:
+  - horeca
+  - hotel_lodging
+  weight: 11
+  keywords:
+  - hostel
+  - guest house
+  - bed and breakfast
+  - bed & breakfast
+  - holiday rental
+  - aparthotel
+  - serviced apartment
+- segment:
+  - asc
+  - food_store
+  - bakeries_pastry_shops
+  - ''
+  family:
+  - asc
+  - food_store
+  weight: 13
+  keywords:
+  - bakery
+  - boulangerie
+  - patisserie
+  - pastry
+  - viennoiserie
+  - croissant
+  - bread
+  - artisan bread
+  - gateaux
+- segment:
+  - asc
+  - food_store
+  - butchers_delicatessens_caterers
+  - ''
+  family:
+  - asc
+  - food_store
+  weight: 13
+  keywords:
+  - butcher
+  - butchery
+  - charcuterie
+  - delicatessen
+  - traiteur
+  - cold cuts
+  - meat shop
+  - hams
+  - salumi
+- segment:
+  - asc
+  - food_store
+  - wine_shops
+  - ''
+  family:
+  - asc
+  - food_store
+  weight: 12
+  keywords:
+  - wine shop
+  - caviste
+  - cave a vins
+  - cave à vins
+  - liquor store
+  - spirits
+  - whisky shop
+  - vinoteca
+- segment:
+  - asc
+  - food_store
+  - convenience_stores
+  - ''
+  family:
+  - asc
+  - food_store
+  weight: 11
+  keywords:
+  - convenience store
+  - mini market
+  - minimarket
+  - corner shop
+  - 24/7
+  - open 24 hours
+  - grocery
+- segment:
+  - asc
+  - food_store
+  - other_food_stores
+  - tea_shop
+  family:
+  - asc
+  - food_store
+  weight: 10
+  keywords:
+  - tea shop
+  - tea room
+  - thé
+  - teas
+  - infusions
+- segment:
+  - leisure
+  - on_site_catering_events
+  - cultural_sites
+  - ''
+  family:
+  - leisure
+  - on_site_catering_events
+  weight: 12
+  keywords:
+  - museum
+  - gallery
+  - heritage
+  - cultural center
+  - exhibition
+- segment:
+  - leisure
+  - on_site_catering_events
+  - leisure_sites
+  - beach_club
+  family:
+  - leisure
+  - on_site_catering_events
+  weight: 12
+  keywords:
+  - beach club
+  - sunbeds
+  - pool club
+- segment:
+  - leisure
+  - on_site_catering_events
+  - leisure_sites
+  - spa
+  family:
+  - leisure
+  - on_site_catering_events
+  weight: 12
+  keywords:
+  - spa
+  - wellness
+  - massage
+  - hammam
+  - sauna
+- segment:
+  - leisure
+  - on_site_catering_events
+  - leisure_sites
+  - amusement_recreation
+  family:
+  - leisure
+  - on_site_catering_events
+  weight: 12
+  keywords:
+  - amusement park
+  - theme park
+  - water park
+  - arcade
+  - roller coaster
+- segment:
+  - leisure
+  - on_site_catering_events
+  - sports_sites
+  - ''
+  family:
+  - leisure
+  - on_site_catering_events
+  weight: 12
+  keywords:
+  - stadium
+  - sports complex
+  - golf
+  - tennis club
+  - padel
+  - fitness center

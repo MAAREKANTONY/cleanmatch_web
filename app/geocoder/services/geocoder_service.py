@@ -13,29 +13,34 @@ from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
 from slugify import slugify
 
+from core.config_loader import load_yaml_config
+
 ProgressCallback = Callable[[int, str], None]
 LogCallback = Callable[[str], None]
 
-GEOCODER_MAPPING_FIELDS = [
-    'id', 'name', 'address', 'zipcode', 'city',
-    'lat', 'lng', 'phone', 'email', 'website', 'country', 'hexa', 'legal_id'
-]
-GEOCODER_REQUIRED_FIELDS = {'id', 'address', 'zipcode', 'city'}
-GEOCODER_COLUMN_ALIASES = {
-    'id': ['id', 'identifier', 'identifiant', 'outlet_id', 'store_id', 'restaurant_id'],
-    'name': ['name', 'nom', 'enseigne', 'raison sociale', 'outlet_name', 'store_name'],
-    'address': ['address', 'adresse', 'adresse1', 'street', 'rue', 'full_address', 'final_address', 'legaladdress', 'legal_address', 'indirizzo', 'direccion', 'dirección'],
-    'zipcode': ['zipcode', 'zip', 'postal_code', 'code_postal', 'cp', 'post_code', 'postcode', 'cap', 'plz', 'legalzipcode', 'legalpostalcode'],
-    'city': ['city', 'ville', 'commune', 'town', 'locality', 'legalcity', 'legal_city', 'citta', 'città', 'ciudad'],
-    'lat': ['lat', 'latitude'],
-    'lng': ['lng', 'lon', 'long', 'longitude'],
-    'phone': ['phone', 'telephone', 'tel', 'mobile', 'cellular'],
-    'email': ['email', 'mail', 'e-mail'],
-    'website': ['website', 'url', 'web', 'site'],
-    'country': ['country', 'pays', 'country_code', 'nation', 'paese', 'pais', 'país'],
-    'hexa': ['hexa', 'hexa_gmap', 'hexa_code'],
-    'legal_id': ['legal_id', 'siret', 'siren', 'vat', 'vat_number', 'partita_iva', 'piva', 'cif', 'nif', 'company_number'],
-}
+_GEOCODER_MAPPING = load_yaml_config('geocoder/mapping_fields.yaml')
+_GEOCODER_ALIASES = load_yaml_config('geocoder/column_aliases.yaml')
+_GEOCODER_COUNTRIES = load_yaml_config('geocoder/countries.yaml')
+_GEOCODER_PROVIDERS = load_yaml_config('geocoder/providers.yaml')
+_GEOCODER_CACHE = load_yaml_config('geocoder/cache.yaml')
+_GEOCODER_CHECKPOINT = load_yaml_config('geocoder/checkpoint.yaml')
+_GEOCODER_QUERY = load_yaml_config('geocoder/query_templates.yaml')
+
+GEOCODER_MAPPING_FIELDS = list(_GEOCODER_MAPPING.get('mapping_fields', []))
+GEOCODER_REQUIRED_FIELDS = set(_GEOCODER_MAPPING.get('required_fields', []))
+GEOCODER_COLUMN_ALIASES = _GEOCODER_ALIASES.get('column_aliases', {})
+GEOCODER_COUNTRY_ALIASES = _GEOCODER_COUNTRIES.get('country_aliases', {})
+GEOCODER_DEFAULT_PROVIDER = _GEOCODER_PROVIDERS.get('default_provider', 'existing_or_nominatim')
+GEOCODER_PROVIDER_SETTINGS = _GEOCODER_PROVIDERS.get('providers', {}).get('existing_or_nominatim', {})
+GEOCODER_DEFAULT_USER_AGENT = str(GEOCODER_PROVIDER_SETTINGS.get('user_agent', 'cleanmatch-web'))
+GEOCODER_TIMEOUT_SECONDS = int(GEOCODER_PROVIDER_SETTINGS.get('timeout_seconds', 10))
+GEOCODER_MIN_DELAY_SECONDS = float(GEOCODER_PROVIDER_SETTINGS.get('min_delay_seconds', 1))
+GEOCODER_PROVIDER_SOURCE_LABEL = str(GEOCODER_PROVIDER_SETTINGS.get('source_label', 'nominatim'))
+GEOCODER_CACHE_FILENAME = str(_GEOCODER_CACHE.get('cache_filename', 'geocode_cache_web.sqlite3'))
+GEOCODER_CHECKPOINT_EVERY = int(_GEOCODER_CHECKPOINT.get('checkpoint_every', 50))
+GEOCODER_RESUME_ENABLED = bool(_GEOCODER_CHECKPOINT.get('resume_enabled', True))
+GEOCODER_CHECKPOINT_SUFFIX = str(_GEOCODER_CHECKPOINT.get('checkpoint_suffix', '.checkpoint.json'))
+GEOCODER_QUERY_ORDER = list(_GEOCODER_QUERY.get('default_query_order', ['name', 'address', 'zipcode', 'city', 'country']))
 
 
 def _noop_progress(percent: int, message: str) -> None:
@@ -138,19 +143,19 @@ def _clean_zip(zipcode) -> str:
 
 def _clean_country(country) -> str:
     value = str(country or '').strip().upper()
-    aliases = {'UK': 'GB', 'ENGLAND': 'GB', 'FRANCE': 'FR', 'ITALY': 'IT', 'SPAIN': 'ES', 'GERMANY': 'DE'}
-    return aliases.get(value, value)
+    return GEOCODER_COUNTRY_ALIASES.get(value, value)
 
 
 def _full_query(row: pd.Series, country_hint: str = '') -> str:
     country = _clean_country(row.get('country') or country_hint)
-    parts = [
-        str(row.get('name', '')).strip(),
-        str(row.get('address', '')).strip(),
-        _clean_zip(row.get('zipcode', '')),
-        str(row.get('city', '')).strip(),
-        country.strip(),
-    ]
+    values = {
+        'name': str(row.get('name', '')).strip(),
+        'address': str(row.get('address', '')).strip(),
+        'zipcode': _clean_zip(row.get('zipcode', '')),
+        'city': str(row.get('city', '')).strip(),
+        'country': country.strip(),
+    }
+    parts = [values.get(key, '') for key in GEOCODER_QUERY_ORDER]
     return ', '.join([part for part in parts if part])
 
 
@@ -210,14 +215,14 @@ class GeocodeCheckpoint:
 
 @dataclass
 class GeocoderOptions:
-    provider: str = 'existing_or_nominatim'
+    provider: str = GEOCODER_DEFAULT_PROVIDER
     geocoder_sheet_name: str | None = None
     geocoder_mapping: dict[str, str] = field(default_factory=dict)
     country_hint: str = ''
-    user_agent: str = 'cleanmatch-web'
+    user_agent: str = GEOCODER_DEFAULT_USER_AGENT
     cache_db_path: Path | None = None
-    checkpoint_every: int = 50
-    resume_enabled: bool = True
+    checkpoint_every: int = GEOCODER_CHECKPOINT_EVERY
+    resume_enabled: bool = GEOCODER_RESUME_ENABLED
 
 
 class GeocoderService:
@@ -237,15 +242,15 @@ class GeocoderService:
         self.log(f'📘 Geocoder source : {input_path.name} - {len(df)} lignes')
         df = self._apply_mapping(df, options.geocoder_mapping)
         self.progress(15, 'Préparation des colonnes, du cache et du checkpoint')
-        cache = GeocodeCache(options.cache_db_path or (output_path.parent / 'geocode_cache_web.sqlite3'))
-        checkpoint = GeocodeCheckpoint(output_path.with_suffix('.checkpoint.json'))
+        cache = GeocodeCache(options.cache_db_path or (output_path.parent / GEOCODER_CACHE_FILENAME))
+        checkpoint = GeocodeCheckpoint(output_path.with_name(output_path.stem + GEOCODER_CHECKPOINT_SUFFIX))
         checkpoint_data = checkpoint.load() if options.resume_enabled else {}
         if checkpoint_data:
             self.log(f'♻️ Checkpoint détecté : {len(checkpoint_data)} lignes déjà résolues ou tentées')
         geocode_fn = None
         if options.provider == 'existing_or_nominatim':
-            geolocator = Nominatim(user_agent=options.user_agent, timeout=10)
-            geocode_fn = RateLimiter(geolocator.geocode, min_delay_seconds=1, swallow_exceptions=False)
+            geolocator = Nominatim(user_agent=options.user_agent, timeout=GEOCODER_TIMEOUT_SECONDS)
+            geocode_fn = RateLimiter(geolocator.geocode, min_delay_seconds=GEOCODER_MIN_DELAY_SECONDS, swallow_exceptions=False)
             self.log('🌍 Provider actif : existing_or_nominatim (réutilise les coordonnées présentes, puis tente Nominatim)')
         else:
             self.log('📌 Provider actif : existing_only (réutilise uniquement les coordonnées existantes)')
@@ -343,7 +348,7 @@ class GeocoderService:
             'lat': location.latitude,
             'lng': location.longitude,
             'geocoder_status': 'resolved_nominatim',
-            'geocoder_source': 'nominatim',
+            'geocoder_source': GEOCODER_PROVIDER_SOURCE_LABEL,
             'geocoder_query': query,
             'geocoder_label': getattr(location, 'address', ''),
         }

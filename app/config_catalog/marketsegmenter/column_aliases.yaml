@@ -1,0 +1,66 @@
+column_aliases:
+  place_id:
+  - Place Id
+  - place_id
+  - id
+  - CID
+  - MID
+  name:
+  - Name
+  - name
+  country:
+  - Country
+  - country
+  country_code:
+  - Country code
+  - country_code
+  - country iso
+  - country_iso
+  city:
+  - City
+  - city
+  - locality
+  postal_code:
+  - Postal code
+  - postal_code
+  - postcode
+  - zip
+  main_type:
+  - Main type
+  - main_type
+  all_types:
+  - All types
+  - all_types
+  description_1:
+  - Description 1
+  - description_1
+  description_2:
+  - Description 2
+  - description_2
+  description_3:
+  - Description 3
+  - description_3
+  price_range_simplified:
+  - Price range simplified
+  - price_range_simplified
+  customer_reported_price_range:
+  - Customers reported price range
+  - Customer reported price range
+  - customer_reported_price_range
+  reviews_tags:
+  - Reviews tags
+  - reviews_tags
+  characteristics:
+  - Characteristics
+  - characteristics
+  hotel_additional_informations:
+  - Hotel additional informations
+  - hotel_additional_informations
+  - Hotel additional information
+  - hotel_additional_information
+  website_title:
+  - Website title
+  - website_title
+  website_meta_description:
+  - Website meta description
+  - website_meta_description

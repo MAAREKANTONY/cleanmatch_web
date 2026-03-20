@@ -1,0 +1,97 @@
+column_aliases:
+  id:
+  - id
+  - identifier
+  - identifiant
+  - outlet_id
+  - store_id
+  - restaurant_id
+  name:
+  - name
+  - nom
+  - enseigne
+  - raison sociale
+  - outlet_name
+  - store_name
+  address:
+  - address
+  - adresse
+  - adresse1
+  - street
+  - rue
+  - full_address
+  - final_address
+  - legaladdress
+  - legal_address
+  - indirizzo
+  - direccion
+  - dirección
+  zipcode:
+  - zipcode
+  - zip
+  - postal_code
+  - code_postal
+  - cp
+  - post_code
+  - postcode
+  - cap
+  - plz
+  - legalzipcode
+  - legalpostalcode
+  city:
+  - city
+  - ville
+  - commune
+  - town
+  - locality
+  - legalcity
+  - legal_city
+  - citta
+  - città
+  - ciudad
+  lat:
+  - lat
+  - latitude
+  lng:
+  - lng
+  - lon
+  - long
+  - longitude
+  phone:
+  - phone
+  - telephone
+  - tel
+  - mobile
+  - cellular
+  email:
+  - email
+  - mail
+  - e-mail
+  website:
+  - website
+  - url
+  - web
+  - site
+  country:
+  - country
+  - pays
+  - country_code
+  - nation
+  - paese
+  - pais
+  - país
+  hexa:
+  - hexa
+  - hexa_gmap
+  - hexa_code
+  legal_id:
+  - legal_id
+  - siret
+  - siren
+  - vat
+  - vat_number
+  - partita_iva
+  - piva
+  - cif
+  - nif
+  - company_number

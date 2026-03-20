@@ -1,0 +1,24 @@
+negative_keywords:
+- family:
+  - horeca
+  - table_service
+  weight: -6.0
+  keywords:
+  - takeaway
+  - take away
+  - delivery only
+  - food truck
+  - drive thru
+  - drive-thru
+  - grab and go
+- family:
+  - horeca
+  - fast_food
+  weight: -5.0
+  keywords:
+  - reservation
+  - tasting menu
+  - sommelier
+  - chef table
+  - dining room
+  - white tablecloth

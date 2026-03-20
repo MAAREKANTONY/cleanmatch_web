@@ -1,0 +1,39 @@
+mapping_fields:
+- place_id
+- name
+- country
+- country_code
+- city
+- postal_code
+- main_type
+- all_types
+- description_1
+- description_2
+- description_3
+- price_range_simplified
+- customer_reported_price_range
+- reviews_tags
+- characteristics
+- hotel_additional_informations
+- website_title
+- website_meta_description
+required_fields:
+- main_type
+- name
+all_text_fields:
+- name
+- main_type
+- all_types
+- description_1
+- description_2
+- description_3
+- reviews_tags
+- characteristics
+- hotel_additional_informations
+- website_title
+- website_meta_description
+debug_output_columns:
+- resolved_country_code
+- price_signal_bucket
+- family_score_snapshot
+- cuisine_keyword_hits

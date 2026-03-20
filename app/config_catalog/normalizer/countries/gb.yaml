@@ -1,0 +1,27 @@
+country_code: GB
+street_types:
+- street
+- st
+- road
+- rd
+- avenue
+- ave
+- lane
+- ln
+- close
+- court
+- way
+- drive
+- dr
+- high street
+postcode_regex: ^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$
+legal_id_type: company_or_vat
+legal_prefixes:
+- gb
+- uk
+number_suffixes: []
+company_suffixes:
+- ltd
+- limited
+- plc
+- llp

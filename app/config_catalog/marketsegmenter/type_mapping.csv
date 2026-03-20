@@ -1,0 +1,460 @@
+type,marketsegment0,marketsegment1,marketsegment2,marketsegment3,mapping_reason
+Acaraje restaurant,horeca,table_service,traditional_dining,,table_traditional
+Afghani restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+African restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Alsace restaurant,horeca,table_service,traditional_dining,,table_traditional
+American restaurant,horeca,table_service,traditional_dining,,table_traditional
+Amusement park,leisure,on_site_catering_events,leisure_sites,amusement_recreation,leisure_amusement
+Anago restaurant,horeca,table_service,traditional_dining,,table_traditional
+Andalusian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Angler fish restaurant,horeca,table_service,themed_dining_fish_seafood,,table_fish_seafood
+Anhui restaurant,horeca,table_service,traditional_dining,,table_traditional
+Argentinian restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Armenian restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Art cafe,horeca,fast_food,coffee_shops_ice_cream_parlors_kiosks,,ff_coffee_icecream_kiosk
+Asian fusion restaurant,horeca,table_service,traditional_dining,,table_traditional
+Asian restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Assamese restaurant,horeca,table_service,traditional_dining,,table_traditional
+Asturian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Australian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Austrian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Authentic Japanese restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Ayam penyet restaurant,horeca,table_service,traditional_dining,,table_traditional
+Baden restaurant,horeca,table_service,traditional_dining,,table_traditional
+Bakery,asc,food_store,bakeries_pastry_shops,,retail_bakery
+Bakso restaurant,horeca,table_service,traditional_dining,,table_traditional
+Balinese restaurant,horeca,table_service,traditional_dining,,table_traditional
+Bangladeshi restaurant,horeca,table_service,traditional_dining,,table_traditional
+Bar,horeca,cafes_bars_discotheques,traditional_bars,,bar_traditional
+Bar PMU,horeca,cafes_bars_discotheques,traditional_bars,,bar_traditional
+Bar restaurant furniture store,horeca,cafes_bars_discotheques,traditional_bars,,bar_traditional
+Bar tabac,horeca,cafes_bars_discotheques,traditional_bars,,bar_traditional
+Barbecue restaurant,horeca,table_service,themed_dining_grills_meat_specialties,,table_grill_meat
+Basque restaurant,horeca,table_service,traditional_dining,,table_traditional
+Batak restaurant,horeca,table_service,traditional_dining,,table_traditional
+Bavarian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Bed & breakfast,horeca,hotel_lodging,other_accommodations,,lodging_bnb
+Belgian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Berry restaurant,horeca,table_service,traditional_dining,,table_traditional
+Betawi restaurant,horeca,table_service,traditional_dining,,table_traditional
+Biryani restaurant,horeca,table_service,traditional_dining,,table_traditional
+Bistro,horeca,table_service,traditional_dining,,table_traditional
+Bowling alley,leisure,on_site_catering_events,leisure_sites,bowling,leisure_bowling
+Bowling club,leisure,on_site_catering_events,leisure_sites,bowling,leisure_bowling
+Brasserie,horeca,table_service,traditional_dining,,table_traditional
+Brazilian restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Breakfast restaurant,horeca,table_service,traditional_dining,,table_traditional
+Brewery,,,,,
+British restaurant,horeca,table_service,traditional_dining,,table_traditional
+Brunch restaurant,horeca,table_service,traditional_dining,,table_traditional
+Buffet restaurant,horeca,table_service,traditional_dining,,table_traditional
+Bulgarian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Burmese restaurant,horeca,table_service,traditional_dining,,table_traditional
+Burrito restaurant,horeca,fast_food,fast_food_kebab_tacos_mexican,,ff_kebab_tacos_mex
+Butcher shop,asc,food_store,butchers_delicatessens_caterers,,retail_butcher_deli
+Cafe,horeca,fast_food,coffee_shops_ice_cream_parlors_kiosks,,ff_coffee_icecream_kiosk
+Cafeteria,horeca,fast_food,self_service_cafeterias,,ff_self_service
+Cajun restaurant,horeca,table_service,traditional_dining,,table_traditional
+Californian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Cambodian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Campground,horeca,hotel_lodging,campsites,,lodging_campsite
+Canadian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Cantabrian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Cantonese restaurant,horeca,table_service,traditional_dining,,table_traditional
+Cape Verdean restaurant,horeca,table_service,traditional_dining,,table_traditional
+Capsule hotel,horeca,hotel_lodging,hotels,,lodging_hotel
+Caribbean restaurant,horeca,table_service,traditional_dining,,table_traditional
+Casino,leisure,on_site_catering_events,leisure_sites,casino,leisure_casino
+Castilian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Catalonian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Cendol restaurant,horeca,table_service,traditional_dining,,table_traditional
+Central American restaurant,horeca,table_service,traditional_dining,,table_traditional
+Central Javanese restaurant,horeca,table_service,traditional_dining,,table_traditional
+Champon noodle restaurant,horeca,table_service,traditional_dining,,table_traditional
+Chanko restaurant,horeca,table_service,traditional_dining,,table_traditional
+Cheesesteak restaurant,horeca,table_service,traditional_dining,,table_traditional
+Chesapeake restaurant,horeca,table_service,traditional_dining,,table_traditional
+Chettinad restaurant,horeca,table_service,traditional_dining,,table_traditional
+Chicken restaurant,horeca,table_service,traditional_dining,,table_traditional
+Chicken wings restaurant,horeca,fast_food,fast_food_burgers_chicken,,ff_burgers_chicken
+Childrens cafe,horeca,fast_food,coffee_shops_ice_cream_parlors_kiosks,,ff_coffee_icecream_kiosk
+Chilean restaurant,horeca,table_service,traditional_dining,,table_traditional
+Chinese noodle restaurant,horeca,table_service,traditional_dining,,table_traditional
+Chinese restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Chinese takeaway,,,,,
+Chocolate cafe,horeca,fast_food,coffee_shops_ice_cream_parlors_kiosks,,ff_coffee_icecream_kiosk
+Chophouse restaurant,horeca,table_service,traditional_dining,,table_traditional
+Coffee shop,horeca,fast_food,coffee_shops_ice_cream_parlors_kiosks,,ff_coffee_icecream_kiosk
+Cold noodle restaurant,horeca,table_service,traditional_dining,,table_traditional
+Colombian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Comic cafe,horeca,fast_food,coffee_shops_ice_cream_parlors_kiosks,,ff_coffee_icecream_kiosk
+Concert hall,,,,,
+Contemporary Louisiana restaurant,horeca,table_service,traditional_dining,,table_traditional
+Continental restaurant,horeca,table_service,traditional_dining,,table_traditional
+Conveyor belt sushi restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Cosplay cafe,horeca,fast_food,coffee_shops_ice_cream_parlors_kiosks,,ff_coffee_icecream_kiosk
+Costa Rican restaurant,horeca,table_service,traditional_dining,,table_traditional
+Country club,,,,,
+Country food restaurant,horeca,table_service,traditional_dining,,table_traditional
+Couscous restaurant,horeca,table_service,traditional_dining,,table_traditional
+Crab house,,,,,
+Creole restaurant,horeca,table_service,traditional_dining,,table_traditional
+Croatian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Crêperie,horeca,table_service,creperies,,table_creperie
+Cuban restaurant,horeca,table_service,traditional_dining,,table_traditional
+Czech restaurant,horeca,table_service,traditional_dining,,table_traditional
+Dan Dan noodle restaurant,horeca,table_service,traditional_dining,,table_traditional
+Dance restaurant,horeca,table_service,traditional_dining,,table_traditional
+Danish restaurant,horeca,table_service,traditional_dining,,table_traditional
+Deli,,,,,
+Delivery Chinese restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Dessert restaurant,horeca,table_service,traditional_dining,,table_traditional
+Dim sum restaurant,horeca,table_service,traditional_dining,,table_traditional
+Diner,horeca,table_service,traditional_dining,,table_traditional
+Disco club,,,,,
+Dojo restaurant,horeca,table_service,traditional_dining,,table_traditional
+Dominican restaurant,horeca,table_service,traditional_dining,,table_traditional
+Down home cooking restaurant,horeca,table_service,traditional_dining,,table_traditional
+Dumpling restaurant,horeca,table_service,traditional_dining,,table_traditional
+Dutch restaurant,horeca,table_service,traditional_dining,,table_traditional
+East African restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+East Javanese restaurant,horeca,table_service,traditional_dining,,table_traditional
+Eastern European restaurant,horeca,table_service,traditional_dining,,table_traditional
+Eclectic restaurant,horeca,table_service,traditional_dining,,table_traditional
+Ecuadorian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Egyptian restaurant,horeca,table_service,traditional_dining,,table_traditional
+English restaurant,horeca,table_service,traditional_dining,,table_traditional
+Eritrean restaurant,horeca,table_service,traditional_dining,,table_traditional
+Ethiopian restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Ethnic restaurant,horeca,table_service,traditional_dining,,table_traditional
+European restaurant,horeca,table_service,traditional_dining,,table_traditional
+Event venue,leisure,on_site_catering_events,leisure_sites,event_place,leisure_event_place
+Extended stay hotel,horeca,hotel_lodging,hotels,,lodging_hotel
+Extremadurian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Falafel restaurant,horeca,table_service,traditional_dining,,table_traditional
+Family restaurant,horeca,table_service,traditional_dining,,table_traditional
+Fast food restaurant,horeca,fast_food,other_fast_food,,ff_other
+Filipino restaurant,horeca,table_service,traditional_dining,,table_traditional
+Fine dining restaurant,horeca,table_service,fine_dining,,table_fine_dining
+Finnish restaurant,horeca,hotel_lodging,hotels,,lodging_hotel
+Fish and chips takeaway,,,,,
+Floridian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Fondue restaurant,horeca,table_service,traditional_dining,,table_traditional
+Food court,,,,,
+Franconian restaurant,horeca,table_service,traditional_dining,,table_traditional
+French restaurant,horeca,table_service,traditional_dining,,table_traditional
+French steakhouse restaurant,horeca,table_service,themed_dining_grills_meat_specialties,,table_grill_meat
+Fried chicken takeaway,horeca,fast_food,fast_food_burgers_chicken,,ff_burgers_chicken
+Frozen yogurt shop,horeca,fast_food,coffee_shops_ice_cream_parlors_kiosks,,ff_coffee_icecream_kiosk
+Fugu restaurant,horeca,table_service,traditional_dining,,table_traditional
+Fujian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Function room facility,,,,,
+Fusion restaurant,horeca,table_service,traditional_dining,,table_traditional
+Galician restaurant,horeca,table_service,traditional_dining,,table_traditional
+Gastropub,horeca,cafes_bars_discotheques,beer_bars_beer_temples_pubs,,bar_pub_beer
+Gay night club,horeca,cafes_bars_discotheques,clubs_nightclubs_party_bars,,nightlife_club
+Georgian restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+German restaurant,horeca,table_service,traditional_dining,,table_traditional
+Gluten-free restaurant,horeca,table_service,traditional_dining,,table_traditional
+Goan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Golf club,,,,,
+Golf course,,,,,
+Greek restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Guatemalan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Guizhou restaurant,horeca,table_service,traditional_dining,,table_traditional
+Gyro restaurant,horeca,table_service,traditional_dining,,table_traditional
+Gyudon restaurant,horeca,table_service,traditional_dining,,table_traditional
+Haitian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Hakka restaurant,horeca,table_service,traditional_dining,,table_traditional
+Halal restaurant,horeca,table_service,traditional_dining,,table_traditional
+Haleem restaurant,horeca,table_service,traditional_dining,,table_traditional
+Hamburger restaurant,horeca,fast_food,fast_food_burgers_chicken,,ff_burgers_chicken
+Haute French restaurant,horeca,table_service,traditional_dining,,table_traditional
+Hawaiian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Health food restaurant,horeca,table_service,traditional_dining,,table_traditional
+Hoagie restaurant,horeca,fast_food,fast_food_sandwiches_bagels_salads,,ff_sandwich_bagel_salad
+Honduran restaurant,horeca,table_service,traditional_dining,,table_traditional
+Hong Kong style fast food restaurant,horeca,fast_food,other_fast_food,,ff_other
+Hot dog restaurant,horeca,table_service,traditional_dining,,table_traditional
+Hot pot restaurant,horeca,table_service,traditional_dining,,table_traditional
+Hot spring hotel,horeca,hotel_lodging,hotels,,lodging_hotel
+Hotel,horeca,hotel_lodging,hotels,,lodging_hotel
+Hotel management school,horeca,hotel_lodging,hotels,,lodging_hotel
+Hotel supply store,horeca,hotel_lodging,hotels,,lodging_hotel
+Hunan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Hungarian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Ice cream shop,horeca,fast_food,coffee_shops_ice_cream_parlors_kiosks,,ff_coffee_icecream_kiosk
+Icelandic restaurant,horeca,table_service,traditional_dining,,table_traditional
+Ikan bakar restaurant,horeca,table_service,traditional_dining,,table_traditional
+Indian Muslim restaurant,horeca,table_service,traditional_dining,,table_traditional
+Indian restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Indian sizzler restaurant,horeca,table_service,traditional_dining,,table_traditional
+Indian takeaway,,,,,
+Indonesian restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Indoor lodging,,,,,
+Internet cafe,horeca,fast_food,coffee_shops_ice_cream_parlors_kiosks,,ff_coffee_icecream_kiosk
+Irish restaurant,horeca,table_service,traditional_dining,,table_traditional
+Israeli restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Italian restaurant,horeca,table_service,themed_dining_italian_pizzerias,,table_italian
+Izakaya restaurant,horeca,table_service,traditional_dining,,table_traditional
+Jamaican restaurant,horeca,table_service,traditional_dining,,table_traditional
+Japanese curry restaurant,horeca,table_service,traditional_dining,,table_traditional
+Japanese regional restaurant,horeca,table_service,traditional_dining,,table_traditional
+Japanese restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Japanese sweets restaurant,horeca,table_service,traditional_dining,,table_traditional
+Japanized western restaurant,horeca,table_service,traditional_dining,,table_traditional
+Javanese restaurant,horeca,table_service,traditional_dining,,table_traditional
+Jewish restaurant,horeca,table_service,traditional_dining,,table_traditional
+Jiangsu restaurant,horeca,table_service,traditional_dining,,table_traditional
+Juice shop,horeca,fast_food,coffee_shops_ice_cream_parlors_kiosks,,ff_coffee_icecream_kiosk
+Kaiseki restaurant,horeca,table_service,traditional_dining,,table_traditional
+Kalle pache restaurant,horeca,table_service,traditional_dining,,table_traditional
+Karaoke bar,horeca,cafes_bars_discotheques,clubs_nightclubs_party_bars,,nightlife_club
+Karnataka restaurant,horeca,table_service,traditional_dining,,table_traditional
+Kashmiri restaurant,horeca,table_service,traditional_dining,,table_traditional
+Katsudon restaurant,horeca,table_service,traditional_dining,,table_traditional
+Kazakhstani restaurant,horeca,table_service,traditional_dining,,table_traditional
+Kebab shop,horeca,fast_food,fast_food_kebab_tacos_mexican,,ff_kebab_tacos_mex
+Kofta restaurant,horeca,table_service,traditional_dining,,table_traditional
+Konkani restaurant,horeca,table_service,traditional_dining,,table_traditional
+Korean barbecue restaurant,horeca,cafes_bars_discotheques,traditional_bars,,bar_traditional
+Korean beef restaurant,horeca,table_service,traditional_dining,,table_traditional
+Korean restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Korean rib restaurant,horeca,table_service,traditional_dining,,table_traditional
+Koshari restaurant,horeca,table_service,traditional_dining,,table_traditional
+Kosher restaurant,horeca,table_service,traditional_dining,,table_traditional
+Kushiage and kushikatsu restaurant,horeca,table_service,traditional_dining,,table_traditional
+Kushiyaki restaurant,horeca,table_service,traditional_dining,,table_traditional
+Kyoto style Japanese restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Laotian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Latin American restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Lebanese restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Lechon restaurant,horeca,table_service,traditional_dining,,table_traditional
+Legally defined lodging,,,,,
+Ligurian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Liquor store,asc,food_store,wine_shops,,retail_wine
+Lithuanian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Live music venue,,,,,
+Lodging,,,,,
+Lombardian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Love hotel,horeca,hotel_lodging,hotels,,lodging_hotel
+Lunch restaurant,horeca,table_service,traditional_dining,,table_traditional
+Macrobiotic restaurant,horeca,table_service,traditional_dining,,table_traditional
+Madrilian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Majorcan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Malaysian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Maltese restaurant,horeca,table_service,traditional_dining,,table_traditional
+Manado restaurant,horeca,table_service,traditional_dining,,table_traditional
+Mandarin restaurant,horeca,table_service,traditional_dining,,table_traditional
+Marche restaurant,horeca,table_service,traditional_dining,,table_traditional
+Meat dish restaurant,horeca,table_service,themed_dining_grills_meat_specialties,,table_grill_meat
+Mediterranean restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Mexican restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Mexican torta restaurant,horeca,fast_food,fast_food_kebab_tacos_mexican,,ff_kebab_tacos_mex
+Middle Eastern restaurant,horeca,table_service,traditional_dining,,table_traditional
+Miso cutlet restaurant,horeca,table_service,traditional_dining,,table_traditional
+Modern British restaurant,horeca,table_service,traditional_dining,,table_traditional
+Modern European restaurant,horeca,table_service,traditional_dining,,table_traditional
+Modern French restaurant,horeca,table_service,traditional_dining,,table_traditional
+Modern Indian restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Modern izakaya restaurants,horeca,table_service,traditional_dining,,table_traditional
+Momo restaurant,horeca,table_service,traditional_dining,,table_traditional
+Mongolian barbecue restaurant,horeca,cafes_bars_discotheques,traditional_bars,,bar_traditional
+Monjayaki restaurant,horeca,table_service,traditional_dining,,table_traditional
+Moroccan restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Motel,horeca,hotel_lodging,hotels,,lodging_hotel
+Murtabak restaurant,horeca,table_service,traditional_dining,,table_traditional
+Mutton barbecue restaurant,horeca,cafes_bars_discotheques,traditional_bars,,bar_traditional
+Nasi goreng restaurant,horeca,table_service,traditional_dining,,table_traditional
+Nasi restaurant,horeca,table_service,traditional_dining,,table_traditional
+Nasi uduk restaurant,horeca,table_service,traditional_dining,,table_traditional
+Native American restaurant,horeca,table_service,traditional_dining,,table_traditional
+Navarraise restaurant,horeca,table_service,traditional_dining,,table_traditional
+Neapolitan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Nepalese restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+New American restaurant,horeca,table_service,traditional_dining,,table_traditional
+New England restaurant,horeca,table_service,traditional_dining,,table_traditional
+New Zealand restaurant,horeca,table_service,traditional_dining,,table_traditional
+Nicaraguan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Night club,horeca,cafes_bars_discotheques,clubs_nightclubs_party_bars,,nightlife_club
+Noodle shop,horeca,fast_food,asian,,ff_asian
+North African restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+North Eastern Indian restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Northern Italian restaurant,horeca,table_service,themed_dining_italian_pizzerias,,table_italian
+Norwegian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Nuevo Latino restaurant,horeca,table_service,traditional_dining,,table_traditional
+Nyonya restaurant,horeca,table_service,traditional_dining,,table_traditional
+Oaxacan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Obanzai restaurant,horeca,table_service,traditional_dining,,table_traditional
+Oden restaurant,horeca,table_service,traditional_dining,,table_traditional
+Odia restaurant,horeca,table_service,traditional_dining,,table_traditional
+Offal barbecue restaurant,horeca,cafes_bars_discotheques,traditional_bars,,bar_traditional
+Offal pot cooking restaurant,horeca,table_service,traditional_dining,,table_traditional
+Okonomiyaki restaurant,horeca,table_service,traditional_dining,,table_traditional
+Opera house,,,,,
+Organic restaurant,horeca,table_service,traditional_dining,,table_traditional
+Oyster bar restaurant,horeca,cafes_bars_discotheques,traditional_bars,,bar_traditional
+Pacific Northwest restaurant (Canada),horeca,table_service,traditional_dining,,table_traditional
+Pacific Northwest restaurant (US),horeca,table_service,traditional_dining,,table_traditional
+Pacific Rim restaurant,horeca,table_service,traditional_dining,,table_traditional
+Padang restaurant,horeca,table_service,traditional_dining,,table_traditional
+Paisa restaurant,horeca,table_service,traditional_dining,,table_traditional
+Pakistani restaurant,horeca,table_service,traditional_dining,,table_traditional
+Palatine restaurant,horeca,table_service,traditional_dining,,table_traditional
+Pan-Asian restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Pan-Latin restaurant,horeca,table_service,traditional_dining,,table_traditional
+Pancake restaurant,horeca,table_service,traditional_dining,,table_traditional
+Paraguayan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Parsi restaurant,horeca,table_service,traditional_dining,,table_traditional
+Patisserie,asc,food_store,bakeries_pastry_shops,,retail_bakery
+Pay by weight restaurant,horeca,table_service,traditional_dining,,table_traditional
+Pecel lele restaurant,horeca,table_service,traditional_dining,,table_traditional
+Pempek restaurant,horeca,table_service,traditional_dining,,table_traditional
+Pennsylvania Dutch restaurant,horeca,table_service,traditional_dining,,table_traditional
+Persian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Peruvian restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Pho restaurant,horeca,table_service,traditional_dining,,table_traditional
+Piedmontese restaurant,horeca,table_service,themed_dining_italian_pizzerias,,table_italian
+Pizza delivery,horeca,fast_food,pizza_pasta,,ff_pizza_pasta
+Pizza restaurant,horeca,table_service,themed_dining_italian_pizzerias,,table_italian_pizzeria
+Pizza takeaway,horeca,fast_food,pizza_pasta,,ff_pizza_pasta
+Polish restaurant,horeca,table_service,traditional_dining,,table_traditional
+Polynesian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Porridge restaurant,horeca,table_service,traditional_dining,,table_traditional
+Portuguese restaurant,horeca,table_service,traditional_dining,,table_traditional
+Pozole restaurant,horeca,table_service,traditional_dining,,table_traditional
+Po’ boys restaurant,horeca,table_service,traditional_dining,,table_traditional
+Provence restaurant,horeca,table_service,traditional_dining,,table_traditional
+Pub,horeca,cafes_bars_discotheques,beer_bars_beer_temples_pubs,,bar_pub_beer
+Public swimming pool,horeca,cafes_bars_discotheques,beer_bars_beer_temples_pubs,,bar_pub_beer
+Pueblan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Puerto Rican restaurant,horeca,table_service,traditional_dining,,table_traditional
+Punjabi restaurant,horeca,table_service,traditional_dining,,table_traditional
+Québécois restaurant,horeca,table_service,traditional_dining,,table_traditional
+RV park,horeca,hotel_lodging,campsites,,lodging_campsite
+Raclette restaurant,horeca,table_service,traditional_dining,,table_traditional
+Ramen restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Raw food restaurant,horeca,table_service,traditional_dining,,table_traditional
+Resort hotel,horeca,hotel_lodging,hotels,,lodging_hotel
+Restaurant,horeca,table_service,traditional_dining,,table_traditional
+Restaurant supply store,horeca,table_service,traditional_dining,,table_traditional
+Rice restaurant,horeca,table_service,traditional_dining,,table_traditional
+Roman restaurant,horeca,table_service,traditional_dining,,table_traditional
+Romanian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Russian restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Ryotei restaurant,horeca,table_service,traditional_dining,,table_traditional
+Salvadoran restaurant,horeca,table_service,traditional_dining,,table_traditional
+Sandwich shop,horeca,fast_food,fast_food_sandwiches_bagels_salads,,ff_sandwich_bagel_salad
+Sardinian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Satay restaurant,horeca,table_service,traditional_dining,,table_traditional
+Scandinavian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Scottish restaurant,horeca,table_service,traditional_dining,,table_traditional
+Seafood donburi restaurant,horeca,table_service,themed_dining_fish_seafood,,table_fish_seafood
+Seafood restaurant,horeca,table_service,themed_dining_fish_seafood,,table_fish_seafood
+Seblak restaurant,horeca,table_service,traditional_dining,,table_traditional
+Self service restaurant,horeca,fast_food,self_service_cafeterias,,ff_self_service
+Self-catering accommodation,,,,,
+Serbian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Sfiha restaurant,horeca,table_service,traditional_dining,,table_traditional
+Shabu-shabu restaurant,horeca,table_service,traditional_dining,,table_traditional
+Shandong restaurant,horeca,table_service,traditional_dining,,table_traditional
+Shanghainese restaurant,horeca,table_service,traditional_dining,,table_traditional
+Shawarma restaurant,horeca,table_service,traditional_dining,,table_traditional
+Sichuan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Sicilian restaurant,horeca,table_service,themed_dining_italian_pizzerias,,table_italian
+Singaporean restaurant,horeca,table_service,traditional_dining,,table_traditional
+Small plates restaurant,horeca,table_service,traditional_dining,,table_traditional
+Soba noodle shop,horeca,fast_food,asian,,ff_asian
+Soondae restaurant,horeca,table_service,traditional_dining,,table_traditional
+Soto ayam restaurant,horeca,table_service,traditional_dining,,table_traditional
+Soto restaurant,horeca,table_service,traditional_dining,,table_traditional
+Soul food restaurant,horeca,table_service,traditional_dining,,table_traditional
+Soup restaurant,horeca,table_service,traditional_dining,,table_traditional
+Soup shop,,,,,
+South African restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+South American restaurant,horeca,table_service,traditional_dining,,table_traditional
+South Asian restaurant,horeca,table_service,themed_dining_asian,,table_asian
+South Sulawesi restaurant,horeca,table_service,traditional_dining,,table_traditional
+Southeast Asian restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Southern Italian restaurant,horeca,table_service,themed_dining_italian_pizzerias,,table_italian
+Southern restaurant (US),horeca,table_service,traditional_dining,,table_traditional
+Southwest France restaurant,horeca,table_service,traditional_dining,,table_traditional
+Southwestern restaurant (US),horeca,table_service,traditional_dining,,table_traditional
+Spanish restaurant,leisure,on_site_catering_events,leisure_sites,spa,leisure_spa
+Sports bar,horeca,cafes_bars_discotheques,beer_bars_beer_temples_pubs,,bar_pub_beer
+Sports complex,leisure,on_site_catering_events,sports_sites,,leisure_sports
+Squash club,,,,,
+Squash court,,,,,
+Sri Lankan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Stadium,leisure,on_site_catering_events,sports_sites,,leisure_sports
+Steak house,horeca,table_service,themed_dining_grills_meat_specialties,,table_grill_meat
+Steamboat restaurant,horeca,table_service,traditional_dining,,table_traditional
+Sukiyaki and Shabu Shabu restaurant,horeca,table_service,traditional_dining,,table_traditional
+Sukiyaki restaurant,horeca,table_service,traditional_dining,,table_traditional
+Sundae restaurant,horeca,table_service,traditional_dining,,table_traditional
+Sundanese restaurant,horeca,table_service,traditional_dining,,table_traditional
+Suppon restaurant,horeca,table_service,traditional_dining,,table_traditional
+Surinamese restaurant,horeca,table_service,traditional_dining,,table_traditional
+Sushi restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Sushi takeaway,horeca,fast_food,asian,,ff_asian
+Swabian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Swedish restaurant,horeca,table_service,traditional_dining,,table_traditional
+Swiss restaurant,horeca,table_service,traditional_dining,,table_traditional
+Syokudo and Teishoku restaurant,horeca,table_service,traditional_dining,,table_traditional
+Syrian restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Tabascan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Tacaca restaurant,horeca,table_service,traditional_dining,,table_traditional
+Taco restaurant,horeca,fast_food,fast_food_kebab_tacos_mexican,,ff_kebab_tacos_mex
+Taiwanese restaurant,horeca,table_service,traditional_dining,,table_traditional
+Takeout restaurant,horeca,fast_food,other_fast_food,,ff_other
+Takoyaki restaurant,horeca,table_service,traditional_dining,,table_traditional
+Tapas restaurant,horeca,table_service,traditional_dining,,table_traditional
+Tea house,horeca,fast_food,coffee_shops_ice_cream_parlors_kiosks,,ff_coffee_icecream_kiosk
+Tegal restaurant,horeca,table_service,traditional_dining,,table_traditional
+Temaki restaurant,horeca,table_service,traditional_dining,,table_traditional
+Tempura donburi restaurant,horeca,table_service,traditional_dining,,table_traditional
+Tempura restaurant,horeca,table_service,traditional_dining,,table_traditional
+Tennis club,,,,,
+Teppanyaki restaurant,horeca,table_service,traditional_dining,,table_traditional
+Tex-Mex restaurant,horeca,fast_food,fast_food_kebab_tacos_mexican,,ff_kebab_tacos_mex
+Thai restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Theme park,leisure,on_site_catering_events,leisure_sites,amusement_recreation,leisure_amusement
+Thuringian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Tibetan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Tofu restaurant,horeca,table_service,traditional_dining,,table_traditional
+Tongue restaurant,horeca,table_service,traditional_dining,,table_traditional
+Tonkatsu restaurant,horeca,table_service,traditional_dining,,table_traditional
+Traditional American restaurant,horeca,table_service,traditional_dining,,table_traditional
+Traditional restaurant,horeca,table_service,traditional_dining,,table_traditional
+Tunisian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Turkish restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Turkmen restaurant,horeca,table_service,traditional_dining,,table_traditional
+Tuscan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Udon noodle restaurant,horeca,table_service,traditional_dining,,table_traditional
+Ukrainian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Unagi restaurant,horeca,table_service,traditional_dining,,table_traditional
+Uruguayan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Uzbeki restaurant,horeca,table_service,traditional_dining,,table_traditional
+Valencian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Vegan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Vegetarian cafe and deli,horeca,fast_food,coffee_shops_ice_cream_parlors_kiosks,,ff_coffee_icecream_kiosk
+Vegetarian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Venetian restaurant,horeca,table_service,traditional_dining,,table_traditional
+Venezuelan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Vietnamese restaurant,horeca,table_service,themed_dining_asian,,table_asian
+Water park,leisure,on_site_catering_events,leisure_sites,amusement_recreation,leisure_amusement
+Wellness hotel,horeca,hotel_lodging,hotels,,lodging_hotel
+Welsh restaurant,horeca,table_service,traditional_dining,,table_traditional
+West African restaurant,horeca,table_service,themed_dining_other_specialties,,table_other_specialties
+Western restaurant,horeca,table_service,traditional_dining,,table_traditional
+Wildlife and safari park,,,,,
+Wine bar,horeca,cafes_bars_discotheques,wine_tapas_bars,,bar_wine_tapas
+Winery,,,,,
+Wok restaurant,horeca,table_service,traditional_dining,,table_traditional
+Yakiniku restaurant,horeca,table_service,traditional_dining,,table_traditional
+Yakisoba Restaurant,horeca,table_service,traditional_dining,,table_traditional
+Yakitori restaurant,horeca,table_service,traditional_dining,,table_traditional
+Yemenite restaurant,horeca,table_service,traditional_dining,,table_traditional
+Yucatan restaurant,horeca,table_service,traditional_dining,,table_traditional
+Zhejiang restaurant,horeca,table_service,traditional_dining,,table_traditional
+Zoo,leisure,on_site_catering_events,leisure_sites,zoo_farm_garden,leisure_zoo_farm_garden

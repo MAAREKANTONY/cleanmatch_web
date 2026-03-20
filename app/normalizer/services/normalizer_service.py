@@ -9,6 +9,8 @@ import pandas as pd
 from openpyxl import load_workbook
 from slugify import slugify
 
+from core.config_loader import list_country_config_files, load_yaml_config
+
 
 ProgressCallback = Callable[[int, str], None]
 LogCallback = Callable[[str], None]
@@ -19,155 +21,27 @@ CHAINES_DATA_AVAILABLE = False
 CHAINES_REGEX = None
 CHAINES_LOOKUP: dict[str, str] = {}
 
-EUROPE_COUNTRY_CHOICES = [
-    ('', 'Auto / non précisé'),
-    ('FR', 'France'),
-    ('IT', 'Italie'),
-    ('ES', 'Espagne'),
-    ('DE', 'Allemagne'),
-    ('BE', 'Belgique'),
-    ('NL', 'Pays-Bas'),
-    ('GB', 'Royaume-Uni'),
-    ('PT', 'Portugal'),
-]
+_NORMALIZER_MAPPING = load_yaml_config('normalizer/mapping_fields.yaml')
+_NORMALIZER_ALIASES = load_yaml_config('normalizer/column_aliases.yaml')
+_NORMALIZER_OUTPUT = load_yaml_config('normalizer/output_columns.yaml')
 
-COUNTRY_NAME_TO_CODE = {
-    'france': 'FR', 'fr': 'FR',
-    'italy': 'IT', 'italia': 'IT', 'italie': 'IT', 'it': 'IT',
-    'spain': 'ES', 'espana': 'ES', 'españa': 'ES', 'espagne': 'ES', 'es': 'ES',
-    'germany': 'DE', 'deutschland': 'DE', 'allemagne': 'DE', 'de': 'DE',
-    'belgium': 'BE', 'belgique': 'BE', 'belgie': 'BE', 'belgië': 'BE', 'be': 'BE',
-    'netherlands': 'NL', 'pays bas': 'NL', 'pays-bas': 'NL', 'nederland': 'NL', 'holland': 'NL', 'nl': 'NL',
-    'united kingdom': 'GB', 'uk': 'GB', 'gb': 'GB', 'great britain': 'GB', 'royaume uni': 'GB', 'royaume-uni': 'GB', 'england': 'GB',
-    'portugal': 'PT', 'pt': 'PT',
-}
+EUROPE_COUNTRY_CHOICES = [tuple(row) for row in _NORMALIZER_MAPPING.get('country_choices', [])]
+COUNTRY_NAME_TO_CODE = _NORMALIZER_MAPPING.get('country_name_to_code', {})
+DEFAULT_COUNTRY_CODE = _NORMALIZER_MAPPING.get('default_country_code', 'FR')
+SUPPORTED_COUNTRY_CODES = list(_NORMALIZER_MAPPING.get('supported_country_codes', []))
+CANONICAL_MAPPING_FIELDS = list(_NORMALIZER_MAPPING.get('mapping_fields', []))
+REQUIRED_MATCHCODE_FIELDS = set(_NORMALIZER_MAPPING.get('required_matchcode_fields', []))
+COLUMN_ALIASES = _NORMALIZER_ALIASES.get('column_aliases', {})
+REFERENCE_COLUMNS = set(_NORMALIZER_OUTPUT.get('reference_columns', []))
+COLUMNS_TO_KEEP = set(_NORMALIZER_OUTPUT.get('columns_to_keep', []))
+PREFERRED_OUTPUT_ORDER = list(_NORMALIZER_OUTPUT.get('preferred_output_order', []))
 
-COUNTRY_PROFILES = {
-    'FR': {
-        'street_types': ['rue', 'avenue', 'av', 'boulevard', 'bd', 'route', 'rte', 'chemin', 'allée', 'allee', 'place', 'impasse', 'quai', 'cours', 'route nationale', 'route departementale', 'parking', 'zone', 'zac', 'zi', 'zc'],
-        'postcode_regex': r'^\d{5}$',
-        'legal_id_type': 'siret_or_siren',
-        'legal_prefixes': ['fr'],
-        'number_suffixes': ['bis', 'ter', 'quater', 'quinquies', 'sexies'],
-        'company_suffixes': ['sarl', 'sas', 'sa', 'eurl', 'sasu', 'scop'],
-    },
-    'IT': {
-        'street_types': ['via', 'viale', 'piazza', 'corso', 'largo', 'strada', 'vicolo', 'piazzale', 'contrada', 'lungomare', 'galleria'],
-        'postcode_regex': r'^\d{5}$',
-        'legal_id_type': 'partita_iva_or_codice_fiscale',
-        'legal_prefixes': ['it'],
-        'number_suffixes': ['bis', 'ter'],
-        'company_suffixes': ['srl', 'spa', 'snc', 'sas', 'societa', 'società'],
-    },
-    'ES': {
-        'street_types': ['calle', 'avenida', 'avda', 'plaza', 'paseo', 'camino', 'carretera', 'ronda', 'carrer', 'travessia', 'travesia'],
-        'postcode_regex': r'^\d{5}$',
-        'legal_id_type': 'nif_or_cif',
-        'legal_prefixes': ['es'],
-        'number_suffixes': ['bis'],
-        'company_suffixes': ['sl', 'slu', 'sa', 'scoop'],
-    },
-    'DE': {
-        'street_types': ['strasse', 'straße', 'platz', 'weg', 'allee', 'chaussee', 'ring', 'ufer', 'damm', 'gasse', 'markt'],
-        'postcode_regex': r'^\d{5}$',
-        'legal_id_type': 'vat_or_company_id',
-        'legal_prefixes': ['de'],
-        'number_suffixes': [],
-        'company_suffixes': ['gmbh', 'ag', 'ug', 'kg', 'ohg'],
-    },
-    'BE': {
-        'street_types': ['rue', 'avenue', 'chaussée', 'chaussee', 'boulevard', 'place', 'steenweg', 'straat', 'laan', 'plein'],
-        'postcode_regex': r'^\d{4}$',
-        'legal_id_type': 'vat_or_enterprise_number',
-        'legal_prefixes': ['be'],
-        'number_suffixes': ['bis'],
-        'company_suffixes': ['sprl', 'srl', 'sa', 'bv', 'nv'],
-    },
-    'NL': {
-        'street_types': ['straat', 'laan', 'plein', 'weg', 'markt', 'kade', 'hof', 'singel'],
-        'postcode_regex': r'^\d{4}\s?[A-Z]{2}$',
-        'legal_id_type': 'kvk_or_vat',
-        'legal_prefixes': ['nl'],
-        'number_suffixes': [],
-        'company_suffixes': ['bv', 'nv', 'vof'],
-    },
-    'GB': {
-        'street_types': ['street', 'st', 'road', 'rd', 'avenue', 'ave', 'lane', 'ln', 'close', 'court', 'way', 'drive', 'dr', 'high street'],
-        'postcode_regex': r'^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$',
-        'legal_id_type': 'company_or_vat',
-        'legal_prefixes': ['gb', 'uk'],
-        'number_suffixes': [],
-        'company_suffixes': ['ltd', 'limited', 'plc', 'llp'],
-    },
-    'PT': {
-        'street_types': ['rua', 'avenida', 'av', 'travessa', 'largo', 'praça', 'praca', 'estrada', 'alameda'],
-        'postcode_regex': r'^\d{4}-?\d{3}$',
-        'legal_id_type': 'nif',
-        'legal_prefixes': ['pt'],
-        'number_suffixes': [],
-        'company_suffixes': ['lda', 'sa'],
-    },
-}
-DEFAULT_COUNTRY_CODE = 'FR'
-SUPPORTED_COUNTRY_CODES = [code for code, _ in EUROPE_COUNTRY_CHOICES if code]
-
-CANONICAL_MAPPING_FIELDS = [
-    'id', 'name', 'address', 'zipcode', 'city', 'country', 'legal_id',
-    'lat', 'lng', 'hexa_gmap', 'phone_gmap', 'social_link_gmap',
-]
-REQUIRED_MATCHCODE_FIELDS = {'address', 'zipcode', 'city'}
-COLUMN_ALIASES = {
-    'id': ['id', 'identifier', 'identifiant', 'outlet_id', 'store_id', 'restaurant_id'],
-    'name': ['name', 'nom', 'raison sociale', 'enseigne', 'outlet_name', 'store_name', 'ragione sociale'],
-    'address': ['address', 'adresse', 'adresse1', 'street', 'rue', 'addr', 'full_address', 'final_address', 'legaladdress', 'legal_address', 'indirizzo', 'direccion', 'dirección', 'strasse', 'straat'],
-    'zipcode': ['zipcode', 'zip', 'postal_code', 'code_postal', 'cp', 'post_code', 'cap', 'postcode', 'plz', 'legalzipcode', 'legal_zipcode', 'legalpostalcode', 'legal_postal_code'],
-    'city': ['city', 'ville', 'commune', 'town', 'locality', 'citta', 'città', 'ciudad', 'stadt', 'gemeente', 'legalcity', 'legal_city'],
-    'country': ['country', 'pays', 'country_code', 'nation', 'paese', 'pais', 'país', 'land'],
-    'legal_id': ['legal_id', 'siret', 'siren', 'vat', 'vat_number', 'partita_iva', 'piva', 'codice_fiscale', 'nif', 'cif', 'btw', 'kvk', 'company_number', 'ust_id', 'ustid'],
-    'lat': ['lat', 'latitude'],
-    'lng': ['lng', 'lon', 'long', 'longitude'],
-    'hexa_gmap': ['hexa_gmap', 'hexa', 'hexa_code'],
-    'phone_gmap': ['phone_gmap', 'phone', 'telephone', 'tel', 'mobile'],
-    'social_link_gmap': ['social_link_gmap', 'website', 'web', 'site', 'url', 'social_link'],
-}
-
-REFERENCE_COLUMNS = {
-    'id', 'hexa', 'name', 'address', 'zipcode', 'city', 'country', 'lat', 'lng',
-    'vat', 'siren', 'siret', 'phone', 'email', 'website', 'voie', 'legal_id', 'legal_id_type',
-    'num_voie', 'accessibility_gmap', 'activities_gmap', 'activity_gmap',
-    'address_gmap', 'address_comp_gmap', 'advice_gmap', 'all_bookings_gmap',
-    'all_deliveries_gmap', 'all_services_gmap', 'amenities_gmap',
-    'atmosphere_gmap', 'business_status_gmap', 'cid_gmap', 'city_gmap',
-    'code_plus_gmap', 'code_plus_city_gmap', 'country_gmap',
-    'country_code_gmap', 'crowd_gmap', 'currency_gmap', 'delivery_gmap',
-    'department_gmap', 'dining_options_gmap', 'full_address_gmap',
-    'geocode_gmap', 'geoid_gmap', 'google_link_gmap', 'hexa_gmap',
-    'hexa_link_gmap', 'info_link_gmap', 'label_gmap',
-    'last_review_author_id_gmap', 'last_review_author_name_gmap',
-    'last_review_date_gmap', 'lat_gmap', 'lng_gmap', 'name_gmap',
-    'num_voie_gmap', 'offerings_gmap', 'outlet_description_gmap',
-    'outlet_info_gmap', 'outlet_logo_gmap', 'owner_id_gmap',
-    'owner_link_gmap', 'owner_name_gmap', 'payments_gmap', 'phone_gmap',
-    'photo_gmap', 'place_id_gmap', 'planning_gmap', 'postal_code_gmap',
-    'price_gmap', 'rate_gmap', 'region_gmap', 'social_link_gmap',
-    'takeaway_gmap', 'voie_gmap', 'web_gmap', 'web_in_gmap',
-    'week_schedule_gmap', 'zipcode_gmap', 'score_name_gmap',
-    'score_address_gmap', 'score_city_gmap', 'score_zipcode_gmap',
-    'score_num_voie', 'score_voie', 'distance_gmap', 'anomalie_distance',
-    'gmap_automatch', 'geocode', 'matchcode', 'chaine'
-}
-
-COLUMNS_TO_KEEP = {
-    'id', 'name', 'address', 'zipcode', 'city', 'country', 'legal_id', 'lat', 'lng',
-    'hexa_gmap', 'phone_gmap', 'social_link_gmap'
-}
-
-PREFERRED_OUTPUT_ORDER = [
-    'id', 'name', 'address', 'zipcode', 'city', 'country',
-    'legal_id_type', 'legal_id',
-    'chaine', 'matchcode', 'voie', 'num_voie',
-    'lat', 'lng', 'hexa', 'phone', 'website',
-]
+COUNTRY_PROFILES: dict[str, dict] = {}
+for cfg_path in list_country_config_files('normalizer'):
+    payload = load_yaml_config(f'normalizer/countries/{cfg_path.name}')
+    code = str(payload.get('country_code', '')).upper()
+    if code:
+        COUNTRY_PROFILES[code] = {k: v for k, v in payload.items() if k != 'country_code'}
 
 
 def _build_stopword_pattern(street_types: list[str]) -> re.Pattern:
@@ -177,7 +51,7 @@ def _build_stopword_pattern(street_types: list[str]) -> re.Pattern:
 
 
 COUNTRY_STOPWORD_PATTERNS = {
-    code: _build_stopword_pattern(profile['street_types'])
+    code: _build_stopword_pattern(profile.get('street_types', []))
     for code, profile in COUNTRY_PROFILES.items()
 }
 

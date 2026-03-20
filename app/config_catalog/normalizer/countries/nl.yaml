@@ -1,0 +1,19 @@
+country_code: NL
+street_types:
+- straat
+- laan
+- plein
+- weg
+- markt
+- kade
+- hof
+- singel
+postcode_regex: ^\d{4}\s?[A-Z]{2}$
+legal_id_type: kvk_or_vat
+legal_prefixes:
+- nl
+number_suffixes: []
+company_suffixes:
+- bv
+- nv
+- vof

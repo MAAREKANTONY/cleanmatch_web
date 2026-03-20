@@ -13,214 +13,44 @@ from typing import Callable
 import pandas as pd
 from openpyxl import load_workbook
 
+from core.config_loader import list_country_config_files, load_csv_rows, load_yaml_config
+
 ProgressCallback = Callable[[int, str], None]
 LogCallback = Callable[[str], None]
 
-MARKETSEGMENTER_MAPPING_FIELDS = [
-    'place_id', 'name', 'country', 'country_code', 'city', 'postal_code',
-    'main_type', 'all_types', 'description_1', 'description_2', 'description_3',
-    'price_range_simplified', 'customer_reported_price_range', 'reviews_tags',
-    'characteristics', 'hotel_additional_informations', 'website_title',
-    'website_meta_description'
-]
-MARKETSEGMENTER_REQUIRED_FIELDS = {'name', 'main_type'}
+_MS_MAPPING = load_yaml_config('marketsegmenter/mapping_fields.yaml')
+_MS_ALIASES = load_yaml_config('marketsegmenter/column_aliases.yaml')
+_MS_LANGS = load_yaml_config('marketsegmenter/country_langs.yaml')
+_MS_NAMES = load_yaml_config('marketsegmenter/country_name_to_code.yaml')
+_MS_FAMILY = load_yaml_config('marketsegmenter/family_scoring.yaml')
+_MS_PRICE = load_yaml_config('marketsegmenter/price_rules.yaml')
+_MS_GLOBAL_KEYWORDS = load_yaml_config('marketsegmenter/global_keywords.yaml')
+_MS_NEGATIVE = load_yaml_config('marketsegmenter/negative_keywords.yaml')
 
-MARKETSEGMENTER_COLUMN_ALIASES = {
-    'place_id': ['Place Id', 'place_id', 'id', 'CID', 'MID'],
-    'name': ['Name', 'name'],
-    'country': ['Country', 'country'],
-    'country_code': ['Country code', 'country_code', 'country iso', 'country_iso'],
-    'city': ['City', 'city', 'locality'],
-    'postal_code': ['Postal code', 'postal_code', 'postcode', 'zip'],
-    'main_type': ['Main type', 'main_type'],
-    'all_types': ['All types', 'all_types'],
-    'description_1': ['Description 1', 'description_1'],
-    'description_2': ['Description 2', 'description_2'],
-    'description_3': ['Description 3', 'description_3'],
-    'price_range_simplified': ['Price range simplified', 'price_range_simplified'],
-    'customer_reported_price_range': [
-        'Customers reported price range', 'Customer reported price range',
-        'customer_reported_price_range'
-    ],
-    'reviews_tags': ['Reviews tags', 'reviews_tags'],
-    'characteristics': ['Characteristics', 'characteristics'],
-    'hotel_additional_informations': [
-        'Hotel additional informations', 'hotel_additional_informations',
-        'Hotel additional information', 'hotel_additional_information'
-    ],
-    'website_title': ['Website title', 'website_title'],
-    'website_meta_description': ['Website meta description', 'website_meta_description'],
-}
-
-COUNTRY_LANGS = {
-    'FR': ['fr', 'en'], 'BE': ['fr', 'nl', 'en'], 'CH': ['fr', 'de', 'it', 'en'],
-    'ES': ['es', 'en'], 'PT': ['pt', 'en'], 'IT': ['it', 'en'], 'DE': ['de', 'en'],
-    'AT': ['de', 'en'], 'NL': ['nl', 'en'], 'GB': ['en'], 'IE': ['en'],
-    'US': ['en'], 'CA': ['en', 'fr'], 'MX': ['es', 'en'], 'BR': ['pt', 'en'],
-    'IL': ['he', 'en'], 'GR': ['el', 'en'], 'TR': ['tr', 'en'],
-}
-COUNTRY_NAME_TO_CODE = {
-    'france': 'FR', 'french republic': 'FR', 'belgium': 'BE', 'belgique': 'BE',
-    'switzerland': 'CH', 'suisse': 'CH', 'spain': 'ES', 'espana': 'ES', 'espagne': 'ES',
-    'portugal': 'PT', 'italy': 'IT', 'italia': 'IT', 'germany': 'DE', 'deutschland': 'DE',
-    'austria': 'AT', 'netherlands': 'NL', 'nederland': 'NL', 'united kingdom': 'GB',
-    'uk': 'GB', 'great britain': 'GB', 'england': 'GB', 'ireland': 'IE',
-    'united states': 'US', 'usa': 'US', 'canada': 'CA', 'mexico': 'MX', 'brazil': 'BR',
-    'israel': 'IL', 'greece': 'GR', 'turkey': 'TR',
-}
-
-ALL_TEXT_FIELDS = [
-    'name', 'main_type', 'all_types', 'description_1', 'description_2', 'description_3',
-    'reviews_tags', 'characteristics', 'hotel_additional_informations',
-    'website_title', 'website_meta_description'
-]
-DEBUG_OUTPUT_COLUMNS = [
-    'resolved_country_code', 'price_signal_bucket', 'family_score_snapshot',
-    'cuisine_keyword_hits'
-]
-
+MARKETSEGMENTER_MAPPING_FIELDS = list(_MS_MAPPING.get('mapping_fields', []))
+MARKETSEGMENTER_REQUIRED_FIELDS = set(_MS_MAPPING.get('required_fields', []))
+MARKETSEGMENTER_COLUMN_ALIASES = _MS_ALIASES.get('column_aliases', {})
+COUNTRY_LANGS = _MS_LANGS.get('country_langs', {})
+COUNTRY_NAME_TO_CODE = _MS_NAMES.get('country_name_to_code', {})
+ALL_TEXT_FIELDS = list(_MS_MAPPING.get('all_text_fields', []))
+DEBUG_OUTPUT_COLUMNS = list(_MS_MAPPING.get('debug_output_columns', []))
 BASE_FAMILY_SCORE_RULES = {
-    ('horeca', 'table_service'): 0.0,
-    ('horeca', 'fast_food'): 0.0,
-    ('horeca', 'cafes_bars_discotheques'): 0.0,
-    ('horeca', 'hotel_lodging'): 0.0,
-    ('asc', 'food_store'): 0.0,
-    ('asc', 'other_types_of_businesses'): 0.0,
-    ('leisure', 'on_site_catering_events'): 0.0,
+    (row.get('segment0', ''), row.get('segment1', '')): float(row.get('initial_score', 0.0))
+    for row in _MS_FAMILY.get('base_family_score_rules', [])
 }
-
-PRICE_BUCKETS = {
-    'very_low': {'$', 'very low', 'budget', 'cheap', 'inexpensive', 'bon marche', 'pas cher', 'economique', 'economy', 'low cost', '1'},
-    'low': {'low', 'moderate-low', 'low to moderate', 'moderate low', '2'},
-    'mid': {'medium', 'moderate', 'mid', 'average', 'normal', '3'},
-    'high': {'high', 'expensive', 'upscale', 'premium', '4'},
-    'very_high': {'very high', 'luxury', 'fine dining', '5'},
-}
+PRICE_BUCKETS = _MS_PRICE.get('price_buckets', {})
 PRICE_SCORE_RULES = {
-    'very_low': [
-        (('horeca', 'fast_food'), 7.0, 'price:very_low=>fast_food'),
-        (('horeca', 'table_service'), -2.0, 'price:very_low=>table_service_malus'),
-        (('horeca', 'cafes_bars_discotheques'), 1.5, 'price:very_low=>bars_minor'),
-    ],
-    'low': [
-        (('horeca', 'fast_food'), 5.0, 'price:low=>fast_food'),
-        (('horeca', 'table_service'), -1.0, 'price:low=>table_service_malus'),
-    ],
-    'mid': [
-        (('horeca', 'table_service'), 2.0, 'price:mid=>table_service'),
-        (('horeca', 'cafes_bars_discotheques'), 1.0, 'price:mid=>bars'),
-    ],
-    'high': [
-        (('horeca', 'table_service'), 5.0, 'price:high=>table_service'),
-        (('horeca', 'fast_food'), -2.5, 'price:high=>fast_food_malus'),
-        (('horeca', 'cafes_bars_discotheques'), 2.0, 'price:high=>bars'),
-    ],
-    'very_high': [
-        (('horeca', 'table_service'), 6.0, 'price:very_high=>table_service'),
-        (('horeca', 'fast_food'), -3.0, 'price:very_high=>fast_food_malus'),
-        (('horeca', 'cafes_bars_discotheques'), 2.5, 'price:very_high=>bars'),
-    ],
+    bucket: [((item.get('segment0', ''), item.get('segment1', '')), float(item.get('delta', 0.0)), item.get('reason', '')) for item in items]
+    for bucket, items in _MS_PRICE.get('price_score_rules', {}).items()
 }
-
-KEYWORD_RULES = [
-    {'segment': ['horeca', 'fast_food', 'fast_food_burgers_chicken', ''], 'family': ('horeca', 'fast_food'), 'weight': 14,
-     'keywords': ['burger', 'burgers', 'hamburger', 'cheeseburger', 'fried chicken', 'crispy chicken', 'wings', 'nuggets', 'chicken burger', 'hamburgr', 'burguer', 'berger', 'bruger']},
-    {'segment': ['horeca', 'fast_food', 'fast_food_kebab_tacos_mexican', ''], 'family': ('horeca', 'fast_food'), 'weight': 14,
-     'keywords': ['kebab', 'kebap', 'shawarma', 'shawerma', 'tacos', 'taco', 'burrito', 'quesadilla', 'doner', 'dürüm', 'durum', 'gyro', 'gyros']},
-    {'segment': ['horeca', 'fast_food', 'fast_food_sandwiches_bagels_salads', ''], 'family': ('horeca', 'fast_food'), 'weight': 12,
-     'keywords': ['sandwich', 'sandwiche', 'bagel', 'bagels', 'salad bar', 'salads', 'wrap', 'panini', 'bocadillo', 'sub', 'subs', 'hoagie', 'poke bowl', 'poké', 'bowl', 'boul']},
-    {'segment': ['horeca', 'fast_food', 'pizza_pasta', ''], 'family': ('horeca', 'fast_food'), 'weight': 12,
-     'keywords': ['pizza', 'pizzas', 'slice', 'slices', 'pasta', 'lasagna', 'spaghetti', 'tagliatelle', 'pizzeria', 'pizzaria', 'pizzaa']},
-    {'segment': ['horeca', 'fast_food', 'asian', ''], 'family': ('horeca', 'fast_food'), 'weight': 11,
-     'keywords': ['ramen', 'udon', 'wok', 'noodle', 'noodles', 'yakisoba', 'sushi burrito', 'bao', 'gyoza', 'bento', 'bento box']},
-    {'segment': ['horeca', 'fast_food', 'coffee_shops_ice_cream_parlors_kiosks', ''], 'family': ('horeca', 'fast_food'), 'weight': 12,
-     'keywords': ['coffee', 'cafe', 'café', 'espresso', 'latte', 'cappuccino', 'barista', 'tea room', 'ice cream', 'gelato', 'frozen yogurt', 'froyo', 'smoothie', 'juice bar', 'kiosk', 'kiosque', 'cafee', 'cofee']},
-    {'segment': ['horeca', 'fast_food', 'self_service_cafeterias', ''], 'family': ('horeca', 'fast_food'), 'weight': 11,
-     'keywords': ['self service', 'self-service', 'cafeteria', 'canteen', 'buffet line', 'tray service', 'counter service', 'service au comptoir']},
-    {'segment': ['horeca', 'fast_food', 'other_fast_food', ''], 'family': ('horeca', 'fast_food'), 'weight': 9,
-     'keywords': ['takeaway', 'take away', 'take-out', 'takeout', 'delivery only', 'quick bite', 'grab and go', 'grab&go', 'street food', 'snack bar', 'snack', 'food truck', 'drive thru', 'drive-thru', 'drive in']},
-
-    {'segment': ['horeca', 'table_service', 'fine_dining', ''], 'family': ('horeca', 'table_service'), 'weight': 16,
-     'keywords': ['fine dining', 'chef tasting', 'degustation', 'menu degustation', 'michelin', 'sommelier', 'gourmet', 'haute cuisine', 'signature menu', 'reservation recommended', 'white tablecloth']},
-    {'segment': ['horeca', 'table_service', 'brasseries_cafe_restaurants', ''], 'family': ('horeca', 'table_service'), 'weight': 10,
-     'keywords': ['brasserie', 'bistrot', 'bistro', 'cafe restaurant', 'café restaurant', 'trattoria', 'osteria', 'pub food', 'family restaurant', 'diner', 'sit-down', 'table service', 'service en salle']},
-    {'segment': ['horeca', 'table_service', 'creperies', ''], 'family': ('horeca', 'table_service'), 'weight': 13,
-     'keywords': ['crepe', 'crêpe', 'creperie', 'crêperie', 'galette', 'galettes']},
-    {'segment': ['horeca', 'table_service', 'themed_dining_asian', ''], 'family': ('horeca', 'table_service'), 'weight': 14,
-     'keywords': ['sushi', 'sashimi', 'ramen restaurant', 'thai curry', 'pho', 'dim sum', 'dumpling', 'izakaya', 'teppanyaki', 'bibimbap', 'kimchi', 'pad thai', 'bao buns', 'wonton', 'yakitori']},
-    {'segment': ['horeca', 'table_service', 'themed_dining_fish_seafood', ''], 'family': ('horeca', 'table_service'), 'weight': 14,
-     'keywords': ['seafood', 'fish', 'oyster', 'oysters', 'lobster', 'crab', 'shrimp', 'prawns', 'moules', 'fruits de mer', 'poisson', 'ceviche']},
-    {'segment': ['horeca', 'table_service', 'themed_dining_grills_meat_specialties', ''], 'family': ('horeca', 'table_service'), 'weight': 14,
-     'keywords': ['steak', 'steakhouse', 'bbq', 'barbecue', 'grill', 'grillades', 'ribs', 'smoked meat', 'rotisserie', 'churrasco', 'asado', 'meat lovers', 'braai']},
-    {'segment': ['horeca', 'table_service', 'themed_dining_italian_pizzerias', ''], 'family': ('horeca', 'table_service'), 'weight': 14,
-     'keywords': ['italian', 'italiano', 'ristorante', 'trattoria', 'pizzeria', 'pizza napolitaine', 'napoletana', 'gnocchi', 'risotto', 'antipasti', 'pasta fresca', 'pizza oven']},
-    {'segment': ['horeca', 'table_service', 'themed_dining_other_specialties', ''], 'family': ('horeca', 'table_service'), 'weight': 13,
-     'keywords': ['lebanese', 'libanais', 'shawarma plate', 'mezze', 'mezzeh', 'hummus', 'falafel', 'turkish', 'greek', 'mexican restaurant', 'indian', 'curry house', 'ethiopian', 'peruvian', 'argentinian', 'moroccan', 'tagine', 'couscous', 'georgian', 'armenian', 'israeli', 'mediterranean restaurant', 'halal grill', 'syrian', 'afghani']},
-    {'segment': ['horeca', 'table_service', 'traditional_dining', ''], 'family': ('horeca', 'table_service'), 'weight': 9,
-     'keywords': ['restaurant', 'restaurante', 'ristorante', 'resto', 'family meals', 'dining room', 'plat du jour', 'menu du jour', 'sit down meal', 'reservation', 'terrace dining']},
-
-    {'segment': ['horeca', 'cafes_bars_discotheques', 'beer_bars_beer_temples_pubs', ''], 'family': ('horeca', 'cafes_bars_discotheques'), 'weight': 13,
-     'keywords': ['pub', 'ale', 'beer', 'brewery', 'brewpub', 'taproom', 'craft beer', 'irish pub', 'sports pub', 'bier', 'cerveza artesanal']},
-    {'segment': ['horeca', 'cafes_bars_discotheques', 'cocktail_bars', ''], 'family': ('horeca', 'cafes_bars_discotheques'), 'weight': 13,
-     'keywords': ['cocktail', 'mixology', 'speakeasy', 'martini', 'negroni', 'mojito', 'bartender', 'signature cocktails']},
-    {'segment': ['horeca', 'cafes_bars_discotheques', 'wine_tapas_bars', ''], 'family': ('horeca', 'cafes_bars_discotheques'), 'weight': 13,
-     'keywords': ['wine bar', 'wine list', 'wines by the glass', 'tapas', 'pinchos', 'enoteca', 'vinoteca', 'charcuterie board', 'apero']},
-    {'segment': ['horeca', 'cafes_bars_discotheques', 'clubs_nightclubs_party_bars', ''], 'family': ('horeca', 'cafes_bars_discotheques'), 'weight': 13,
-     'keywords': ['nightclub', 'night club', 'dj set', 'dance floor', 'vip table', 'party bar', 'karaoke', 'late night', 'discotheque']},
-    {'segment': ['horeca', 'cafes_bars_discotheques', 'traditional_bars', ''], 'family': ('horeca', 'cafes_bars_discotheques'), 'weight': 10,
-     'keywords': ['bar', 'bar tabac', 'tabac', 'café-bar', 'local bar', 'bar lounge']},
-
-    {'segment': ['horeca', 'hotel_lodging', 'hotels', ''], 'family': ('horeca', 'hotel_lodging'), 'weight': 14,
-     'keywords': ['hotel', 'resort', 'spa hotel', 'boutique hotel', 'rooms available', 'check-in', 'concierge', 'room service']},
-    {'segment': ['horeca', 'hotel_lodging', 'campsites', ''], 'family': ('horeca', 'hotel_lodging'), 'weight': 13,
-     'keywords': ['camping', 'campground', 'caravan', 'rv park', 'glamping', 'pitch', 'bungalow park']},
-    {'segment': ['horeca', 'hotel_lodging', 'other_accommodations', ''], 'family': ('horeca', 'hotel_lodging'), 'weight': 11,
-     'keywords': ['hostel', 'guest house', 'bed and breakfast', 'bed & breakfast', 'holiday rental', 'aparthotel', 'serviced apartment']},
-
-    {'segment': ['asc', 'food_store', 'bakeries_pastry_shops', ''], 'family': ('asc', 'food_store'), 'weight': 13,
-     'keywords': ['bakery', 'boulangerie', 'patisserie', 'pastry', 'viennoiserie', 'croissant', 'bread', 'artisan bread', 'gateaux']},
-    {'segment': ['asc', 'food_store', 'butchers_delicatessens_caterers', ''], 'family': ('asc', 'food_store'), 'weight': 13,
-     'keywords': ['butcher', 'butchery', 'charcuterie', 'delicatessen', 'traiteur', 'cold cuts', 'meat shop', 'hams', 'salumi']},
-    {'segment': ['asc', 'food_store', 'wine_shops', ''], 'family': ('asc', 'food_store'), 'weight': 12,
-     'keywords': ['wine shop', 'caviste', 'cave a vins', 'cave à vins', 'liquor store', 'spirits', 'whisky shop', 'vinoteca']},
-    {'segment': ['asc', 'food_store', 'convenience_stores', ''], 'family': ('asc', 'food_store'), 'weight': 11,
-     'keywords': ['convenience store', 'mini market', 'minimarket', 'corner shop', '24/7', 'open 24 hours', 'grocery']},
-    {'segment': ['asc', 'food_store', 'other_food_stores', 'tea_shop'], 'family': ('asc', 'food_store'), 'weight': 10,
-     'keywords': ['tea shop', 'tea room', 'thé', 'teas', 'infusions']},
-
-    {'segment': ['leisure', 'on_site_catering_events', 'cultural_sites', ''], 'family': ('leisure', 'on_site_catering_events'), 'weight': 12,
-     'keywords': ['museum', 'gallery', 'heritage', 'cultural center', 'exhibition']},
-    {'segment': ['leisure', 'on_site_catering_events', 'leisure_sites', 'beach_club'], 'family': ('leisure', 'on_site_catering_events'), 'weight': 12,
-     'keywords': ['beach club', 'sunbeds', 'pool club']},
-    {'segment': ['leisure', 'on_site_catering_events', 'leisure_sites', 'spa'], 'family': ('leisure', 'on_site_catering_events'), 'weight': 12,
-     'keywords': ['spa', 'wellness', 'massage', 'hammam', 'sauna']},
-    {'segment': ['leisure', 'on_site_catering_events', 'leisure_sites', 'amusement_recreation'], 'family': ('leisure', 'on_site_catering_events'), 'weight': 12,
-     'keywords': ['amusement park', 'theme park', 'water park', 'arcade', 'roller coaster']},
-    {'segment': ['leisure', 'on_site_catering_events', 'sports_sites', ''], 'family': ('leisure', 'on_site_catering_events'), 'weight': 12,
-     'keywords': ['stadium', 'sports complex', 'golf', 'tennis club', 'padel', 'fitness center']},
-]
-
-COUNTRY_KEYWORD_RULES = [
-    {'countries': ['FR', 'BE', 'CH'], 'segment': ['horeca', 'table_service', 'creperies', ''], 'family': ('horeca', 'table_service'), 'weight': 12,
-     'keywords': ['galette', 'galettes', 'crêperie', 'creperie']},
-    {'countries': ['ES'], 'segment': ['horeca', 'cafes_bars_discotheques', 'wine_tapas_bars', ''], 'family': ('horeca', 'cafes_bars_discotheques'), 'weight': 12,
-     'keywords': ['tapas', 'pinchos', 'cerveceria', 'cervecería', 'taberna']},
-    {'countries': ['IT'], 'segment': ['horeca', 'table_service', 'themed_dining_italian_pizzerias', ''], 'family': ('horeca', 'table_service'), 'weight': 12,
-     'keywords': ['ristorante', 'trattoria', 'osteria', 'pizzeria', 'pizza al taglio', 'forno a legna', 'apericena']},
-    {'countries': ['DE', 'AT', 'CH'], 'segment': ['horeca', 'cafes_bars_discotheques', 'beer_bars_beer_temples_pubs', ''], 'family': ('horeca', 'cafes_bars_discotheques'), 'weight': 12,
-     'keywords': ['biergarten', 'brauhaus', 'kneipe', 'bierkeller']},
-    {'countries': ['GB', 'IE'], 'segment': ['horeca', 'cafes_bars_discotheques', 'beer_bars_beer_temples_pubs', ''], 'family': ('horeca', 'cafes_bars_discotheques'), 'weight': 12,
-     'keywords': ['gastropub', 'public house', 'pub grub']},
-    {'countries': ['IL'], 'segment': ['horeca', 'table_service', 'themed_dining_other_specialties', ''], 'family': ('horeca', 'table_service'), 'weight': 12,
-     'keywords': ['falafel', 'sabich', 'shakshuka', 'hummus', 'shawarma', 'shwarma']},
-]
-
-NEGATIVE_KEYWORDS = [
-    {'family': ('horeca', 'table_service'), 'weight': -6.0,
-     'keywords': ['takeaway', 'take away', 'delivery only', 'food truck', 'drive thru', 'drive-thru', 'grab and go']},
-    {'family': ('horeca', 'fast_food'), 'weight': -5.0,
-     'keywords': ['reservation', 'tasting menu', 'sommelier', 'chef table', 'dining room', 'white tablecloth']},
-]
+KEYWORD_RULES = list(_MS_GLOBAL_KEYWORDS.get('keyword_rules', []))
+NEGATIVE_KEYWORDS = list(_MS_NEGATIVE.get('negative_keywords', []))
+COUNTRY_KEYWORD_RULES: list[dict] = []
+for cfg_path in list_country_config_files('marketsegmenter'):
+    payload = load_yaml_config(f'marketsegmenter/countries/{cfg_path.name}')
+    code = str(payload.get('country_code', '')).upper()
+    for rule in payload.get('keyword_rules', []):
+        COUNTRY_KEYWORD_RULES.append({'countries': [code], **rule})
 
 
 def _noop_progress(percent: int, message: str) -> None:
@@ -488,7 +318,7 @@ class MarketSegmenterService:
         return output_path
 
     def _load_type_mapping_df(self) -> pd.DataFrame:
-        mapping_path = Path(__file__).resolve().parents[1] / 'data' / 'google_type_mapping_proposed.csv'
+        mapping_path = Path(__file__).resolve().parents[2] / 'config_catalog' / 'marketsegmenter' / 'type_mapping.csv'
         if mapping_path.exists():
             return pd.read_csv(mapping_path).fillna('')
         return pd.DataFrame(columns=['type', 'marketsegment0', 'marketsegment1', 'marketsegment2', 'marketsegment3', 'mapping_reason'])

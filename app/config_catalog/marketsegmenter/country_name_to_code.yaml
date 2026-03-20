@@ -1,0 +1,31 @@
+country_name_to_code:
+  france: FR
+  french republic: FR
+  belgium: BE
+  belgique: BE
+  switzerland: CH
+  suisse: CH
+  spain: ES
+  espana: ES
+  espagne: ES
+  portugal: PT
+  italy: IT
+  italia: IT
+  germany: DE
+  deutschland: DE
+  austria: AT
+  netherlands: NL
+  nederland: NL
+  united kingdom: GB
+  uk: GB
+  great britain: GB
+  england: GB
+  ireland: IE
+  united states: US
+  usa: US
+  canada: CA
+  mexico: MX
+  brazil: BR
+  israel: IL
+  greece: GR
+  turkey: TR

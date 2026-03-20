@@ -12,6 +12,7 @@ import pandas as pd
 from rapidfuzz import fuzz
 from slugify import slugify
 
+from core.config_loader import load_yaml_config
 from normalizer.services.normalizer_service import (
     country_profile,
     detect_num_voie,
@@ -25,56 +26,24 @@ from normalizer.services.normalizer_service import (
 ProgressCallback = Callable[[int, str], None]
 LogCallback = Callable[[str], None]
 
-MATCHER_MAPPING_FIELDS = [
-    'id', 'name', 'address', 'zipcode', 'city', 'country', 'legal_id', 'legal_id_type',
-    'voie', 'num_voie', 'matchcode',
-    'phone', 'cellular', 'siret', 'hexa', 'lat', 'lng',
-]
-MATCHER_REQUIRED_FIELDS = {'id', 'name', 'address', 'zipcode', 'city'}
-MATCHER_COLUMN_ALIASES = {
-    'id': ['id', 'identifier', 'identifiant', 'outlet_id', 'store_id', 'restaurant_id'],
-    'name': ['name', 'nom', 'enseigne', 'raison sociale', 'outlet_name', 'store_name', 'ragione sociale'],
-    'address': ['address', 'adresse', 'adresse1', 'street', 'rue', 'full_address', 'final_address', 'legaladdress', 'legal_address', 'indirizzo', 'direccion', 'dirección', 'strasse', 'straat'],
-    'zipcode': ['zipcode', 'zip', 'postal_code', 'code_postal', 'cp', 'post_code', 'cap', 'postcode', 'plz', 'legalzipcode', 'legal_zipcode', 'legalpostalcode', 'legal_postal_code'],
-    'city': ['city', 'ville', 'commune', 'town', 'locality', 'citta', 'città', 'ciudad', 'stadt', 'gemeente', 'legalcity', 'legal_city'],
-    'country': ['country', 'pays', 'country_code', 'nation', 'paese', 'pais', 'país', 'land'],
-    'legal_id': ['legal_id', 'siret', 'siren', 'vat', 'vat_number', 'partita_iva', 'piva', 'codice_fiscale', 'nif', 'cif', 'btw', 'kvk', 'company_number', 'ust_id', 'ustid'],
-    'legal_id_type': ['legal_id_type', 'id_type', 'vat_type', 'company_id_type'],
-    'voie': ['voie', 'street_name', 'road_name'],
-    'num_voie': ['num_voie', 'street_number', 'house_number', 'numero'],
-    'matchcode': ['matchcode'],
-    'phone': ['phone', 'telephone', 'tel'],
-    'cellular': ['cellular', 'mobile', 'mobile_phone'],
-    'siret': ['siret'],
-    'hexa': ['hexa', 'hexa_gmap', 'hexa_code'],
-    'lat': ['lat', 'latitude'],
-    'lng': ['lng', 'lon', 'long', 'longitude'],
-}
+_MATCHER_MAPPING = load_yaml_config('matcher/mapping_fields.yaml')
+_MATCHER_ALIASES = load_yaml_config('matcher/column_aliases.yaml')
+_MATCHER_STOPWORDS = load_yaml_config('matcher/stopwords.yaml')
+_MATCHER_AUTO_REASONS = load_yaml_config('matcher/auto_reasons.yaml')
+_MATCHER_THRESHOLDS = load_yaml_config('matcher/thresholds.yaml').get('defaults', {})
 
-COMMON_STOP_WORDS = {
-    'le', 'la', 'les', 'du', 'des', 'au', 'aux', 'de', 'et', 'a', 'l', 'd', 'un', 'une', 'en', 'dans', 'sur',
-    'pour', 'par', 'avec', 'ce', 'ces', 'cette', 'cet', 'sans', 'ne', 'pas', 'plus', 'que', 'qui', 'quoi',
-    'ou', 'donc', 'car', 'bar', 'restaurant', 'hotel', 'brasserie', 'camping', 'cafe', 'boulangerie',
-    'patisserie', 'pizzeria', 'tabac', 'presse', 'boucherie', 'charcuterie', 'epicerie', 'pharmacie',
-    'garage', 'salon', 'coiffure', 'karaoke', 'discotheque', 'cinema', 'cine', 'disco', 'creperie', 'pub',
-    'hotels', 'bistrot', 'pizza', 'crepe', 'sandwich', 'bowling', 'billard', 'club', 'maison', 'chez',
-    'association', 'group', 'store', 'shop', 'outlet', 'retail'
-}
-LEGAL_STOP_WORDS = {
-    'sarl', 'eurl', 'sas', 'sasu', 'sa', 'snc', 'sci', 'gaec', 'entreprise', 'societe', 'società', 'societa',
-    'etablissements', 'ets', 'cie', 'groupe', 'srl', 'spa', 'sl', 'slu', 'gmbh', 'ag', 'ug', 'kg', 'ohg',
-    'sprl', 'bv', 'nv', 'vof', 'ltd', 'limited', 'plc', 'llp', 'lda'
-}
+MATCHER_MAPPING_FIELDS = list(_MATCHER_MAPPING.get('mapping_fields', []))
+MATCHER_REQUIRED_FIELDS = set(_MATCHER_MAPPING.get('required_fields', []))
+MATCHER_COLUMN_ALIASES = _MATCHER_ALIASES.get('column_aliases', {})
+COMMON_STOP_WORDS = set(_MATCHER_STOPWORDS.get('common_stop_words', []))
+LEGAL_STOP_WORDS = set(_MATCHER_STOPWORDS.get('legal_stop_words', []))
 MATCHER_STOP_WORDS = COMMON_STOP_WORDS | LEGAL_STOP_WORDS
-
-AUTO_REASONS = {
-    'legal_id_match': 'Identifiant légal identique',
-    'matchcode_name': 'Matchcode identique + nom fort',
-    'algo_score': 'Nom + voie très proches',
-    'hexa_match': 'Hexa identique',
-    'phone_match': 'Téléphone identique + proximité',
-    'siret_match': 'SIRET identique',
-    'distance_match': 'Coordonnées très proches',
+AUTO_REASONS = _MATCHER_AUTO_REASONS.get('auto_reasons', {})
+MATCHER_DEFAULT_THRESHOLDS = {
+    'threshold_name': int(_MATCHER_THRESHOLDS.get('threshold_name', 85)),
+    'threshold_voie': int(_MATCHER_THRESHOLDS.get('threshold_voie', 70)),
+    'top_k_per_master': int(_MATCHER_THRESHOLDS.get('top_k_per_master', 5)),
+    'threshold_phone_review': int(_MATCHER_THRESHOLDS.get('threshold_phone_review', 100)),
 }
 
 
@@ -234,10 +203,10 @@ def haversine_meters(lat1, lon1, lat2, lon2):
 
 @dataclass
 class MatcherOptions:
-    threshold_name: int = 85
-    threshold_voie: int = 70
-    top_k_per_master: int = 5
-    threshold_phone_review: int = 100
+    threshold_name: int = MATCHER_DEFAULT_THRESHOLDS['threshold_name']
+    threshold_voie: int = MATCHER_DEFAULT_THRESHOLDS['threshold_voie']
+    top_k_per_master: int = MATCHER_DEFAULT_THRESHOLDS['top_k_per_master']
+    threshold_phone_review: int = MATCHER_DEFAULT_THRESHOLDS['threshold_phone_review']
     master_sheet_name: str | None = None
     slave_sheet_name: str | None = None
     master_mapping: dict[str, str] = field(default_factory=dict)

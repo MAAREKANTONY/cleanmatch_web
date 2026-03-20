@@ -1,0 +1,24 @@
+country_code: ES
+street_types:
+- calle
+- avenida
+- avda
+- plaza
+- paseo
+- camino
+- carretera
+- ronda
+- carrer
+- travessia
+- travesia
+postcode_regex: ^\d{5}$
+legal_id_type: nif_or_cif
+legal_prefixes:
+- es
+number_suffixes:
+- bis
+company_suffixes:
+- sl
+- slu
+- sa
+- scoop

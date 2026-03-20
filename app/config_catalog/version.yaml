@@ -1,0 +1,4 @@
+catalog_version: 1.0.0
+updated_at: '2026-03-20'
+notes: Iteration 25 - externalized configuration catalog for CleanMatch Web. Service-level
+  hardcoded configuration moved to YAML/CSV where feasible without breaking structure.

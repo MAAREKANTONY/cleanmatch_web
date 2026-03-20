@@ -1,0 +1,5 @@
+defaults:
+  threshold_name: 85
+  threshold_voie: 70
+  top_k_per_master: 5
+  threshold_phone_review: 100
