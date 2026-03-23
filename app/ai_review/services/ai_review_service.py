@@ -43,9 +43,10 @@ _AI_LLM_PROVIDERS = load_llm_providers_config()
 AI_REVIEW_MAPPING_FIELDS = list(CANONICAL_FIELD_SPECS.keys())
 AI_REVIEW_REQUIRED_FIELDS = set(CANONICAL_REQUIRED_FIELDS)
 AI_REVIEW_OUTPUT_FIELDS = [
-    'ai_review_status', 'ai_confidence', 'ai_segment_suggested', 'ai_sources_used', 'ai_evidence_summary',
+    'ai_review_status', 'ai_confidence', 'ai_segment_suggested', 'ai_segment_source', 'ai_sources_used', 'ai_evidence_summary',
     'ai_requires_human_review', 'ai_input_pack_summary', 'ai_selected_for_review', 'ai_detected_service_mode',
-    'ai_detected_cuisine', 'ai_detected_keywords', 'ai_detected_signals_json', 'ai_source_count',
+    'ai_detected_cuisine', 'ai_detected_keywords', 'ai_detected_signals_json', 'ai_keyword_service_mode_candidates',
+    'ai_keyword_cuisine_candidates', 'ai_keyword_signals_json', 'ai_source_count',
     'ai_web_fetch_status', 'ai_sources_fetched', 'ai_web_text_content', 'ai_menu_text_excerpt',
     'ai_homepage_title', 'ai_homepage_meta_description', 'ai_action_profile', 'ai_enabled_capabilities',
     'ai_capability_field_usage', 'ai_llm_status', 'ai_llm_reason', 'ai_llm_configured',
@@ -353,20 +354,67 @@ class AIReviewService:
         from .capability_engine import AI_REVIEW_CAPABILITIES
         capability_field_usage = {capability: list(AI_REVIEW_CAPABILITIES.get(capability, {}).get('consumes', [])) for capability in review_input.enabled_capabilities}
         llm_payload = self._run_llm_guardrails(review_input, homepage_title=homepage_title, homepage_meta=homepage_meta, menu_excerpt=menu_excerpt, web_text=web_text_content)
+        llm_result = llm_payload.get('result_json', {}) or {}
+        llm_result_source = str(llm_payload.get('result_source', '') or '')
+        llm_structured_available = bool(llm_result) and llm_result_source in {'live', 'cache'}
+
+        final_segment_parts = [str(llm_result.get(f'segment_type{i}', '')).strip() for i in range(4)] if llm_structured_available else []
+        final_segment_parts = [part for part in final_segment_parts if part]
+        if final_segment_parts:
+            ai_segment_suggested = ' > '.join(final_segment_parts)
+            ai_segment_source = f'llm_{llm_result_source}'
+        else:
+            ai_segment_suggested = ' > '.join([segment for segment in review_input.initial_segments if segment])
+            ai_segment_source = 'rules_initial'
+
+        llm_service_mode = str(llm_result.get('service_mode', '')).strip() if llm_structured_available else ''
+        llm_cuisine_type = str(llm_result.get('cuisine_type', '')).strip() if llm_structured_available else ''
+        final_service_mode = llm_service_mode or ' | '.join(detected_service_mode)
+        final_cuisine = llm_cuisine_type or ' | '.join(detected_cuisine)
+        final_confidence = llm_result.get('confidence', None) if llm_structured_available else raw_conf
+        if final_confidence in (None, ''):
+            ai_confidence = ''
+        else:
+            try:
+                ai_confidence = f'{float(final_confidence):.3f}'
+            except Exception:
+                ai_confidence = str(final_confidence)
+
+        final_requires_human_review = llm_result.get('requires_human_review', None) if llm_structured_available else None
+        if final_requires_human_review is None:
+            ai_requires_human_review = 'yes' if selected else 'no'
+        else:
+            ai_requires_human_review = 'yes' if bool(final_requires_human_review) else 'no'
+
+        if llm_structured_available:
+            llm_evidence = llm_result.get('evidence', '')
+            if isinstance(llm_evidence, list):
+                llm_evidence_text = ' | '.join(str(x) for x in llm_evidence if str(x).strip())
+            else:
+                llm_evidence_text = str(llm_evidence)
+            reasoning_short = str(llm_result.get('reasoning_short', '')).strip()
+            evidence_parts = [part for part in [llm_evidence_text, reasoning_short] if part]
+            ai_evidence_summary = ' || '.join(evidence_parts) if evidence_parts else ' || '.join(evidence)
+        else:
+            ai_evidence_summary = ' || '.join(evidence)
 
         return AIReviewResult(
             ai_review_status='selected' if selected else 'skipped',
-            ai_confidence='' if raw_conf is None else f'{raw_conf:.3f}',
-            ai_segment_suggested=' > '.join([segment for segment in review_input.initial_segments if segment]),
+            ai_confidence=ai_confidence,
+            ai_segment_suggested=ai_segment_suggested,
+            ai_segment_source=ai_segment_source,
             ai_sources_used=' | '.join(sources_used),
-            ai_evidence_summary=' || '.join(evidence),
-            ai_requires_human_review='yes' if selected else 'no',
+            ai_evidence_summary=ai_evidence_summary,
+            ai_requires_human_review=ai_requires_human_review,
             ai_input_pack_summary=self._build_input_pack_summary(review_input),
             ai_selected_for_review='yes' if selected else 'no',
-            ai_detected_service_mode=' | '.join(detected_service_mode),
-            ai_detected_cuisine=' | '.join(detected_cuisine),
+            ai_detected_service_mode=final_service_mode,
+            ai_detected_cuisine=final_cuisine,
             ai_detected_keywords=' | '.join(keywords),
-            ai_detected_signals_json=json.dumps({'service_mode': detected_service_mode, 'cuisine': detected_cuisine, 'signals': detected_signals}, ensure_ascii=False, sort_keys=True),
+            ai_detected_signals_json=json.dumps({'service_mode': [llm_service_mode] if llm_service_mode else detected_service_mode, 'cuisine': [llm_cuisine_type] if llm_cuisine_type else detected_cuisine, 'signals': detected_signals, 'segment_source': ai_segment_source}, ensure_ascii=False, sort_keys=True),
+            ai_keyword_service_mode_candidates=' | '.join(detected_service_mode),
+            ai_keyword_cuisine_candidates=' | '.join(detected_cuisine),
+            ai_keyword_signals_json=json.dumps({'service_mode': detected_service_mode, 'cuisine': detected_cuisine, 'signals': detected_signals}, ensure_ascii=False, sort_keys=True),
             ai_source_count=str(source_count),
             ai_web_fetch_status=web_fetch_status,
             ai_sources_fetched=' | '.join(fetched_sources),
@@ -390,7 +438,7 @@ class AIReviewService:
             ai_llm_calls_used=str(llm_payload.get('row_calls_used', '')),
             ai_llm_provider=str(llm_payload.get('provider', '')),
             ai_llm_model=str(llm_payload.get('model', '')),
-            ai_llm_result_json=json.dumps(llm_payload.get('result_json', {}), ensure_ascii=False, sort_keys=True),
+            ai_llm_result_json=json.dumps(llm_result, ensure_ascii=False, sort_keys=True),
             ai_llm_raw_excerpt=str(llm_payload.get('raw_content', ''))[:3000],
         )
 
