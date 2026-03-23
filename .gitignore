@@ -8,3 +8,4 @@ app/staticfiles/
 *.log
 .vscode/
 .idea/
+app/celerybeat-schedule

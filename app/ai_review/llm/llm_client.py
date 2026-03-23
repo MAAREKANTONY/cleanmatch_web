@@ -362,6 +362,11 @@ class GuardedLLMClient:
                     return data
             except Exception:
                 continue
+
+        recovered = cls._recover_partial_json_fields(normalized)
+        if recovered:
+            return recovered
+
         return {
             'service_mode': '',
             'cuisine_type': '',
@@ -374,6 +379,118 @@ class GuardedLLMClient:
             'requires_human_review': True,
             'reasoning_short': 'Provider response was not valid JSON.',
         }
+
+
+    @classmethod
+    def _recover_partial_json_fields(cls, content: str) -> dict[str, Any]:
+        text = cls._normalize_json_candidate(content)
+        if not text or '{' not in text:
+            return {}
+
+        recovered: dict[str, Any] = {
+            'service_mode': '',
+            'cuisine_type': '',
+            'segment_type0': '',
+            'segment_type1': '',
+            'segment_type2': '',
+            'segment_type3': '',
+            'confidence': 0.0,
+            'evidence': [],
+            'requires_human_review': True,
+            'reasoning_short': '',
+        }
+
+        def parse_string_value(key: str) -> str | None:
+            null_match = re.search(rf'"{re.escape(key)}"\s*:\s*null', text)
+            if null_match:
+                return ''
+            quoted_match = re.search(rf'"{re.escape(key)}"\s*:\s*"((?:\\.|[^"\\])*)"', text, flags=re.DOTALL)
+            if quoted_match:
+                try:
+                    return json.loads('"' + quoted_match.group(1) + '"')
+                except Exception:
+                    return quoted_match.group(1)
+            if key == 'reasoning_short':
+                start_match = re.search(rf'"{re.escape(key)}"\s*:\s*"', text)
+                if start_match:
+                    tail = text[start_match.end():]
+                    tail = re.sub(r'```+$', '', tail).strip()
+                    return cls._truncate_partial_text(tail)
+            if key == 'evidence':
+                start_match = re.search(rf'"{re.escape(key)}"\s*:\s*"', text)
+                if start_match:
+                    tail = text[start_match.end():]
+                    next_key = re.search(r'",\s*"[A-Za-z0-9_]+"\s*:', tail, flags=re.DOTALL)
+                    candidate = tail[:next_key.start()] if next_key else tail
+                    return cls._truncate_partial_text(candidate)
+            return None
+
+        for key in ['service_mode', 'cuisine_type', 'segment_type0', 'segment_type1', 'segment_type2', 'segment_type3']:
+            value = parse_string_value(key)
+            if value is not None:
+                recovered[key] = value
+
+        confidence_match = re.search(r'"confidence"\s*:\s*(-?\d+(?:\.\d+)?)', text)
+        if confidence_match:
+            try:
+                recovered['confidence'] = float(confidence_match.group(1))
+            except Exception:
+                pass
+
+        review_match = re.search(r'"requires_human_review"\s*:\s*(true|false)', text, flags=re.IGNORECASE)
+        if review_match:
+            recovered['requires_human_review'] = review_match.group(1).lower() == 'true'
+
+        evidence_array_match = re.search(r'"evidence"\s*:\s*(\[[\s\S]*?\])', text)
+        if evidence_array_match:
+            try:
+                recovered['evidence'] = json.loads(evidence_array_match.group(1))
+            except Exception:
+                pass
+        elif not recovered['evidence']:
+            evidence_text = parse_string_value('evidence')
+            if evidence_text:
+                recovered['evidence'] = [evidence_text]
+
+        reasoning = parse_string_value('reasoning_short')
+        if reasoning:
+            recovered['reasoning_short'] = reasoning
+
+        structured_keys = [recovered.get('service_mode'), recovered.get('cuisine_type'), recovered.get('segment_type0'), recovered.get('segment_type1'), recovered.get('segment_type2'), recovered.get('segment_type3')]
+        if not any(str(v).strip() for v in structured_keys):
+            return {}
+
+        evidence_list = recovered.get('evidence') or []
+        if isinstance(evidence_list, list):
+            evidence_list = [str(item).strip() for item in evidence_list if str(item).strip()]
+        else:
+            evidence_list = [str(evidence_list).strip()] if str(evidence_list).strip() else []
+        evidence_list.append('partial_json_recovered')
+        if cls._looks_truncated(text):
+            evidence_list.append('provider_response_truncated')
+        recovered['evidence'] = evidence_list
+        if not recovered.get('reasoning_short'):
+            recovered['reasoning_short'] = 'Partial structured JSON was recovered from a truncated provider response.'
+        return recovered
+
+    @staticmethod
+    def _truncate_partial_text(value: str, max_len: int = 280) -> str:
+        text = str(value or '').replace('\n', ' ').replace('\r', ' ').strip(' \"`')
+        text = re.sub(r'\s+', ' ', text).strip()
+        if len(text) > max_len:
+            text = text[:max_len].rstrip()
+        return text
+
+    @staticmethod
+    def _looks_truncated(text: str) -> bool:
+        stripped = str(text or '').strip()
+        if not stripped:
+            return False
+        if stripped.endswith('}') or stripped.endswith(']'):
+            return False
+        open_braces = stripped.count('{') + stripped.count('[')
+        close_braces = stripped.count('}') + stripped.count(']')
+        return open_braces > close_braces or stripped.endswith(':') or stripped.endswith(',')
 
     @staticmethod
     def _normalize_json_candidate(content: str) -> str:

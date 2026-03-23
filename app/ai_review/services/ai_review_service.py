@@ -533,8 +533,10 @@ class AIReviewService:
             f'fetched_web_text={web_text[:3000]}',
             'Return JSON only.',
             'Do not wrap the JSON in markdown fences.',
-            'Keep evidence concise (max 400 chars).',
-            'Keep reasoning_short concise (max 240 chars).',
+            'Keep evidence as a short string or short list (max 160 chars total).',
+            'Keep reasoning_short to one short sentence (max 120 chars).',
+            'Never add any text before or after the JSON object.',
+            'If uncertain, keep reasoning_short brief instead of verbose.',
         ]
         return '\n'.join(blocks)
 

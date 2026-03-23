@@ -10,7 +10,7 @@ max_cost_per_row_eur: 0.01
 max_calls_per_row: 2
 input_price_per_1k_tokens_eur: 0.002
 output_price_per_1k_tokens_eur: 0.006
-max_completion_tokens: 300
+max_completion_tokens: 450
 temperature: 0.1
 cache_subdir: ai_review_llm_cache
 llm_capabilities:
@@ -21,7 +21,8 @@ llm_capabilities:
   - photo_review
 system_prompt: |
   You are a structured outlet classification assistant for FYRE.
-  You must return JSON only, with no markdown and no prose outside JSON.
+  You must return exactly one compact JSON object, with no markdown fences and no prose outside JSON.
+  Keep evidence very short and keep reasoning_short to one brief sentence.
   Base your answer only on the provided evidence. If evidence is weak, say so.
   The expected JSON keys are:
     service_mode,
