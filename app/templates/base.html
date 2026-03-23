@@ -162,6 +162,9 @@
         .mapping-item.required { border-color: #f59e0b; background: #fffbeb; }
         .hint-list { margin:8px 0 0 18px; color: var(--muted); }
         .hidden { display:none !important; }
+        footer.app-footer { margin: 18px 0 24px; color: var(--muted); }
+        .footer-card { display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:flex-start; background: rgba(255,255,255,.7); border:1px solid var(--line); border-radius: 18px; padding: 16px 18px; }
+        .footer-card strong { color: var(--text); }
         @media (max-width: 720px) {
             .container { width: min(100%, calc(100% - 20px)); }
             .hero, .card { padding: 18px; border-radius: 20px; }
@@ -178,7 +181,6 @@
             <div class="brand-subtitle">Plateforme de traitements longs avec jobs asynchrones</div>
         </div>
         <div class="top-actions">
-            <span class="iteration-tag">Itération 16 — Matcher Multi-country</span>
             <a class="btn btn-ghost" href="{% url 'jobs:home' %}">Dashboard</a>
             <a class="btn" href="{% url 'jobs:new' %}">Nouveau job</a>
         </div>
@@ -194,5 +196,11 @@
     {% endif %}
     {% block content %}{% endblock %}
 </main>
+<footer class="container app-footer">
+    <div class="footer-card">
+        <div><strong>{{ app_iteration_label }}</strong></div>
+        <div class="muted small" style="max-width:860px;">{{ app_iteration_summary }}</div>
+    </div>
+</footer>
 </body>
 </html>

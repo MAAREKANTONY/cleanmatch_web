@@ -14,6 +14,7 @@ from matcher.services.matcher_service import MatcherOptions, MatcherService
 from geocoder.services.geocoder_service import GeocoderOptions, GeocoderService
 from geoclass.services.geoclass_service import GeoclassOptions, GeoclassService
 from marketsegmenter.services.marketsegmenter_service import MarketSegmenterOptions, MarketSegmenterService
+from ai_review.services.ai_review_service import AIReviewOptions, AIReviewService
 
 
 def _read_text_preview(path: str, limit: int = 4000) -> str:
@@ -29,6 +30,22 @@ def _read_text_preview(path: str, limit: int = 4000) -> str:
 
 def _job_storage_root() -> str:
     return str(Path(settings.MEDIA_ROOT))
+
+
+def _parse_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off", ""}:
+            return False
+    return bool(value)
 
 
 @shared_task(bind=True)
@@ -51,6 +68,8 @@ def run_uploaded_job(self, job_id: str):
             return _run_geoclass_job(job)
         if job.job_type == Job.JobType.MARKETSEGMENTER:
             return _run_marketsegmenter_job(job)
+        if job.job_type == Job.JobType.AI_REVIEW:
+            return _run_ai_review_job(job)
         return _run_stub_job(job, input_path, second_input_path)
     except JobCancelledError as exc:
         job.refresh_from_db()
@@ -264,6 +283,55 @@ def _run_marketsegmenter_job(job: Job):
     with result_path.open('rb') as fh:
         job.output_file.save(result_path.name, File(fh), save=False)
     JobService.mark_success(job, message='Market segmenter FYRE terminé avec succès')
+    return str(job.id)
+
+
+
+def _run_ai_review_job(job: Job):
+    parameters = job.parameters_json or {}
+    input_path = Path(job.input_file_1.path)
+    output_name = f"{input_path.stem}_ai_review.csv"
+    output_path = Path(job.output_file.field.storage.path(f'outputs/{output_name}'))
+
+    def progress(percent: int, message: str) -> None:
+        job.refresh_from_db()
+        JobService.enforce_not_cancelled(job)
+        JobService.ensure_disk_space(_job_storage_root())
+        JobService.update_progress(job, percent, message)
+
+    def log(message: str) -> None:
+        job.refresh_from_db()
+        JobService.enforce_not_cancelled(job)
+        JobService.append_runtime_log(job, message)
+
+    service = AIReviewService(progress_callback=progress, log_callback=log)
+    options = AIReviewOptions(
+        ai_review_sheet_name=parameters.get('ai_review_sheet_name') or None,
+        ai_review_mapping=parameters.get('ai_review_mapping') or {},
+        low_confidence_threshold=float(parameters.get('ai_review_low_confidence_threshold') or 0.65),
+        only_low_confidence=True,
+        action_profile=(parameters.get('ai_review_action_profile') or 'standard'),
+        llm_enabled=_parse_bool(parameters.get('ai_review_llm_enabled', False)),
+        llm_provider=str(parameters.get('ai_review_llm_provider') or ''),
+        llm_model=str(parameters.get('ai_review_llm_model') or ''),
+        llm_max_budget_eur=float(parameters.get('ai_review_llm_max_budget_eur') or 0.0),
+        llm_max_cost_per_row_eur=float(parameters.get('ai_review_llm_max_cost_per_row_eur') or 0.0),
+        llm_max_calls_per_row=int(parameters.get('ai_review_llm_max_calls_per_row') or 1),
+    )
+
+    log('🚀 Lancement du process AI Review hardened multi-provider LLM')
+    log(f'📂 Fichier source : {input_path.name}')
+    log(f"🎯 Seuil faible confiance : {options.low_confidence_threshold}")
+    log(f"🧠 Profil d’action : {options.action_profile}")
+    log(f"🤖 LLM enabled={options.llm_enabled} provider={options.llm_provider} model={options.llm_model} budget={options.llm_max_budget_eur}€ row_max={options.llm_max_cost_per_row_eur}€ calls/row={options.llm_max_calls_per_row}")
+    log('💾 Format de sortie : CSV UTF-8 avec colonnes AI review additives + summary JSON + guardrails LLM + JSON provider output')
+    result_path = service.run(input_path=input_path, output_path=output_path, options=options)
+
+    job.refresh_from_db()
+    JobService.enforce_not_cancelled(job)
+    with result_path.open('rb') as fh:
+        job.output_file.save(result_path.name, File(fh), save=False)
+    JobService.mark_success(job, message='AI Review hardening terminé avec succès')
     return str(job.id)
 
 def _run_stub_job(job: Job, input_path: str, second_input_path: str):

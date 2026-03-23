@@ -1,0 +1,107 @@
+source_groups:
+  id_fields:
+  - outlet_id
+  - id
+  - ID
+  - Google ID
+  - google_id
+  name_fields:
+  - name
+  - Name
+  - outlet_name
+  address_fields:
+  - address
+  - Address
+  - Full address
+  - Full Address
+  - full_address
+  country_fields:
+  - country
+  - Country
+  country_code_fields:
+  - country_code
+  - Country code
+  - Country Code
+  google_id_fields:
+  - google_id
+  - Google ID
+  place_id_fields:
+  - place_id
+  - Place Id
+  - Place ID
+  website_fields:
+  - website
+  - Website
+  website_root_fields:
+  - website_root_url
+  - Website (root url)
+  website_title_fields:
+  - website_title
+  - Website title
+  website_meta_description_fields:
+  - website_meta_description
+  - Website meta description
+  menu_fields:
+  - menu_url
+  - Offerings link
+  - Menu link
+  social_fields:
+  - facebook_link
+  - instagram_link
+  - linkedin_link
+  - youtube_link
+  - twitter_link
+  - Facebook link
+  - Instagram link
+  - Linkedin link
+  - Youtube link
+  - Twitter link
+  photo_fields:
+  - photo_1
+  - photo_2
+  - all_photos
+  - menu_photos
+  - Photo 1
+  - Photo 2
+  - All photos
+  - Menu photos
+  main_type_fields:
+  - main_type
+  - Main type
+  all_types_fields:
+  - all_types
+  - All types
+  description_fields:
+  - description_1
+  - description_2
+  - description_3
+  - Description 1
+  - Description 2
+  - Description 3
+  - website_title
+  - Website title
+  - website_meta_description
+  - Website meta description
+  reviews_tags_fields:
+  - reviews_tags
+  - Reviews tag
+  characteristics_fields:
+  - characteristics
+  - Characteristics
+  hotel_fields:
+  - hotel_additional_informations
+  - Hotel additional information
+  price_fields:
+  - price_range_simplified
+  - Price range simplified
+  - customer_reported_price_range
+  - Customer reported price range
+  language_fields:
+  - website_lang
+  - Website lang
+  initial_reason_fields:
+  - segmentation_reasons
+web_fetch_priority:
+- website_root
+- website
+- menu

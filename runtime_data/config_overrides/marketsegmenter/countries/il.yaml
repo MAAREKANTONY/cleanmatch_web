@@ -1,0 +1,21 @@
+country_code: IL
+languages:
+- he
+- en
+keyword_rules:
+- segment:
+  - horeca
+  - table_service
+  - themed_dining_other_specialties
+  - ''
+  family:
+  - horeca
+  - table_service
+  weight: 12
+  keywords:
+  - falafel
+  - sabich
+  - shakshuka
+  - hummus
+  - shawarma
+  - shwarma

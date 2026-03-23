@@ -14,6 +14,8 @@ from matcher.services.matcher_service import MATCHER_MAPPING_FIELDS, inspect_tab
 from geocoder.services.geocoder_service import GEOCODER_MAPPING_FIELDS, inspect_geocoder_file
 from geoclass.services.geoclass_service import GEOCLASS_MAPPING_FIELDS
 from marketsegmenter.services.marketsegmenter_service import MARKETSEGMENTER_MAPPING_FIELDS, inspect_marketsegmenter_file
+from ai_review.services.ai_review_service import AI_REVIEW_MAPPING_FIELDS, inspect_ai_review_file
+from ai_review.services.capability_engine import AI_REVIEW_ACTION_PROFILES, AI_REVIEW_CAPABILITIES
 
 from .forms import JobCreateForm
 from .models import Job
@@ -105,6 +107,19 @@ def create_job(request):
                     'marketsegmenter_country_default': (form.cleaned_data.get('marketsegmenter_country_default') or '').strip(),
                     'marketsegmenter_mapping': form.get_marketsegmenter_mapping_payload(form.cleaned_data),
                 })
+            elif form.cleaned_data['job_type'] == Job.JobType.AI_REVIEW:
+                parameters.update({
+                    'ai_review_sheet_name': (form.cleaned_data.get('ai_review_sheet_name') or '').strip() or None,
+                    'ai_review_low_confidence_threshold': float(form.cleaned_data.get('ai_review_low_confidence_threshold') or 0.65),
+                    'ai_review_action_profile': (form.cleaned_data.get('ai_review_action_profile') or 'standard').strip() or 'standard',
+                    'ai_review_llm_enabled': bool(form.cleaned_data.get('ai_review_llm_enabled')),
+                    'ai_review_llm_provider': str(form.cleaned_data.get('ai_review_llm_provider') or ''),
+                    'ai_review_llm_model': str(form.cleaned_data.get('ai_review_llm_model') or ''),
+                    'ai_review_llm_max_budget_eur': float(form.cleaned_data.get('ai_review_llm_max_budget_eur') or 0.0),
+                    'ai_review_llm_max_cost_per_row_eur': float(form.cleaned_data.get('ai_review_llm_max_cost_per_row_eur') or 0.0),
+                    'ai_review_llm_max_calls_per_row': int(form.cleaned_data.get('ai_review_llm_max_calls_per_row') or 1),
+                    'ai_review_mapping': form.get_ai_review_mapping_payload(form.cleaned_data),
+                })
             elif form.cleaned_data['job_type'] == Job.JobType.GEOCLASS:
                 parameters.update({
                     'geoclass_sheet_name': (form.cleaned_data.get('geoclass_sheet_name') or '').strip() or None,
@@ -122,6 +137,9 @@ def create_job(request):
                     'geocoder_mapping_fields': GEOCODER_MAPPING_FIELDS,
                     'geoclass_mapping_fields': GEOCLASS_MAPPING_FIELDS,
                     'marketsegmenter_mapping_fields': MARKETSEGMENTER_MAPPING_FIELDS,
+                    'ai_review_mapping_fields': AI_REVIEW_MAPPING_FIELDS,
+                    'ai_review_action_profiles': sorted(AI_REVIEW_ACTION_PROFILES.keys()),
+                    'ai_review_capabilities': AI_REVIEW_CAPABILITIES,
                 })
 
             job = Job.objects.create(
@@ -146,6 +164,9 @@ def create_job(request):
         'geocoder_mapping_fields': GEOCODER_MAPPING_FIELDS,
                     'geoclass_mapping_fields': GEOCLASS_MAPPING_FIELDS,
                     'marketsegmenter_mapping_fields': MARKETSEGMENTER_MAPPING_FIELDS,
+                    'ai_review_mapping_fields': AI_REVIEW_MAPPING_FIELDS,
+                    'ai_review_action_profiles': sorted(AI_REVIEW_ACTION_PROFILES.keys()),
+                    'ai_review_capabilities': AI_REVIEW_CAPABILITIES,
     })
 
 
@@ -158,6 +179,7 @@ def help_page(request):
             {'name': 'Geocoder', 'status': 'intermediate', 'outputs': 'CSV + summary JSON', 'notes': 'checkpoint, reprise, cache'},
             {'name': 'Geoclass', 'status': 'initial', 'outputs': 'CSV + summary JSON', 'notes': 'classification heuristique addititve'},
             {'name': 'Market Segmenter FYRE', 'status': 'initial', 'outputs': 'CSV + summary JSON', 'notes': 'Google Places vers taxonomie FYRE avec types + mots-clés multilingues pays-aware + signal prix'},
+            {'name': 'AI Review', 'status': 'active', 'outputs': 'CSV + summary JSON', 'notes': 'mapping canonique, action profiles et capacités agent sans LLM dans ce sprint'},
         ],
         'contracts': [
             'Conserver les contrats JSON côté inspection avec le flag ok.',
@@ -270,6 +292,20 @@ def inspect_matcher_file(request):
     payload['ok'] = True
     return JsonResponse(payload)
 
+
+
+def inspect_ai_review(request):
+    if request.method != 'POST':
+        return JsonResponse({'ok': False, 'error': 'Méthode non autorisée.'}, status=405)
+    uploaded = request.FILES.get('file') or request.FILES.get('input_file_1')
+    if not uploaded:
+        return JsonResponse({'ok': False, 'error': 'Aucun fichier fourni.'}, status=400)
+    try:
+        payload = inspect_ai_review_file(uploaded)
+    except Exception as exc:
+        return JsonResponse({'ok': False, 'error': f'Impossible d’inspecter le fichier : {exc}'}, status=400)
+    payload['ok'] = True
+    return JsonResponse(payload)
 
 def inspect_geocoder(request):
     if request.method != 'POST':

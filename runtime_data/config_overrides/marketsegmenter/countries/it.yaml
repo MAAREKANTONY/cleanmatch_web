@@ -1,0 +1,22 @@
+country_code: IT
+languages:
+- it
+- en
+keyword_rules:
+- segment:
+  - horeca
+  - table_service
+  - themed_dining_italian_pizzerias
+  - ''
+  family:
+  - horeca
+  - table_service
+  weight: 12
+  keywords:
+  - ristorante
+  - trattoria
+  - osteria
+  - pizzeria
+  - pizza al taglio
+  - forno a legna
+  - apericena

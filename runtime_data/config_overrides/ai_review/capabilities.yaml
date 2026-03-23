@@ -1,0 +1,33 @@
+capabilities:
+  metadata_review:
+    consumes:
+      - website_title
+      - website_meta_description
+      - reviews_tags
+      - characteristics
+  homepage_fetch:
+    consumes:
+      - website_url
+      - website_root_url
+  menu_fetch:
+    consumes:
+      - menu_urls
+      - website_url
+  social_review:
+    consumes:
+      - social_facebook_urls
+      - social_instagram_urls
+      - social_twitter_urls
+      - social_linkedin_urls
+      - social_youtube_urls
+  photo_review:
+    consumes:
+      - photo_urls
+  entity_resolution:
+    consumes:
+      - outlet_name
+      - full_address
+      - country
+      - google_id
+      - place_id
+    require_all: false

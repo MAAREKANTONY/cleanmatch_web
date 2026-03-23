@@ -1,0 +1,40 @@
+country_code: FR
+street_types:
+- rue
+- avenue
+- av
+- boulevard
+- bd
+- route
+- rte
+- chemin
+- allée
+- allee
+- place
+- impasse
+- quai
+- cours
+- route nationale
+- route departementale
+- parking
+- zone
+- zac
+- zi
+- zc
+postcode_regex: ^\d{5}$
+legal_id_type: siret_or_siren
+legal_prefixes:
+- fr
+number_suffixes:
+- bis
+- ter
+- quater
+- quinquies
+- sexies
+company_suffixes:
+- sarl
+- sas
+- sa
+- eurl
+- sasu
+- scop

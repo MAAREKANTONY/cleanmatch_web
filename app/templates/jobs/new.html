@@ -3,14 +3,9 @@
 <section class="hero">
     <div style="display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:flex-start;">
         <div>
-            <span class="pill">Itération 14</span>
-            <h1 style="margin:14px 0 10px 0; font-size:2rem; letter-spacing:-.04em;">Normalizer + Matcher + Geocoder + Geoclass + Market Segmenter FYRE</h1>
-            <p>
-                Cette itération finalise le <strong>Normalizer multi-country Europe V1</strong> avec profils pays,
-                normalisation d’adresses, codes postaux et identifiants légaux pour plusieurs pays européens.
-            </p>
+            <h1 style="margin:0 0 10px 0; font-size:2rem; letter-spacing:-.04em;">Créer un nouveau job CleanMatch</h1>
+            <p>Charge un fichier, inspecte sa structure, prépare le mapping puis lance le traitement asynchrone adapté : Normalizer, Matcher, Geocoder, Geoclass, Market Segmenter ou AI Review.</p>
         </div>
-        <div class="iteration-tag" style="background:rgba(255,255,255,.18); color:white; border-color:rgba(255,255,255,.22);">Version active : Iteration 23 — Market Segmenter FYRE country-aware + prix + spécialités culinaires</div>
     </div>
 </section>
 
@@ -126,6 +121,71 @@
             </div>
             <div class="muted small">Colonnes minimales : <span class="code-inline">id</span>, <span class="code-inline">address</span>, <span class="code-inline">zipcode</span>, <span class="code-inline">city</span>. Si <span class="code-inline">lat/lng</span> sont déjà présents, ils seront réutilisés.</div>
         </div>
+
+        <div class="card stack hidden" id="ai-review-panel">
+            <div>
+                <h2>2D. Options AI Review</h2>
+                <div class="muted">Inspection du fichier segmenté, mapping des colonnes utiles et constitution d’un dossier d’analyse pour les outlets à faible confiance.</div>
+            </div>
+            <div class="grid grid-2">
+                <div class="field">
+                    <label for="id_ai_review_low_confidence_threshold">{{ form.ai_review_low_confidence_threshold.label }}</label>
+                    {{ form.ai_review_low_confidence_threshold }}
+                    <div class="field-help">Les lignes au-dessus de ce seuil sont ignorées par défaut dans ce sprint.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_action_profile">{{ form.ai_review_action_profile.label }}</label>
+                    {{ form.ai_review_action_profile }}
+                    <div class="field-help">Chaque profil active un sous-ensemble de capacités : light, standard ou deep.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_sheet_name">Onglet source (optionnel)</label>
+                    {{ form.ai_review_sheet_name }}
+                    <div class="field-help">Choisi automatiquement après inspection si tu travailles sur un fichier Excel.</div>
+                </div>
+                <div class="field">
+                    <label>Capacités disponibles</label>
+                    <div class="field-help">{{ ai_review_action_profiles|join:", " }}</div>
+                    <div class="field-help">Homepage fetch, menu fetch, social review, photo review, metadata review, entity resolution.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_llm_enabled">{{ form.ai_review_llm_enabled.label }}</label>
+                    {{ form.ai_review_llm_enabled }}
+                    <div class="field-help">Par défaut, la valeur vient du fichier de configuration. Si coché, le process peut appeler le provider LLM configuré.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_llm_provider">{{ form.ai_review_llm_provider.label }}</label>
+                    {{ form.ai_review_llm_provider }}
+                    <div class="field-help">Choisis le provider à utiliser : OpenAI-compatible, Gemini ou Claude.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_llm_model">{{ form.ai_review_llm_model.label }}</label>
+                    {{ form.ai_review_llm_model }}
+                    <div class="field-help">Liste versionnée des modèles supportés pour chaque provider. Les options sont filtrées automatiquement selon le provider choisi.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_llm_max_budget_eur">{{ form.ai_review_llm_max_budget_eur.label }}</label>
+                    {{ form.ai_review_llm_max_budget_eur }}
+                    <div class="field-help">Plafond dur par job. Le process s’arrête proprement pour les appels LLM quand ce budget est atteint.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_llm_max_cost_per_row_eur">{{ form.ai_review_llm_max_cost_per_row_eur.label }}</label>
+                    {{ form.ai_review_llm_max_cost_per_row_eur }}
+                    <div class="field-help">Plafond dur par ligne outlet. Empêche une ligne ambigüe de consommer trop de budget.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_llm_max_calls_per_row">{{ form.ai_review_llm_max_calls_per_row.label }}</label>
+                    {{ form.ai_review_llm_max_calls_per_row }}
+                    <div class="field-help">Nombre maximum d’appels LLM autorisés par ligne, toutes capacités confondues.</div>
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <button class="btn btn-secondary" type="button" id="inspect-ai-review-btn">Inspecter le fichier AI Review</button>
+                <div class="muted small" id="inspect-ai-review-status">Aucune inspection AI Review lancée.</div>
+            </div>
+            <div class="muted small">Colonnes minimales recommandées : <span class="code-inline">name</span> et <span class="code-inline">segmentation_confidence</span>. Colonnes fortement utiles : <span class="code-inline">website</span>, <span class="code-inline">menu_url</span>, <span class="code-inline">google_id</span>, <span class="code-inline">place_id</span>, <span class="code-inline">main_type</span>, <span class="code-inline">all_types</span>.</div>
+        </div>
+
     </section>
 
     <section class="card hidden" id="inspection-card">
@@ -197,11 +257,32 @@
         <div class="mapping-grid" id="geocoder-mapping-grid"></div>
     </section>
 
+    <section class="card hidden" id="ai-review-inspection-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">3D. Analyse de structure AI Review</h2>
+                <div class="muted">Inspection du fichier segmenté avec aperçu 20 lignes et détection des colonnes utiles au second niveau de revue.</div>
+            </div>
+        </div>
+        <div class="grid grid-2" id="ai-review-inspection-results"></div>
+    </section>
+
+    <section class="card hidden" id="ai-review-mapping-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">4D. Mapping AI Review</h2>
+                <div class="muted">Ce sprint prépare l’agent JSON-only, avec mapping canonique, fetch web contrôlé, guardrails budgétaires et sortie LLM structurée.</div>
+            </div>
+        </div>
+        <div class="mapping-grid" id="ai-review-mapping-grid"></div>
+    </section>
+
+
     <section class="card">
         <div class="toolbar">
             <div>
                 <h2 style="margin-bottom:6px;">5. Lancer le job</h2>
-                <div class="muted">Normalizer : CSV UTF-8. Matcher : ZIP multi-fichiers. Geocoder : CSV enrichi.</div>
+                <div class="muted">Normalizer : CSV UTF-8. Matcher : ZIP multi-fichiers. Geocoder / Segmenter / AI Review : CSV enrichi + summary JSON. AI Review ajoute aussi les sorties JSON du provider si le LLM est activé.</div>
             </div>
             <div style="display:flex; gap:10px; flex-wrap:wrap;">
                 <a class="btn btn-secondary" href="{% url 'jobs:home' %}">Retour dashboard</a>
@@ -217,10 +298,12 @@
     const matcherFields = {{ matcher_mapping_fields|safe }};
     const geocoderFields = {{ geocoder_mapping_fields|safe }};
     const marketsegmenterFields = {{ marketsegmenter_mapping_fields|safe }};
+    const aiReviewFields = {{ ai_review_mapping_fields|safe }};
     const normalizerRequired = new Set(['address', 'zipcode', 'city']);
     const matcherRequired = new Set(['id', 'name', 'address', 'zipcode', 'city']);
     const geocoderRequired = new Set(['id', 'address', 'zipcode', 'city']);
     const marketsegmenterRequired = new Set(['name', 'main_type']);
+    const aiReviewRequired = new Set(['name', 'segmentation_confidence']);
     const jobType = document.getElementById('id_job_type');
     const inputFile = document.getElementById('id_input_file_1');
     const inputFile2 = document.getElementById('id_input_file_2');
@@ -230,6 +313,7 @@
     const normalizerPanel = document.getElementById('normalizer-panel');
     const matcherPanel = document.getElementById('matcher-panel');
     const geocoderPanel = document.getElementById('geocoder-panel');
+    const aiReviewPanel = document.getElementById('ai-review-panel');
 
     const inspectBtn = document.getElementById('inspect-btn');
     const inspectStatus = document.getElementById('inspect-status');
@@ -256,6 +340,16 @@
     const geocoderMappingGrid = document.getElementById('geocoder-mapping-grid');
     const geocoderSheetInput = document.getElementById('id_geocoder_sheet_name');
     const marketsegmenterSheetInput = document.getElementById('id_marketsegmenter_sheet_name');
+    const aiReviewSheetInput = document.getElementById('id_ai_review_sheet_name');
+
+    const inspectAiReviewBtn = document.getElementById('inspect-ai-review-btn');
+    const inspectAiReviewStatus = document.getElementById('inspect-ai-review-status');
+    const aiReviewInspectionCard = document.getElementById('ai-review-inspection-card');
+    const aiReviewInspectionResults = document.getElementById('ai-review-inspection-results');
+    const aiReviewMappingCard = document.getElementById('ai-review-mapping-card');
+    const aiReviewMappingGrid = document.getElementById('ai-review-mapping-grid');
+    const aiReviewLlmProvider = document.getElementById('id_ai_review_llm_provider');
+    const aiReviewLlmModel = document.getElementById('id_ai_review_llm_model');
 
     function escapeHtml(value) {
         return String(value || '')
@@ -310,6 +404,15 @@
         });
     }
 
+
+    function firstSheetOrWarn(data, statusEl, emptyMessage) {
+        if (!data || !Array.isArray(data.sheets) || data.sheets.length === 0) {
+            if (statusEl) statusEl.textContent = emptyMessage || 'Aucun onglet exploitable détecté.';
+            return null;
+        }
+        return data.sheets[0];
+    }
+
     function renderNormalizerInspection(data) {
         sheetOptions.innerHTML = '';
         inspectionResults.innerHTML = '';
@@ -336,7 +439,8 @@
             inspectionResults.appendChild(card);
         });
         if (data.sheets.length) {
-            const selected = data.sheets[0];
+            const selected = firstSheetOrWarn(data, inspectStatus, 'Aucun onglet exploitable détecté pour ce fichier.');
+            if (!selected) return;
             sheetNameInput.value = selected.name;
             buildMappingCard(mappingGrid, normalizerFields, normalizerRequired, 'id_mapping_', selected.detected_columns, selected.mapping_suggestions || {});
             inspectionCard.classList.remove('hidden');
@@ -396,6 +500,57 @@
         return card;
     }
 
+
+
+    function renderAiReviewSheetCard(sheet, index) {
+        const card = document.createElement('div');
+        card.className = 'sheet-item' + (index === 0 ? ' active' : '');
+        card.innerHTML = `
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+                <div>
+                    <strong>${escapeHtml(sheet.name === '__csv__' ? 'CSV' : sheet.name)}</strong>
+                    <div class="sheet-meta"><span>${sheet.max_column} colonnes</span><span>Aperçu : 20 lignes max</span></div>
+                </div>
+                <button type="button" class="btn btn-secondary small choose-sheet">Utiliser</button>
+            </div>
+            <div class="muted small" style="margin-top:10px;">Colonnes détectées : ${sheet.detected_columns.map(escapeHtml).join(', ') || 'aucune'}</div>
+            ${sheet.missing_required.length ? `<div class="preview-labels"><span class="mini-badge warning">Colonnes minimales non reconnues : ${sheet.missing_required.map(escapeHtml).join(', ')}</span></div>` : '<div class="preview-labels"><span class="mini-badge">Colonnes minimales reconnues</span></div>'}
+            ${buildPreviewTable(sheet.preview)}`;
+        card.querySelector('.choose-sheet').addEventListener('click', () => {
+            aiReviewSheetInput.value = sheet.name === '__csv__' ? '' : sheet.name;
+            document.querySelectorAll('#ai-review-inspection-results .sheet-item').forEach(el => el.classList.remove('active'));
+            card.classList.add('active');
+            buildMappingCard(aiReviewMappingGrid, aiReviewFields, aiReviewRequired, 'id_ai_review_', sheet.detected_columns, sheet.mapping_suggestions || {});
+            inspectAiReviewStatus.textContent = `Inspection AI Review prête : ${sheet.name === '__csv__' ? 'CSV' : sheet.name}`;
+            aiReviewMappingCard.classList.remove('hidden');
+        });
+        return card;
+    }
+
+    function syncAiReviewLlmModels() {
+        if (!aiReviewLlmProvider || !aiReviewLlmModel) return;
+        const provider = aiReviewLlmProvider.value;
+        const optionGroups = Array.from(aiReviewLlmModel.querySelectorAll('optgroup'));
+        let firstAllowed = '';
+        optionGroups.forEach(group => {
+            const label = (group.getAttribute('label') || '').toLowerCase();
+            const visible = (provider === 'openai_compatible_json' && label.includes('openai'))
+                || (provider === 'gemini_generate_content' && label.includes('gemini'))
+                || (provider === 'anthropic_messages_json' && label.includes('claude'));
+            group.style.display = visible ? '' : 'none';
+            Array.from(group.querySelectorAll('option')).forEach(option => {
+                option.hidden = !visible;
+                option.disabled = !visible;
+                if (visible && !firstAllowed) firstAllowed = option.value;
+            });
+        });
+        const current = aiReviewLlmModel.value;
+        const currentOption = Array.from(aiReviewLlmModel.querySelectorAll('option')).find(opt => opt.value === current);
+        if (!currentOption || currentOption.disabled) {
+            aiReviewLlmModel.value = firstAllowed || '';
+        }
+    }
+
     async function inspectWorkbook() {
         if (jobType.value !== 'normalizer') return;
         if (!inputFile.files.length) { inspectStatus.textContent = 'Sélectionne d’abord un fichier Excel.'; return; }
@@ -432,7 +587,8 @@
                 const wrapper = document.createElement('div'); wrapper.className = 'stack';
                 payload.sheets.forEach((sheet, index) => wrapper.appendChild(renderMatcherSheetCard(role, sheet, index)));
                 matcherInspectionResults.appendChild(wrapper);
-                const selected = payload.sheets[0];
+                const selected = firstSheetOrWarn(payload, inspectMatcherStatus, 'Aucun onglet exploitable détecté pour ce fichier matcher.');
+                if (!selected) return;
                 const hiddenSheetInput = document.getElementById(`id_matcher_${role}_sheet_name`);
                 hiddenSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
                 buildMappingCard(role === 'master' ? matcherMasterGrid : matcherSlaveGrid, matcherFields, matcherRequired, `id_matcher_${role}_`, selected.detected_columns, selected.mapping_suggestions || {});
@@ -461,7 +617,8 @@
             const data = await response.json();
             if (!response.ok || data.ok === false) { inspectGeocoderStatus.textContent = data.error || 'Inspection geocoder impossible.'; return; }
             data.sheets.forEach((sheet, index) => geocoderInspectionResults.appendChild(renderGeocoderSheetCard(sheet, index)));
-            const selected = data.sheets[0];
+            const selected = firstSheetOrWarn(data, inspectGeocoderStatus, 'Aucun onglet exploitable détecté pour ce fichier.');
+            if (!selected) return;
             if (jobType.value === 'marketsegmenter') {
                 marketsegmenterSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
                 buildMappingCard(geocoderMappingGrid, marketsegmenterFields, marketsegmenterRequired, 'id_marketsegmenter_', selected.detected_columns, selected.mapping_suggestions || {});
@@ -479,10 +636,40 @@
         }
     }
 
+
+
+    async function inspectAiReviewFile() {
+        if (jobType.value !== 'ai_review') return;
+        if (!inputFile.files.length) { inspectAiReviewStatus.textContent = 'Sélectionne d’abord un fichier source.'; return; }
+        inspectAiReviewStatus.textContent = 'Inspection AI Review en cours...';
+        inspectAiReviewBtn.disabled = true;
+        aiReviewInspectionResults.innerHTML = '';
+        const formData = new FormData();
+        formData.append('file', inputFile.files[0]);
+        try {
+            const response = await fetch('{% url "jobs:inspect_ai_review" %}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
+            const data = await response.json();
+            if (!response.ok || data.ok === false) { inspectAiReviewStatus.textContent = data.error || 'Inspection AI Review impossible.'; return; }
+            data.sheets.forEach((sheet, index) => aiReviewInspectionResults.appendChild(renderAiReviewSheetCard(sheet, index)));
+            const selected = firstSheetOrWarn(data, inspectAiReviewStatus, 'Aucun onglet exploitable détecté pour ce fichier AI Review.');
+            if (!selected) return;
+            aiReviewSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
+            buildMappingCard(aiReviewMappingGrid, aiReviewFields, aiReviewRequired, 'id_ai_review_', selected.detected_columns, selected.mapping_suggestions || {});
+            aiReviewInspectionCard.classList.remove('hidden');
+            aiReviewMappingCard.classList.remove('hidden');
+            inspectAiReviewStatus.textContent = `Inspection AI Review prête — ${data.filename}.`;
+        } catch (error) {
+            inspectAiReviewStatus.textContent = error && error.message ? error.message : 'Erreur pendant l’inspection AI Review.';
+        } finally {
+            inspectAiReviewBtn.disabled = false;
+        }
+    }
+
     function togglePanels() {
         const isNormalizer = jobType.value === 'normalizer';
         const isMatcher = jobType.value === 'matcher';
         const isGeocoder = jobType.value === 'geocoder' || jobType.value === 'geoclass' || jobType.value === 'marketsegmenter';
+        const isAiReview = jobType.value === 'ai_review';
         normalizerPanel.classList.toggle('hidden', !isNormalizer);
         inspectionCard.classList.toggle('hidden', !isNormalizer || !inspectionResults.children.length);
         mappingCard.classList.toggle('hidden', !isNormalizer || !mappingGrid.children.length);
@@ -490,14 +677,22 @@
         matcherInspectionCard.classList.toggle('hidden', !isMatcher || !matcherInspectionResults.children.length);
         matcherMappingCard.classList.toggle('hidden', !isMatcher || (!matcherMasterGrid.children.length && !matcherSlaveGrid.children.length));
         geocoderPanel.classList.toggle('hidden', !isGeocoder);
+        aiReviewPanel.classList.toggle('hidden', !isAiReview);
         geocoderInspectionCard.classList.toggle('hidden', !isGeocoder || !geocoderInspectionResults.children.length);
         geocoderMappingCard.classList.toggle('hidden', !isGeocoder || !geocoderMappingGrid.children.length);
+        aiReviewInspectionCard.classList.toggle('hidden', !isAiReview || !aiReviewInspectionResults.children.length);
+        aiReviewMappingCard.classList.toggle('hidden', !isAiReview || !aiReviewMappingGrid.children.length);
         secondaryFileField.classList.toggle('hidden', !isMatcher);
     }
 
     inspectBtn.addEventListener('click', inspectWorkbook);
     inspectMatcherBtn.addEventListener('click', inspectMatcherFiles);
     inspectGeocoderBtn.addEventListener('click', inspectGeocoderFile);
+    inspectAiReviewBtn.addEventListener('click', inspectAiReviewFile);
+    if (aiReviewLlmProvider) {
+        aiReviewLlmProvider.addEventListener('change', syncAiReviewLlmModels);
+        syncAiReviewLlmModels();
+    }
     jobType.addEventListener('change', togglePanels);
     togglePanels();
 })();

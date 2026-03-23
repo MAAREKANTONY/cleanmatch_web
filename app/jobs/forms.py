@@ -5,6 +5,19 @@ from matcher.services.matcher_service import MATCHER_MAPPING_FIELDS, MATCHER_REQ
 from geocoder.services.geocoder_service import GEOCODER_MAPPING_FIELDS, GEOCODER_REQUIRED_FIELDS
 from geoclass.services.geoclass_service import GEOCLASS_MAPPING_FIELDS, GEOCLASS_REQUIRED_FIELDS
 from marketsegmenter.services.marketsegmenter_service import MARKETSEGMENTER_MAPPING_FIELDS, MARKETSEGMENTER_REQUIRED_FIELDS
+from ai_review.services.ai_review_service import (
+    AI_REVIEW_MAPPING_FIELDS,
+    AI_LLM_ENABLED,
+    AI_LLM_PROVIDER,
+    AI_LLM_MODEL,
+    AI_LLM_PROVIDER_CHOICES,
+    AI_LLM_MODEL_CHOICES_GROUPED,
+    AI_LLM_MAX_BUDGET_EUR,
+    AI_LLM_MAX_COST_PER_ROW_EUR,
+    AI_LLM_MAX_CALLS_PER_ROW,
+)
+from ai_review.services.capability_engine import AI_REVIEW_ACTION_PROFILES, AI_REVIEW_DEFAULT_ACTION_PROFILE
+from ai_review.llm import model_belongs_to_provider
 
 from .models import Job
 
@@ -19,6 +32,7 @@ class JobCreateForm(forms.Form):
             (Job.JobType.GEOCODER, 'Geocoder (moteur réel V2 checkpoint)'),
             (Job.JobType.GEOCLASS, 'Geoclass (moteur réel V1 heuristique)'),
             (Job.JobType.MARKETSEGMENTER, 'Market Segmenter FYRE (Google Places -> market segments)'),
+            (Job.JobType.AI_REVIEW, 'AI Review (mapping canonique + capacités agent)'),
         ],
         initial=Job.JobType.NORMALIZER,
     )
@@ -51,6 +65,15 @@ class JobCreateForm(forms.Form):
     geocoder_country_hint = forms.CharField(label='Pays / hint (optionnel)', required=False, initial='')
     marketsegmenter_sheet_name = forms.CharField(required=False, widget=forms.HiddenInput())
     marketsegmenter_country_default = forms.CharField(label='Pays par défaut (optionnel)', required=False, initial='')
+    ai_review_sheet_name = forms.CharField(required=False, widget=forms.HiddenInput())
+    ai_review_low_confidence_threshold = forms.FloatField(label='Seuil faible confiance AI review', required=False, initial=0.65, min_value=0.0, max_value=1.0)
+    ai_review_action_profile = forms.ChoiceField(label='Profil d’action AI review', required=False, choices=[(k, k) for k in sorted(AI_REVIEW_ACTION_PROFILES.keys())], initial=AI_REVIEW_DEFAULT_ACTION_PROFILE)
+    ai_review_llm_enabled = forms.BooleanField(label='Activer le LLM réel', required=False, initial=AI_LLM_ENABLED)
+    ai_review_llm_provider = forms.ChoiceField(label='Provider LLM', required=False, choices=AI_LLM_PROVIDER_CHOICES, initial=AI_LLM_PROVIDER)
+    ai_review_llm_model = forms.ChoiceField(label='Modèle LLM', required=False, choices=AI_LLM_MODEL_CHOICES_GROUPED, initial=AI_LLM_MODEL)
+    ai_review_llm_max_budget_eur = forms.FloatField(label='Budget max LLM par job (€)', required=False, initial=AI_LLM_MAX_BUDGET_EUR, min_value=0.0)
+    ai_review_llm_max_cost_per_row_eur = forms.FloatField(label='Budget max LLM par ligne (€)', required=False, initial=AI_LLM_MAX_COST_PER_ROW_EUR, min_value=0.0)
+    ai_review_llm_max_calls_per_row = forms.IntegerField(label='Nb max d’appels LLM par ligne', required=False, initial=AI_LLM_MAX_CALLS_PER_ROW, min_value=1, max_value=10)
 
     # Normalizer hidden mappings
     for field in CANONICAL_MAPPING_FIELDS:
@@ -68,6 +91,10 @@ class JobCreateForm(forms.Form):
     # Market Segmenter hidden mappings
     for field in MARKETSEGMENTER_MAPPING_FIELDS:
         locals()[f'marketsegmenter_{field}'] = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    # AI review hidden mappings
+    for field in AI_REVIEW_MAPPING_FIELDS:
+        locals()[f'ai_review_{field}'] = forms.CharField(required=False, widget=forms.HiddenInput())
 
     # Geoclass hidden mappings
     for field in GEOCLASS_MAPPING_FIELDS:
@@ -134,6 +161,32 @@ class JobCreateForm(forms.Form):
             missing_required = [field for field in MARKETSEGMENTER_REQUIRED_FIELDS if field not in marketsegmenter_mapping]
             if missing_required:
                 self.add_error(None, 'Le market segmenter nécessite un mapping des colonnes : ' + ', '.join(sorted(missing_required)))
+        if job_type == Job.JobType.AI_REVIEW and input_file_1:
+            threshold = cleaned.get('ai_review_low_confidence_threshold')
+            if threshold is None:
+                self.add_error('ai_review_low_confidence_threshold', 'Le seuil de faible confiance est requis pour AI Review.')
+            profile = (cleaned.get('ai_review_action_profile') or '').strip()
+            if profile and profile not in AI_REVIEW_ACTION_PROFILES:
+                self.add_error('ai_review_action_profile', 'Le profil AI Review sélectionné est invalide.')
+            provider = cleaned.get('ai_review_llm_provider')
+            model = cleaned.get('ai_review_llm_model')
+            budget = cleaned.get('ai_review_llm_max_budget_eur')
+            row_budget = cleaned.get('ai_review_llm_max_cost_per_row_eur')
+            max_calls = cleaned.get('ai_review_llm_max_calls_per_row')
+            if cleaned.get('ai_review_llm_enabled') and not provider:
+                self.add_error('ai_review_llm_provider', 'Le provider LLM est requis.')
+            if cleaned.get('ai_review_llm_enabled') and not model:
+                self.add_error('ai_review_llm_model', 'Le modèle LLM est requis.')
+            if cleaned.get('ai_review_llm_enabled') and provider and model and not model_belongs_to_provider(provider, model):
+                self.add_error('ai_review_llm_model', 'Le modèle choisi ne fait pas partie du provider sélectionné.')
+            if budget is None:
+                self.add_error('ai_review_llm_max_budget_eur', 'Le budget max LLM par job est requis.')
+            if row_budget is None:
+                self.add_error('ai_review_llm_max_cost_per_row_eur', 'Le budget max LLM par ligne est requis.')
+            if max_calls is None:
+                self.add_error('ai_review_llm_max_calls_per_row', 'Le nombre max d’appels LLM par ligne est requis.')
+            if budget is not None and row_budget is not None and row_budget > budget:
+                self.add_error('ai_review_llm_max_cost_per_row_eur', 'Le budget max par ligne ne peut pas dépasser le budget max du job.')
         if job_type == Job.JobType.GEOCLASS and input_file_1:
             geoclass_mapping = self.get_geoclass_mapping_payload(cleaned)
             values = list(geoclass_mapping.values())
@@ -183,6 +236,16 @@ class JobCreateForm(forms.Form):
             if value and value != '__ignore__':
                 mapping[canonical] = value
         return mapping
+
+    @staticmethod
+    def get_ai_review_mapping_payload(cleaned_data):
+        mapping = {}
+        for canonical in AI_REVIEW_MAPPING_FIELDS:
+            value = (cleaned_data.get(f'ai_review_{canonical}') or '').strip()
+            if value and value != '__ignore__':
+                mapping[canonical] = value
+        return mapping
+
 
     @staticmethod
     def get_geoclass_mapping_payload(cleaned_data):

@@ -1,0 +1,35 @@
+country_code: CH
+languages:
+- fr
+- de
+- it
+- en
+keyword_rules:
+- segment:
+  - horeca
+  - table_service
+  - creperies
+  - ''
+  family:
+  - horeca
+  - table_service
+  weight: 12
+  keywords:
+  - galette
+  - galettes
+  - crêperie
+  - creperie
+- segment:
+  - horeca
+  - cafes_bars_discotheques
+  - beer_bars_beer_temples_pubs
+  - ''
+  family:
+  - horeca
+  - cafes_bars_discotheques
+  weight: 12
+  keywords:
+  - biergarten
+  - brauhaus
+  - kneipe
+  - bierkeller

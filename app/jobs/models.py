@@ -11,6 +11,7 @@ class Job(models.Model):
         GEOCODER = 'geocoder', 'Geocoder'
         GEOCLASS = 'geoclass', 'Geoclass'
         MARKETSEGMENTER = 'marketsegmenter', 'Market Segmenter'
+        AI_REVIEW = 'ai_review', 'AI Review'
 
     class Status(models.TextChoices):
         PENDING = 'pending', 'Pending'

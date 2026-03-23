@@ -1,0 +1,36 @@
+enabled: false
+provider: openai_compatible_json
+model: gpt-4.1-mini
+base_url: https://api.openai.com/v1/chat/completions
+api_key_env: OPENAI_API_KEY
+timeout_seconds: 30
+prompt_version: sprint31-v1
+max_budget_eur: 20.0
+max_cost_per_row_eur: 0.01
+max_calls_per_row: 2
+input_price_per_1k_tokens_eur: 0.002
+output_price_per_1k_tokens_eur: 0.006
+max_completion_tokens: 300
+temperature: 0.1
+cache_subdir: ai_review_llm_cache
+llm_capabilities:
+  - metadata_review
+  - homepage_fetch
+  - menu_fetch
+  - social_review
+  - photo_review
+system_prompt: |
+  You are a structured outlet classification assistant for FYRE.
+  You must return JSON only, with no markdown and no prose outside JSON.
+  Base your answer only on the provided evidence. If evidence is weak, say so.
+  The expected JSON keys are:
+    service_mode,
+    cuisine_type,
+    segment_type0,
+    segment_type1,
+    segment_type2,
+    segment_type3,
+    confidence,
+    evidence,
+    requires_human_review,
+    reasoning_short.

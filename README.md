@@ -1,78 +1,85 @@
-# CleanMatch Web - Iteration 6
+# CleanMatch Web - Iteration 38
 
-Cette itération ajoute au **Normalizer** :
-- l'analyse de structure du fichier Excel
-- la détection d'onglets et d'entête probable
-- la détection des colonnes visibles
-- des suggestions automatiques de mapping
-- un mapping de colonnes persistant dans le job
-- l'application du mapping côté moteur métier avant nettoyage et matchcode
+Cette itération ajoute une couche propre de **configuration persistante** :
+
+- catalogue par défaut versionné dans `app/config_catalog/`
+- overrides persistants lus depuis `CONFIG_OVERRIDE_DIR`
+- bootstrap des overrides via une commande Django
+- variables LLM documentées dans `.env.example`
 
 ## Démarrage
 
 ```bash
 cp .env.example .env
+mkdir -p runtime_data/config_overrides
 docker compose up --build
 ```
 
-## Git init
+## Bootstrap des overrides persistants
 
 ```bash
-git init
-git add .
-git commit -m "iteration 6 - normalizer structure analysis and column mapping"
+docker compose exec web python manage.py bootstrap_config_overrides
 ```
 
-## URLs
+Cette commande copie le catalogue par défaut dans `CONFIG_OVERRIDE_DIR` sans écraser les fichiers déjà présents.
 
-- http://localhost:8080/
-- http://localhost:8080/jobs/new/
-- http://localhost:8080/health/
+## Emplacement recommandé
 
-## Notes importantes
+Dans `.env`, vous pouvez garder les chemins par défaut :
 
-- le normalizer continue d'écrire les résultats en **CSV UTF-8 avec BOM**
-- pour générer les colonnes de matchcode, il faut mapper au minimum : `address`, `zipcode`, `city`
-- le mapping choisi est stocké dans `parameters_json` du job
-- la robustesse des jobs de l'itération 5 reste incluse : kill job, heartbeat, stale monitoring
+```env
+CONFIG_CATALOG_DIR=/app/config_catalog
+CONFIG_OVERRIDE_DIR=/data/config_overrides
+HOST_RUNTIME_DATA_DIR=./runtime_data
+```
 
-## Environment
+Pour une production plus robuste, vous pouvez aussi pointer `HOST_RUNTIME_DATA_DIR` vers un dossier externe au répertoire livré, par exemple :
 
-Use `.env.example` as the base for `.env`. This iteration keeps compatibility with the previous variable names (`DEBUG`, `SECRET_KEY`, `ALLOWED_HOSTS`, `TIME_ZONE`) and also still accepts the newer `DJANGO_*` aliases.
+```env
+HOST_RUNTIME_DATA_DIR=/opt/cleanmatch_runtime
+```
+
+## Règle de gouvernance
+
+- `.env` : secrets, flags runtime, chemins, clés API
+- `app/config_catalog/` : configuration métier par défaut livrée avec le code
+- `CONFIG_OVERRIDE_DIR` : configuration métier locale et persistante
+
+## LLM
+
+Les clés API doivent être définies dans `.env` :
+
+```env
+OPENAI_API_KEY=
+GEMINI_API_KEY=
+ANTHROPIC_API_KEY=
+```
+
+Le YAML `app/config_catalog/ai_review/llm_providers.yaml` ne doit contenir que le **nom** de la variable d'environnement, jamais la clé brute.
+
+## Rechargement de configuration
+
+Après modification d'un fichier YAML/CSV override, redémarrer `web`, `worker` et `beat` pour recharger la configuration en mémoire.
 
 
-## Iteration 8
+## Diagnostic LLM
 
-- Matcher V1 with master/slave inspection
-- Mapping suggestions for both datasets
-- CSV output for match results
-
-
-## Iteration 12 — Cleaning & maintenance
-
-Nouveautés :
-- suppression d’un job terminé depuis l’UI
-- suppression des fichiers input / output / error d’un job
-- purge des jobs passés depuis le dashboard
-- purge des fichiers orphelins
-
-Commandes utiles :
+Pour inspecter la configuration LLM réellement chargée dans le conteneur :
 
 ```bash
-docker compose exec web python manage.py cleanup_jobs --days 30
-docker compose exec web python manage.py cleanup_files
+docker compose exec worker python manage.py inspect_llm_runtime --provider anthropic_messages_json --model claude-sonnet-4-6
 ```
 
+Cette commande affiche :
+- le fichier `llm_providers.yaml` réellement utilisé
+- son origine (`default` ou `override`)
+- la variable d'environnement attendue
+- si la clé API est réellement visible
+- si le modèle demandé appartient bien au provider
 
-## Iteration 13
-
-- Matcher V3 / parity audit
-- `diagnostics.csv` ajouté dans le ZIP matcher
-- statistiques supplémentaires dans `summary.json`
-- tag UI mis à jour vers `Itération 13 — Matcher Parity Audit`
+En plus, l'AI Review écrit maintenant dans les logs worker un diagnostic JSON complet de l'état runtime LLM.
 
 
-## Iteration 14 — Normalizer Multi-country Europe V1
-- profils pays: FR, IT, ES, DE, BE, NL, GB, PT
-- normalisation address / postcode / legal_id
-- nouveau champ `country_code` dans le flow normalizer
+## Iteration 39
+
+AI Review LLM output semantics were clarified to distinguish job-level configuration from row-level execution. Output now includes `ai_llm_configured`, `ai_llm_live_ready`, `ai_llm_attempted`, and `ai_llm_result_source`, and fallback rows no longer claim that no provider was enabled when the provider was actually configured.

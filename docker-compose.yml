@@ -31,6 +31,7 @@ services:
       - ./app:/app
       - media_data:/app/media
       - static_data:/app/staticfiles
+      - ${HOST_RUNTIME_DATA_DIR:-./runtime_data}:/data
     depends_on:
       db:
         condition: service_healthy
@@ -49,6 +50,7 @@ services:
       - ./app:/app
       - media_data:/app/media
       - static_data:/app/staticfiles
+      - ${HOST_RUNTIME_DATA_DIR:-./runtime_data}:/data
     depends_on:
       db:
         condition: service_healthy
@@ -64,6 +66,7 @@ services:
       - ./app:/app
       - media_data:/app/media
       - static_data:/app/staticfiles
+      - ${HOST_RUNTIME_DATA_DIR:-./runtime_data}:/data
     depends_on:
       db:
         condition: service_healthy

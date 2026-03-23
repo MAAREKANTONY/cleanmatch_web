@@ -1,0 +1,106 @@
+mapping_fields:
+  outlet_id:
+    type: string
+    required: false
+  outlet_name:
+    type: string
+    required: true
+  full_address:
+    type: string
+    required: false
+  country:
+    type: string
+    required: false
+  country_code:
+    type: string
+    required: false
+  google_id:
+    type: string
+    required: false
+  place_id:
+    type: string
+    required: false
+  website_url:
+    type: string
+    required: false
+  website_root_url:
+    type: string
+    required: false
+  website_title:
+    type: string
+    required: false
+  website_meta_description:
+    type: string
+    required: false
+  menu_urls:
+    type: list
+    required: false
+  photo_urls:
+    type: list
+    required: false
+  social_facebook_urls:
+    type: list
+    required: false
+  social_instagram_urls:
+    type: list
+    required: false
+  social_linkedin_urls:
+    type: list
+    required: false
+  social_youtube_urls:
+    type: list
+    required: false
+  social_twitter_urls:
+    type: list
+    required: false
+  segmentation_confidence:
+    type: float
+    required: true
+  fyre_market_segment_type0:
+    type: string
+    required: false
+  fyre_market_segment_type1:
+    type: string
+    required: false
+  fyre_market_segment_type2:
+    type: string
+    required: false
+  fyre_market_segment_type3:
+    type: string
+    required: false
+  main_type:
+    type: string
+    required: false
+  all_types:
+    type: string
+    required: false
+  description_1:
+    type: string
+    required: false
+  description_2:
+    type: string
+    required: false
+  description_3:
+    type: string
+    required: false
+  reviews_tags:
+    type: string
+    required: false
+  characteristics:
+    type: string
+    required: false
+  hotel_additional_informations:
+    type: string
+    required: false
+  price_range_simplified:
+    type: string
+    required: false
+  customer_reported_price_range:
+    type: string
+    required: false
+  website_lang:
+    type: string
+    required: false
+  segmentation_reasons:
+    type: string
+    required: false
