@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 import requests
@@ -134,7 +135,7 @@ class GuardedLLMClient:
             payload.setdefault('live_call_attempted', False)
 
         actual_cost = float(payload.get('actual_cost_eur', estimated_cost) or 0.0)
-        if payload.get('status') == 'success' and live_call:
+        if payload.get('status') == 'live_success' and live_call:
             self.guardrails.budget_manager.register_cost(row_key=row_key, cost_eur=actual_cost)
         cache_payload = dict(payload)
         try:
@@ -181,13 +182,14 @@ class GuardedLLMClient:
         data = resp.json()
         content = (((data.get('choices') or [{}])[0].get('message') or {}).get('content') or '').strip()
         parsed = self._safe_json(content)
+        parse_ok = 'invalid_json_response' not in list(parsed.get('evidence') or [])
         usage = data.get('usage') or {}
         total_prompt_tokens = int(usage.get('prompt_tokens') or prompt_tokens)
         total_completion_tokens = int(usage.get('completion_tokens') or completion_tokens)
         actual_cost, _, _ = self.estimator.estimate_from_token_counts(total_prompt_tokens, total_completion_tokens)
         return {
-            'status': 'live_success',
-            'reason': 'provider_success',
+            'status': 'live_success' if parse_ok else 'live_invalid_json',
+            'reason': 'provider_success' if parse_ok else 'provider_success_invalid_json',
             'cache_hit': False,
             'estimated_cost_eur': round(estimated_cost, 6),
             'actual_cost_eur': round(actual_cost, 6),
@@ -197,6 +199,7 @@ class GuardedLLMClient:
             'model': self.model,
             'result_json': parsed,
             'raw_content': content[:8000],
+            'json_parse_success': parse_ok,
         }
 
     def _call_gemini(self, prompt_text: str, estimated_cost: float, prompt_tokens: int, completion_tokens: int) -> dict[str, Any]:
@@ -230,13 +233,14 @@ class GuardedLLMClient:
             if text:
                 content += str(text)
         parsed = self._safe_json(content.strip())
+        parse_ok = 'invalid_json_response' not in list(parsed.get('evidence') or [])
         usage = data.get('usageMetadata') or {}
         total_prompt_tokens = int(usage.get('promptTokenCount') or prompt_tokens)
         total_completion_tokens = int(usage.get('candidatesTokenCount') or completion_tokens)
         actual_cost, _, _ = self.estimator.estimate_from_token_counts(total_prompt_tokens, total_completion_tokens)
         return {
-            'status': 'live_success',
-            'reason': 'provider_success',
+            'status': 'live_success' if parse_ok else 'live_invalid_json',
+            'reason': 'provider_success' if parse_ok else 'provider_success_invalid_json',
             'cache_hit': False,
             'estimated_cost_eur': round(estimated_cost, 6),
             'actual_cost_eur': round(actual_cost, 6),
@@ -246,6 +250,7 @@ class GuardedLLMClient:
             'model': self.model,
             'result_json': parsed,
             'raw_content': content[:8000],
+            'json_parse_success': parse_ok,
         }
 
     def _call_anthropic(self, prompt_text: str, estimated_cost: float, prompt_tokens: int, completion_tokens: int) -> dict[str, Any]:
@@ -273,13 +278,14 @@ class GuardedLLMClient:
                 text_parts.append(str(block.get('text')))
         content = ''.join(text_parts).strip()
         parsed = self._safe_json(content)
+        parse_ok = 'invalid_json_response' not in list(parsed.get('evidence') or [])
         usage = data.get('usage') or {}
         total_prompt_tokens = int(usage.get('input_tokens') or prompt_tokens)
         total_completion_tokens = int(usage.get('output_tokens') or completion_tokens)
         actual_cost, _, _ = self.estimator.estimate_from_token_counts(total_prompt_tokens, total_completion_tokens)
         return {
-            'status': 'live_success',
-            'reason': 'provider_success',
+            'status': 'live_success' if parse_ok else 'live_invalid_json',
+            'reason': 'provider_success' if parse_ok else 'provider_success_invalid_json',
             'cache_hit': False,
             'estimated_cost_eur': round(estimated_cost, 6),
             'actual_cost_eur': round(actual_cost, 6),
@@ -289,6 +295,7 @@ class GuardedLLMClient:
             'model': self.model,
             'result_json': parsed,
             'raw_content': content[:8000],
+            'json_parse_success': parse_ok,
         }
 
     def _mock_payload(self, capability: str, context: dict[str, Any], estimated_cost: float, prompt_tokens: int, completion_tokens: int, diagnostics: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -343,14 +350,18 @@ class GuardedLLMClient:
             f'for the job ({fallback_reason}). Missing or mismatched: {missing_text}.'
         )
 
-    @staticmethod
-    def _safe_json(content: str) -> dict[str, Any]:
-        try:
-            data = json.loads(content)
-            if isinstance(data, dict):
-                return data
-        except Exception:
-            pass
+    @classmethod
+    def _safe_json(cls, content: str) -> dict[str, Any]:
+        normalized = cls._normalize_json_candidate(content)
+        for candidate in [normalized, cls._extract_first_json_object(normalized)]:
+            if not candidate:
+                continue
+            try:
+                data = json.loads(candidate)
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                continue
         return {
             'service_mode': '',
             'cuisine_type': '',
@@ -363,6 +374,30 @@ class GuardedLLMClient:
             'requires_human_review': True,
             'reasoning_short': 'Provider response was not valid JSON.',
         }
+
+    @staticmethod
+    def _normalize_json_candidate(content: str) -> str:
+        text = str(content or '').strip()
+        if not text:
+            return ''
+        text = re.sub(r'^\s*```(?:json|JSON)?\s*', '', text)
+        text = re.sub(r'\s*```\s*$', '', text)
+        return text.strip()
+
+    @classmethod
+    def _extract_first_json_object(cls, content: str) -> str:
+        text = cls._normalize_json_candidate(content)
+        if not text:
+            return ''
+        decoder = json.JSONDecoder()
+        for match in re.finditer(r'[\{\[]', text):
+            start = match.start()
+            try:
+                _parsed, end = decoder.raw_decode(text[start:])
+                return text[start:start + end]
+            except Exception:
+                continue
+        return ''
 
     @staticmethod
     def _guess_service_mode(context: dict[str, Any]) -> str:

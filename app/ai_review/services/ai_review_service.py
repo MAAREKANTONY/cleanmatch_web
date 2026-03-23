@@ -494,7 +494,7 @@ class AIReviewService:
         reason = payload.get('reason') or ''
         if payload.get('cache_hit'):
             self._llm_stats['cache_hits'] += 1
-        elif payload.get('status') in {'live_success'}:
+        elif payload.get('status') in {'live_success', 'live_invalid_json'}:
             self._llm_stats['calls_executed'] += 1
         elif reason == 'budget_exceeded':
             self._llm_stats['budget_skips'] += 1
@@ -532,6 +532,9 @@ class AIReviewService:
             f'fetched_menu_excerpt={menu_excerpt[:2000]}',
             f'fetched_web_text={web_text[:3000]}',
             'Return JSON only.',
+            'Do not wrap the JSON in markdown fences.',
+            'Keep evidence concise (max 400 chars).',
+            'Keep reasoning_short concise (max 240 chars).',
         ]
         return '\n'.join(blocks)
 
