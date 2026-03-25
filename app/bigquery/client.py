@@ -36,6 +36,7 @@ class BigQueryService:
         self.location = (settings.BIGQUERY_LOCATION or '').strip() or None
         self.credentials_file = (settings.BIGQUERY_CREDENTIALS_FILE or '').strip()
         self._schema_cache: dict[str, list[str]] = {}
+        self._table_schema_cache: dict[str, list[bigquery.SchemaField]] = {}
         if not self.project_id:
             raise BigQueryConfigError('BIGQUERY_PROJECT_ID est requis.')
         if not self.dataset:
@@ -60,12 +61,20 @@ class BigQueryService:
             return BigQueryTableRef(project_id=self.project_id, dataset=dataset, table_name=table)
         return BigQueryTableRef(project_id=self.project_id, dataset=self.dataset, table_name=normalized)
 
+    def _get_table_schema(self, table_name: str | None) -> list[bigquery.SchemaField]:
+        ref = self.table_ref(table_name)
+        cache_key = ref.full_name
+        if cache_key not in self._table_schema_cache:
+            table = self.client.get_table(ref.full_name)
+            self._table_schema_cache[cache_key] = list(table.schema)
+            self._schema_cache[cache_key] = [field.name for field in table.schema]
+        return self._table_schema_cache[cache_key]
+
     def _get_table_columns(self, table_name: str | None) -> list[str]:
         ref = self.table_ref(table_name)
         cache_key = ref.full_name
         if cache_key not in self._schema_cache:
-            table = self.client.get_table(ref.full_name)
-            self._schema_cache[cache_key] = [field.name for field in table.schema]
+            self._get_table_schema(table_name)
         return self._schema_cache[cache_key]
 
     def build_select_query(self, table_name: str | None, country_code: str = '', limit: int | None = None) -> Tuple[str, bigquery.QueryJobConfig]:
@@ -88,6 +97,7 @@ class BigQueryService:
         table = self.client.get_table(ref.full_name)
         columns = [field.name for field in table.schema]
         self._schema_cache[ref.full_name] = columns
+        self._table_schema_cache[ref.full_name] = list(table.schema)
         preview_rows = list(self.iter_rows(ref.table_name, country_code=country_code, limit=limit))
         preview = [columns] + [[self._stringify(row.get(col, '')) for col in columns] for row in preview_rows]
         total_rows = table.num_rows
@@ -155,11 +165,13 @@ class BigQueryService:
         ]
         table = bigquery.Table(table_id, schema=schema)
         self.client.create_table(table, exists_ok=True)
+        actual_schema = self._get_table_schema(ref.table_name)
+        created_at_type = next((field.field_type.upper() for field in actual_schema if field.name == 'created_at'), 'TIMESTAMP')
         total_inserted = 0
         safe_batch_size = max(1, int(batch_size or 1000))
         for start in range(0, len(rows), safe_batch_size):
             batch = rows[start:start + safe_batch_size]
-            normalized_batch = [self._normalize_segmented_row(row) for row in batch]
+            normalized_batch = [self._normalize_segmented_row(row, created_at_type=created_at_type) for row in batch]
             errors = self.client.insert_rows_json(table_id, normalized_batch)
             if errors:
                 raise RuntimeError(f'Échec écriture BigQuery vers {table_id}: {errors[:3]}')
@@ -184,15 +196,37 @@ class BigQueryService:
         return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
 
     @staticmethod
-    def _normalize_segmented_row(row: dict[str, object]) -> dict[str, object]:
+    def _normalize_segmented_row(row: dict[str, object], created_at_type: str = 'TIMESTAMP') -> dict[str, object]:
         normalized = dict(row)
         created_at = normalized.get('created_at')
+        target_type = (created_at_type or 'TIMESTAMP').upper()
         if isinstance(created_at, datetime):
-            created_at = created_at.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+            dt = created_at.astimezone(timezone.utc)
         elif created_at in (None, ''):
-            created_at = BigQueryService._utc_rfc3339_now()
+            dt = datetime.now(timezone.utc)
         else:
-            created_at = str(created_at).strip().replace('+00:00', 'Z')
+            raw_value = str(created_at).strip()
+            if raw_value.endswith('Z'):
+                raw_value = raw_value[:-1] + '+00:00'
+            if 'T' in raw_value or '+' in raw_value or raw_value.endswith('00:00'):
+                try:
+                    dt = datetime.fromisoformat(raw_value)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    else:
+                        dt = dt.astimezone(timezone.utc)
+                except ValueError:
+                    dt = datetime.now(timezone.utc)
+            else:
+                try:
+                    naive_dt = datetime.fromisoformat(raw_value.replace(' ', 'T'))
+                    dt = naive_dt.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    dt = datetime.now(timezone.utc)
+        if target_type == 'DATETIME':
+            created_at = dt.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S.%f')
+        else:
+            created_at = dt.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         normalized['created_at'] = created_at
         normalized['google_place_id'] = str(normalized.get('google_place_id') or '').strip()
         normalized['process_id'] = str(normalized.get('process_id') or '').strip()

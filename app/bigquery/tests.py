@@ -98,6 +98,7 @@ class BigQueryServiceQueryTests(TestCase):
     def test_write_segmented_rows_batches_and_normalizes_timestamp(self):
         service = self._make_service()
         service.client = Mock()
+        service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'created_at', 'field_type': 'TIMESTAMP'})()]})()
         rows = [
             {'google_place_id': 'g1', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'created_at': '2026-03-26T10:11:12+00:00', 'process_id': 'p1'},
             {'google_place_id': 'g2', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'created_at': '', 'process_id': 'p1'},
@@ -106,3 +107,20 @@ class BigQueryServiceQueryTests(TestCase):
         self.assertEqual(service.client.insert_rows_json.call_count, 2)
         first_batch = service.client.insert_rows_json.call_args_list[0].args[1]
         self.assertTrue(first_batch[0]['created_at'].endswith('Z'))
+
+
+    @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
+    @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
+    @patch('django.conf.settings.BIGQUERY_LOCATION', '')
+    @patch('django.conf.settings.BIGQUERY_CREDENTIALS_FILE', '')
+    @patch('django.conf.settings.BIGQUERY_INPUT_TABLE', 'google_map_clean')
+    def test_write_segmented_rows_formats_created_at_for_datetime_columns(self):
+        service = self._make_service()
+        service.client = Mock()
+        service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'created_at', 'field_type': 'DATETIME'})()]})()
+        rows = [
+            {'google_place_id': 'g1', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'created_at': '2026-03-25T23:35:36.069360Z', 'process_id': 'p1'},
+        ]
+        service.write_segmented_rows('google_map_clean', rows, batch_size=100)
+        inserted = service.client.insert_rows_json.call_args.args[1]
+        self.assertEqual(inserted[0]['created_at'], '2026-03-25 23:35:36.069360')

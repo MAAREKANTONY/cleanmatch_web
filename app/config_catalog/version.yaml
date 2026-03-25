@@ -1,5 +1,5 @@
-catalog_version: 1.1.0
-updated_at: '2026-03-25'
-display_label: Iteration 47 - Sprint 1.2
-summary: Base stable + version fiable + gating AI à deux seuils.
-notes: Sprint 1.1 - correctif NameError min_threshold + seuil minimum AI review, branche hors cible et lecture dynamique de la version.
+catalog_version: 1.1.1
+updated_at: '2026-03-26'
+display_label: Iteration 47 - Sprint 1.3
+summary: Base stable + version fiable + gating AI à deux seuils + compatibilité BigQuery DATETIME/TIMESTAMP.
+notes: Sprint 1.3 - correction insert BigQuery created_at selon le type réel de colonne (DATETIME ou TIMESTAMP) et conservation du gating AI optimisé.
