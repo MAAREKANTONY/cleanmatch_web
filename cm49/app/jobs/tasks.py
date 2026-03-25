@@ -15,7 +15,14 @@ from normalizer.services.normalizer_service import NormalizerOptions, Normalizer
 from matcher.services.matcher_service import MatcherOptions, MatcherService
 from geocoder.services.geocoder_service import GeocoderOptions, GeocoderService
 from geoclass.services.geoclass_service import GeoclassOptions, GeoclassService
-from marketsegmenter.services.marketsegmenter_service import MarketSegmenterOptions, MarketSegmenterService
+from marketsegmenter.services.marketsegmenter_service import (
+    DEBUG_OUTPUT_COLUMNS,
+    MarketSegmenterOptions,
+    MarketSegmenterService,
+    _csv_safe,
+    _map_row_dict,
+    _prepare_output_headers,
+)
 from ai_review.services.ai_review_service import AIReviewOptions, AIReviewService
 from bigquery.client import BigQueryService
 
@@ -326,25 +333,28 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     estimated_rows = bq.estimate_row_count(table_name=table_name, country_code=country_code)
     if estimated_rows is not None:
         log(f'📊 BigQuery estime {estimated_rows} ligne(s) à exporter avant segmentation')
-    progress(5, 'Lecture BigQuery source')
-    export_progress_every = max(1, int(getattr(settings, 'BIGQUERY_PROGRESS_LOG_EVERY', 5000) or 5000))
-    source_path, source_headers, row_count = bq.export_table_to_csv(
-        table_name=table_name,
-        output_path=source_csv,
-        country_code=country_code,
-        progress_callback=lambda processed: progress(5, f'Lecture BigQuery source : {processed}/{estimated_rows or "?"}') if (processed == 1 or processed % export_progress_every == 0) else None,
-        log_callback=log,
-    )
-    log(f'📥 {row_count} ligne(s) exportées depuis BigQuery dans {source_path.name}')
-
-    progress(20, 'Segmentation règles / keywords')
+    progress(5, 'Segmentation BigQuery directe : initialisation')
     ms_service = MarketSegmenterService(progress_callback=progress, log_callback=log)
     ms_options = MarketSegmenterOptions(
         marketsegmenter_sheet_name=None,
         marketsegmenter_mapping=parameters.get('marketsegmenter_mapping') or {},
         country_default=parameters.get('marketsegmenter_country_default') or country_code,
     )
-    ms_service.run(input_path=source_path, output_path=first_csv, options=ms_options)
+    source_headers, row_count = _stream_bigquery_to_marketsegmenter_csv(
+        job=job,
+        bq=bq,
+        table_name=table_name,
+        country_code=country_code,
+        estimated_rows=estimated_rows,
+        output_path=first_csv,
+        service=ms_service,
+        options=ms_options,
+        progress=progress,
+        log=log,
+    )
+    log(f'📥 {row_count} ligne(s) BigQuery segmentées directement dans {first_csv.name}')
+
+    progress(55, 'AI Review ciblée sur lignes à faible confiance')
 
     progress(55, 'AI Review ciblée sur lignes à faible confiance')
     ai_service = AIReviewService(progress_callback=progress, log_callback=log)
@@ -425,6 +435,104 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         JobService.mark_success(job, message=success_message)
     return str(job.id)
 
+
+
+def _stream_bigquery_to_marketsegmenter_csv(
+    *,
+    job: Job,
+    bq: BigQueryService,
+    table_name: str,
+    country_code: str,
+    estimated_rows: int | None,
+    output_path: Path,
+    service: MarketSegmenterService,
+    options: MarketSegmenterOptions,
+    progress,
+    log,
+) -> tuple[list[str], int]:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    progress_log_every = max(1, int(getattr(settings, 'BIGQUERY_PROGRESS_LOG_EVERY', 5000) or 5000))
+    debug_cols = DEBUG_OUTPUT_COLUMNS if options.emit_debug_columns else []
+    processed = 0
+    source_headers: list[str] | None = None
+    projected_headers: list[str] | None = None
+    writer = None
+
+    log(
+        '🚰 Streaming BigQuery → MarketSegmenter direct activé '         f'(page_size={max(1, int(getattr(settings, "BIGQUERY_EXPORT_PAGE_SIZE", 1000) or 1000))})'
+    )
+    with output_path.open('w', newline='', encoding='utf-8-sig') as fh:
+        for raw_row in bq.iter_rows_streaming(
+            table_name=table_name,
+            country_code=country_code,
+            limit=None,
+            page_size=max(1, int(getattr(settings, 'BIGQUERY_EXPORT_PAGE_SIZE', 1000) or 1000)),
+            progress_callback=None,
+            log_callback=lambda message: log(f'BQ: {message}'),
+        ):
+            job.refresh_from_db()
+            JobService.enforce_not_cancelled(job)
+            JobService.ensure_disk_space(_job_storage_root())
+            if source_headers is None:
+                source_headers = list(raw_row.keys())
+                projected_headers = _prepare_output_headers(source_headers, options.marketsegmenter_mapping)
+                output_columns = list(projected_headers) + [
+                    'fyre_market_segment_type0', 'fyre_market_segment_type1',
+                    'fyre_market_segment_type2', 'fyre_market_segment_type3',
+                    'segmentation_confidence', 'segmentation_reasons',
+                    'base_main_type_path', 'all_types_paths_considered',
+                    'keyword_hits', 'language_scope',
+                ] + debug_cols
+                writer = csv.DictWriter(
+                    fh,
+                    fieldnames=output_columns,
+                    delimiter=';',
+                    quotechar='"',
+                    quoting=csv.QUOTE_ALL,
+                    lineterminator='\n',
+                )
+                writer.writeheader()
+                log(f'🧱 Entêtes BigQuery détectés: {len(source_headers)} colonnes')
+
+            mapped_row = _map_row_dict(raw_row, source_headers or [], options.marketsegmenter_mapping, projected_headers or [])
+            classified = service._classify_row(mapped_row, options)
+            out = {col: _csv_safe(mapped_row.get(col, '')) for col in (projected_headers or [])}
+            out.update({k: _csv_safe(v) for k, v in classified.items()})
+            writer.writerow(out)
+            processed += 1
+
+            if processed == 1 or processed % progress_log_every == 0:
+                if estimated_rows:
+                    pct = min(54, 5 + int((processed / max(1, estimated_rows)) * 45))
+                    progress(pct, f'Segmentation BigQuery directe : {processed}/{estimated_rows}')
+                else:
+                    progress(25, f'Segmentation BigQuery directe : {processed}')
+                JobService.heartbeat(job, f'BigQuery->rules streaming {processed}/{estimated_rows or "?"}')
+                log(f'🧮 Segmentation directe en cours : {processed} ligne(s) traitées')
+
+    if source_headers is None:
+        source_headers = []
+        projected_headers = _prepare_output_headers(source_headers, options.marketsegmenter_mapping)
+        output_columns = list(projected_headers) + [
+            'fyre_market_segment_type0', 'fyre_market_segment_type1',
+            'fyre_market_segment_type2', 'fyre_market_segment_type3',
+            'segmentation_confidence', 'segmentation_reasons',
+            'base_main_type_path', 'all_types_paths_considered',
+            'keyword_hits', 'language_scope',
+        ] + debug_cols
+        with output_path.open('w', newline='', encoding='utf-8-sig') as fh:
+            writer = csv.DictWriter(
+                fh,
+                fieldnames=output_columns,
+                delimiter=';',
+                quotechar='"',
+                quoting=csv.QUOTE_ALL,
+                lineterminator='\n',
+            )
+            writer.writeheader()
+    progress(54, f'Segmentation BigQuery directe terminée : {processed} ligne(s)')
+    log(f'✅ Streaming BigQuery → MarketSegmenter terminé : {processed} ligne(s)')
+    return source_headers, int(processed)
 
 def _split_segment_path(raw_value: str) -> list[str]:
     text = (raw_value or '').strip()
