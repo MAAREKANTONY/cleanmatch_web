@@ -9,4 +9,5 @@ app/staticfiles/
 .vscode/
 .idea/
 runtime_data/secret/gcp_sa_key.json
-runtime_data/secret/gcp_sa_key.json
+runtime_data/secrets/gcp_sa_key.json
+app/celerybeat-schedule

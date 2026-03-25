@@ -15,7 +15,7 @@ from geocoder.services.geocoder_service import GEOCODER_MAPPING_FIELDS, inspect_
 from geoclass.services.geoclass_service import GEOCLASS_MAPPING_FIELDS
 from marketsegmenter.services.marketsegmenter_service import MARKETSEGMENTER_MAPPING_FIELDS, inspect_marketsegmenter_file, suggest_column_mapping as suggest_marketsegmenter_mapping
 from ai_review.services.ai_review_service import AI_REVIEW_MAPPING_FIELDS, inspect_ai_review_file, suggest_ai_review_mapping
-from integrations.bigquery_service import BigQueryService, BigQueryConfigError
+from bigquery.client import BigQueryService, BigQueryConfigError
 from ai_review.services.capability_engine import AI_REVIEW_ACTION_PROFILES, AI_REVIEW_CAPABILITIES
 
 from .forms import JobCreateForm
