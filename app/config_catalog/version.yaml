@@ -1,4 +1,5 @@
-catalog_version: 1.0.0
-updated_at: '2026-03-22'
-notes: Iteration 27 - AI Review sprint 2 local feature extraction + full UI integration
-  + cleanup of legacy iteration references in templates.
+catalog_version: 1.1.0
+updated_at: '2026-03-25'
+display_label: Iteration 47 - Sprint 1
+summary: Base stable + version fiable + gating AI à deux seuils.
+notes: Sprint 1 - ajout du seuil minimum AI review, branche hors cible et lecture dynamique de la version.

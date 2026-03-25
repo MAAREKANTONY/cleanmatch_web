@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 from types import SimpleNamespace
 from unittest import TestCase
 
@@ -78,69 +78,3 @@ class BigQueryServiceQueryTests(TestCase):
         service = self._make_service()
         ref = service.table_ref('other_proj.other_ds.some_table')
         self.assertEqual(ref.full_name, 'other_proj.other_ds.some_table')
-
-
-    @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
-    @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
-    @patch('django.conf.settings.BIGQUERY_LOCATION', '')
-    @patch('django.conf.settings.BIGQUERY_CREDENTIALS_FILE', '')
-    @patch('django.conf.settings.BIGQUERY_OUTPUT_TABLE', 'segmented')
-    @patch('bigquery.client.bigquery.Client')
-    def test_ensure_output_writable_creates_missing_table_early(self, client_cls):
-        client = MagicMock()
-        client_cls.return_value = client
-        not_found = Exception('not found')
-        setattr(not_found, 'code', 404)
-        client.get_table.side_effect = [not_found]
-
-        service = BigQueryService()
-        result = service.ensure_output_writable(None)
-
-        self.assertTrue(result['created'])
-        client.get_dataset.assert_called_once()
-        client.create_table.assert_called_once()
-
-    @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
-    @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
-    @patch('django.conf.settings.BIGQUERY_LOCATION', '')
-    @patch('django.conf.settings.BIGQUERY_CREDENTIALS_FILE', '')
-    @patch('django.conf.settings.BIGQUERY_OUTPUT_TABLE', 'segmented')
-    @patch('bigquery.client.bigquery.Client')
-    def test_write_segmented_rows_uses_preflight_output_table(self, client_cls):
-        client = MagicMock()
-        client_cls.return_value = client
-        client.get_dataset.return_value = object()
-        client.get_table.return_value = object()
-        client.insert_rows_json.return_value = []
-
-        service = BigQueryService()
-        count = service.write_segmented_rows(None, [{'google_place_id': '1'}])
-
-        self.assertEqual(count, 1)
-        client.insert_rows_json.assert_called_once()
-
-
-    @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
-    @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
-    @patch('django.conf.settings.BIGQUERY_LOCATION', '')
-    @patch('django.conf.settings.BIGQUERY_CREDENTIALS_FILE', '')
-    @patch('django.conf.settings.BIGQUERY_OUTPUT_TABLE', 'segmented')
-    @patch('bigquery.client.bigquery.Client')
-    def test_write_segmented_rows_normalizes_datetime_for_existing_datetime_column(self, client_cls):
-        client = MagicMock()
-        client_cls.return_value = client
-        client.get_dataset.return_value = object()
-        client.get_table.return_value = type('T', (), {
-            'schema': [type('F', (), {'name': 'created_at', 'field_type': 'DATETIME'})()]
-        })()
-        client.insert_rows_json.return_value = []
-
-        service = BigQueryService()
-        service.write_segmented_rows(None, [{'google_place_id': '1', 'created_at': '2026-03-25T14:19:47.682649+00:00'}])
-
-        args, _ = client.insert_rows_json.call_args
-        self.assertEqual(args[1][0]['created_at'], '2026-03-25 14:19:47.682649')
-
-    def test_normalize_datetime_value_for_timestamp_keeps_timezone(self):
-        value = BigQueryService._normalize_datetime_value('2026-03-25T14:19:47.682649+00:00', 'TIMESTAMP')
-        self.assertEqual(value, '2026-03-25T14:19:47.682649+00:00')

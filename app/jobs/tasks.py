@@ -54,10 +54,6 @@ def _parse_bool(value) -> bool:
 @shared_task(bind=True)
 def run_uploaded_job(self, job_id: str):
     job = Job.objects.get(id=job_id)
-    current_task_id = str(getattr(getattr(self, 'request', None), 'id', '') or '')
-    if current_task_id and job.celery_task_id != current_task_id:
-        job.celery_task_id = current_task_id
-        job.save(update_fields=['celery_task_id'])
     input_path = job.input_file_1.path if job.input_file_1 else ''
     second_input_path = job.input_file_2.path if job.input_file_2 else ''
 
@@ -305,7 +301,8 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     table_name = str(parameters.get('marketsegmenter_bq_table_name') or settings.BIGQUERY_INPUT_TABLE)
     output_table_name = str(parameters.get('marketsegmenter_bq_output_table_name') or settings.BIGQUERY_OUTPUT_TABLE)
     country_code = str(parameters.get('marketsegmenter_bq_country_code') or '').strip()
-    low_conf_threshold = float(parameters.get('ai_review_low_confidence_threshold') or 0.65)
+    low_conf_threshold = float(parameters.get('ai_review_low_confidence_threshold') or settings.AI_REVIEW_LOW_CONFIDENCE_THRESHOLD)
+    min_conf_threshold = float(parameters.get('ai_review_min_confidence_threshold') or settings.AI_REVIEW_MIN_CONFIDENCE_THRESHOLD)
     job_root = Path(job.output_file.field.storage.path(f'outputs/{job.id}'))
     job_root.mkdir(parents=True, exist_ok=True)
     source_csv = job_root / f'{table_name}_source.csv'
@@ -313,17 +310,8 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     ai_csv = job_root / f'{table_name}_ai_review.csv'
     final_csv = job_root / f'{table_name}_segmented_simple.csv'
 
-    progress(3, 'Préflight BigQuery source + sortie')
-    log(f'🧾 Source BigQuery: {table_name} | filtre country_code={country_code or "ALL"}')
-    source_access = bq.ensure_source_readable(table_name=table_name, country_code=country_code)
-    log(f"✅ Accès lecture BigQuery validé sur {source_access['table']}")
-    output_access = bq.ensure_output_writable(output_table_name)
-    if output_access.get('created'):
-        log(f"✅ Table BigQuery de sortie créée avant traitement : {output_access['table']}")
-    else:
-        log(f"✅ Accès écriture BigQuery validé sur {output_access['table']}")
-
     progress(5, 'Lecture BigQuery source')
+    log(f'🧾 Source BigQuery: {table_name} | filtre country_code={country_code or "ALL"}')
     source_path, source_headers, row_count = bq.export_table_to_csv(table_name=table_name, output_path=source_csv, country_code=country_code)
     log(f'📥 {row_count} ligne(s) exportées depuis BigQuery dans {source_path.name}')
 
@@ -356,7 +344,9 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     ai_service.run(input_path=first_csv, output_path=ai_csv, options=ai_options)
 
     progress(82, 'Consolidation résultat simple + écriture BigQuery')
-    simple_rows, bq_rows = _consolidate_marketsegmenter_ai_results(ai_csv, final_csv, str(job.id), low_conf_threshold, progress, log)
+    simple_rows, bq_rows = _consolidate_marketsegmenter_ai_results(ai_csv, final_csv, str(job.id), low_conf_threshold, min_conf_threshold, progress, log)
+    inserted = bq.write_segmented_rows(output_table_name, bq_rows)
+    log(f'📤 {inserted} ligne(s) écrites dans BigQuery table {output_table_name}')
 
     summary = {
         'job_id': str(job.id),
@@ -368,33 +358,14 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         'result_rows': len(simple_rows),
         'output_csv': final_csv.name,
         'low_confidence_threshold': low_conf_threshold,
+        'min_confidence_threshold': min_conf_threshold,
     }
-    try:
-        inserted = bq.write_segmented_rows(output_table_name, bq_rows)
-        log(f'📤 {inserted} ligne(s) écrites dans BigQuery table {output_table_name}')
-        summary['bigquery_write_status'] = 'success'
-        summary['bigquery_rows_inserted'] = inserted
-        success_message = 'Market segmenter BigQuery + AI terminé avec succès'
-        final_error = None
-    except Exception as exc:
-        log(f'⚠️ Persistance BigQuery échouée après calcul : {exc}')
-        summary['bigquery_write_status'] = 'failed'
-        summary['bigquery_error'] = str(exc)
-        success_message = None
-        final_error = (
-            'Segmentation terminée, fichier résultat disponible, mais écriture BigQuery impossible : '
-            f'{exc}'
-        )
-
     final_csv.with_name(final_csv.stem + '_summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
 
     job.refresh_from_db(); JobService.enforce_not_cancelled(job)
     with final_csv.open('rb') as fh:
         job.output_file.save(final_csv.name, File(fh), save=False)
-    if final_error:
-        JobService.mark_failed(job, error_message=final_error)
-    else:
-        JobService.mark_success(job, message=success_message)
+    JobService.mark_success(job, message='Market segmenter BigQuery + AI terminé avec succès')
     return str(job.id)
 
 
@@ -405,7 +376,7 @@ def _split_segment_path(raw_value: str) -> list[str]:
     return [part.strip() for part in text.split('>') if part.strip()]
 
 
-def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: Path, process_id: str, low_conf_threshold: float, progress, log):
+def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: Path, process_id: str, low_conf_threshold: float, min_conf_threshold: float, progress, log):
     simple_rows: list[dict[str, str]] = []
     bq_rows: list[dict[str, object]] = []
     with ai_csv_path.open('r', encoding='utf-8-sig', newline='') as fh:
@@ -427,7 +398,10 @@ def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: P
                 rules_conf = 0.0
 
             rules_has_segments = any(rules_segments)
-            if ai_selected and ai_segments and ai_source.startswith('llm_'):
+            if rules_conf <= min_conf_threshold:
+                final_segments = ['hors cible', '', '', '']
+                final_source = 'rules_below_min_threshold'
+            elif ai_selected and ai_segments and ai_source.startswith('llm_'):
                 final_segments = (ai_segments + ['', '', '', ''])[:4]
                 final_source = ai_source
             elif not ai_selected and rules_conf >= low_conf_threshold and rules_has_segments:
@@ -459,7 +433,7 @@ def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: P
         writer = csv.DictWriter(fh, fieldnames=['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3'], delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL, lineterminator='\n')
         writer.writeheader()
         writer.writerows(simple_rows)
-    log(f'🧩 Consolidation finale terminée : {len(simple_rows)} ligne(s), seuil rules={low_conf_threshold}')
+    log(f'🧩 Consolidation finale terminée : {len(simple_rows)} ligne(s), seuil haut={low_conf_threshold}, seuil min={min_conf_threshold}')
     return simple_rows, bq_rows
 
 
@@ -485,7 +459,8 @@ def _run_ai_review_job(job: Job):
     options = AIReviewOptions(
         ai_review_sheet_name=parameters.get('ai_review_sheet_name') or None,
         ai_review_mapping=parameters.get('ai_review_mapping') or {},
-        low_confidence_threshold=float(parameters.get('ai_review_low_confidence_threshold') or 0.65),
+        low_confidence_threshold=float(parameters.get('ai_review_low_confidence_threshold') or settings.AI_REVIEW_LOW_CONFIDENCE_THRESHOLD),
+        min_confidence_threshold=float(parameters.get('ai_review_min_confidence_threshold') or settings.AI_REVIEW_MIN_CONFIDENCE_THRESHOLD),
         only_low_confidence=True,
         action_profile=(parameters.get('ai_review_action_profile') or 'standard'),
         llm_enabled=_parse_bool(parameters.get('ai_review_llm_enabled', False)),
@@ -498,7 +473,7 @@ def _run_ai_review_job(job: Job):
 
     log('🚀 Lancement du process AI Review hardened multi-provider LLM')
     log(f'📂 Fichier source : {input_path.name}')
-    log(f"🎯 Seuil faible confiance : {options.low_confidence_threshold}")
+    log(f"🎯 Gating AI : seuil haut={options.low_confidence_threshold} | seuil min={options.min_confidence_threshold}")
     log(f"🧠 Profil d’action : {options.action_profile}")
     log(f"🤖 LLM enabled={options.llm_enabled} provider={options.llm_provider} model={options.llm_model} budget={options.llm_max_budget_eur}€ row_max={options.llm_max_cost_per_row_eur}€ calls/row={options.llm_max_calls_per_row}")
     log('💾 Format de sortie : CSV UTF-8 avec colonnes AI review additives + summary JSON + guardrails LLM + JSON provider output')

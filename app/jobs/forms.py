@@ -1,6 +1,14 @@
 from django import forms
 from django.conf import settings
 
+
+def _clamp_confidence(value: float, fallback: float) -> float:
+    try:
+        number = float(value)
+    except Exception:
+        return fallback
+    return max(0.0, min(1.0, number))
+
 from normalizer.services.normalizer_service import CANONICAL_MAPPING_FIELDS, REQUIRED_MATCHCODE_FIELDS, EUROPE_COUNTRY_CHOICES
 from matcher.services.matcher_service import MATCHER_MAPPING_FIELDS, MATCHER_REQUIRED_FIELDS
 from geocoder.services.geocoder_service import GEOCODER_MAPPING_FIELDS, GEOCODER_REQUIRED_FIELDS
@@ -77,7 +85,8 @@ class JobCreateForm(forms.Form):
     marketsegmenter_bq_country_code = forms.CharField(label='Filtre country_code', required=False, initial='')
     marketsegmenter_bq_output_table_name = forms.CharField(label='Table BigQuery de sortie', required=False, initial=settings.BIGQUERY_OUTPUT_TABLE)
     ai_review_sheet_name = forms.CharField(required=False, widget=forms.HiddenInput())
-    ai_review_low_confidence_threshold = forms.FloatField(label='Seuil faible confiance AI review', required=False, initial=0.65, min_value=0.0, max_value=1.0)
+    ai_review_low_confidence_threshold = forms.FloatField(label='Seuil haut AI review', required=False, initial=settings.AI_REVIEW_LOW_CONFIDENCE_THRESHOLD, min_value=0.0, max_value=1.0)
+    ai_review_min_confidence_threshold = forms.FloatField(label='Seuil minimum AI review', required=False, initial=settings.AI_REVIEW_MIN_CONFIDENCE_THRESHOLD, min_value=0.0, max_value=1.0)
     ai_review_action_profile = forms.ChoiceField(label='Profil d’action AI review', required=False, choices=[(k, k) for k in sorted(AI_REVIEW_ACTION_PROFILES.keys())], initial=AI_REVIEW_DEFAULT_ACTION_PROFILE)
     ai_review_llm_enabled = forms.BooleanField(label='Activer le LLM réel', required=False, initial=AI_LLM_ENABLED)
     ai_review_llm_provider = forms.ChoiceField(label='Provider LLM', required=False, choices=AI_LLM_PROVIDER_CHOICES, initial=AI_LLM_PROVIDER)
@@ -195,8 +204,13 @@ class JobCreateForm(forms.Form):
                 self.add_error('input_file_1', 'Sélectionne un fichier source pour le market segmenter.')
         if job_type == Job.JobType.AI_REVIEW and input_file_1:
             threshold = cleaned.get('ai_review_low_confidence_threshold')
+            min_threshold = cleaned.get('ai_review_min_confidence_threshold')
             if threshold is None:
-                self.add_error('ai_review_low_confidence_threshold', 'Le seuil de faible confiance est requis pour AI Review.')
+                self.add_error('ai_review_low_confidence_threshold', 'Le seuil haut AI review est requis.')
+            if min_threshold is None:
+                self.add_error('ai_review_min_confidence_threshold', 'Le seuil minimum AI review est requis.')
+            if threshold is not None and min_threshold is not None and float(min_threshold) >= float(threshold):
+                self.add_error('ai_review_min_confidence_threshold', 'Le seuil minimum doit être strictement inférieur au seuil haut.')
             profile = (cleaned.get('ai_review_action_profile') or '').strip()
             if profile and profile not in AI_REVIEW_ACTION_PROFILES:
                 self.add_error('ai_review_action_profile', 'Le profil AI Review sélectionné est invalide.')
@@ -228,6 +242,16 @@ class JobCreateForm(forms.Form):
             missing_required = [field for field in GEOCLASS_REQUIRED_FIELDS if field not in geoclass_mapping]
             if missing_required:
                 self.add_error(None, 'Le geoclass nécessite un mapping des colonnes : ' + ', '.join(sorted(missing_required)))
+        if job_type in {Job.JobType.MARKETSEGMENTER, Job.JobType.AI_REVIEW}:
+            threshold = cleaned.get('ai_review_low_confidence_threshold')
+            min_threshold = cleaned.get('ai_review_min_confidence_threshold')
+            if threshold is None:
+                self.add_error('ai_review_low_confidence_threshold', 'Le seuil haut AI review est requis.')
+            if min_threshold is None:
+                self.add_error('ai_review_min_confidence_threshold', 'Le seuil minimum AI review est requis.')
+            if threshold is not None and min_threshold is not None and float(min_threshold) >= float(threshold):
+                self.add_error('ai_review_min_confidence_threshold', 'Le seuil minimum doit être strictement inférieur au seuil haut.')
+
         return cleaned
 
     @staticmethod

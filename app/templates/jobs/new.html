@@ -149,7 +149,12 @@
                 <div class="field">
                     <label for="id_ai_review_low_confidence_threshold">{{ form.ai_review_low_confidence_threshold.label }}</label>
                     {{ form.ai_review_low_confidence_threshold }}
-                    <div class="field-help">Les lignes au-dessus de ce seuil sont ignorées par défaut dans ce sprint.</div>
+                    <div class="field-help">Si la confiance rules est supérieure ou égale à ce seuil, l'IA est ignorée et le résultat rules est conservé.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_min_confidence_threshold">{{ form.ai_review_min_confidence_threshold.label }}</label>
+                    {{ form.ai_review_min_confidence_threshold }}
+                    <div class="field-help">Si la confiance rules est inférieure ou égale à ce seuil, l’outlet est classé automatiquement « hors cible » sans appel IA.</div>
                 </div>
                 <div class="field">
                     <label for="id_ai_review_action_profile">{{ form.ai_review_action_profile.label }}</label>
