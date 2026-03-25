@@ -162,6 +162,7 @@ class AIReviewService:
         source_headers: list[str] | None = None
         canonical_headers: list[str] | None = None
 
+        progress_log_every = max(1, int(getattr(settings, 'AI_REVIEW_PROGRESS_LOG_EVERY', 500) or 500))
         self.progress(5, 'Préparation du process AI review hardened')
         self.log(f'[AI_REVIEW] Threshold bas confiance actif: {threshold:.2f} | profile={options.action_profile}')
         self.log(f'[AI_REVIEW] Guardrails LLM actifs: provider={runtime_llm_provider} model={runtime_llm_model} enabled={runtime_llm_enabled} budget={runtime_llm_max_budget_eur:.2f}€ row_max={runtime_llm_max_cost_per_row_eur:.4f}€ calls/row={runtime_llm_max_calls_per_row}')
@@ -170,10 +171,12 @@ class AIReviewService:
         self.log(f'[AI_REVIEW] LLM runtime diagnostics: {runtime_diag_json}')
         logger.warning('[AI_REVIEW] LLM runtime diagnostics: %s', runtime_diag_json)
 
+        self.log(f'[AI_REVIEW] Input={input_path} total_estimated_rows={total or "unknown"}')
         with output_path.open('w', newline='', encoding='utf-8-sig') as fh:
             writer = None
             for raw_headers, raw_row in iter_rows(input_path, options.ai_review_sheet_name):
                 if source_headers is None:
+                    self.log('[AI_REVIEW] Première ligne reçue, préparation des entêtes de sortie')
                     source_headers = list(raw_headers)
                     canonical_headers = self._prepare_headers(source_headers)
                     output_columns = list(canonical_headers) + [field for field in AI_REVIEW_OUTPUT_FIELDS if field not in canonical_headers]
@@ -192,8 +195,9 @@ class AIReviewService:
                 selected += 1 if result.ai_selected_for_review == 'yes' else 0
                 skipped += 1 if result.ai_selected_for_review != 'yes' else 0
                 extracted += 1 if result.ai_detected_service_mode or result.ai_detected_cuisine or result.ai_detected_keywords else 0
-                if processed == 1 or processed % 500 == 0 or (total and processed == total):
+                if processed == 1 or processed % progress_log_every == 0 or (total and processed == total):
                     self.progress(min(96, 12 + int((processed / max(total, processed)) * 84)), f'AI review hardening en cours : {processed}/{total or "?"}')
+                    self.log(f"[AI_REVIEW] Progress processed={processed} selected={selected} skipped={skipped} extracted={extracted} web_ok={self._web_fetch_stats['pages_ok']} llm_calls={self._llm_stats['calls_executed']}")
 
         summary = {
             'rows': int(processed),

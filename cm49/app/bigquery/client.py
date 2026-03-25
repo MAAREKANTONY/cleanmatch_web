@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from itertools import islice
@@ -151,6 +152,7 @@ class BigQueryService:
         use_direct_read = not (country_code or '').strip() and limit is None
         processed = 0
         progress_log_every = max(1, int(getattr(settings, 'BIGQUERY_PROGRESS_LOG_EVERY', 5000) or 5000))
+        wait_log_seconds = max(5, int(getattr(settings, 'BIGQUERY_WAIT_LOG_SECONDS', 15) or 15))
 
         def emit_progress() -> None:
             if progress_callback:
@@ -161,32 +163,67 @@ class BigQueryService:
         if use_direct_read:
             if log_callback:
                 log_callback(f'📡 Lecture BigQuery directe tabledata.list sur {ref.full_name} (page_size={page_size})')
+                log_callback(f'🧱 get_table({ref.full_name}) démarré')
             table = self.client.get_table(ref.full_name)
             self._schema_cache[ref.full_name] = [field.name for field in table.schema]
+            if log_callback:
+                log_callback(f'✅ Schéma BigQuery chargé : {len(self._schema_cache[ref.full_name])} colonne(s)')
+                log_callback(f'📚 list_rows() démarré sur {ref.full_name}, attente de la première page…')
             row_iter = self.client.list_rows(table, page_size=page_size)
-            for page in row_iter.pages:
+            for page_idx, page in enumerate(row_iter.pages, start=1):
+                page_rows = 0
+                if log_callback:
+                    log_callback(f'📄 Première lecture de page directe #{page_idx} démarrée')
                 for row in page:
                     processed += 1
+                    page_rows += 1
                     emit_progress()
                     yield dict(row.items())
+                if log_callback:
+                    log_callback(f'📄 Page BigQuery directe {page_idx} reçue ({page_rows} lignes, cumul={processed})')
+            if log_callback:
+                log_callback(f'✅ Lecture BigQuery directe terminée ({processed} ligne(s))')
             return
 
         sql, job_config = self.build_select_query(table_name=table_name, country_code=country_code, limit=limit)
         if log_callback:
+            log_callback(f'🛠️ Construction requête BigQuery terminée pour {ref.full_name}')
             log_callback(f'📡 Requête BigQuery soumise (page_size={page_size}) sur {ref.full_name}')
         query_job = self.client.query(sql, job_config=job_config, location=self.location)
         if log_callback:
             log_callback(f'🧮 BigQuery job_id={query_job.job_id} soumis, attente du premier lot…')
-        result = query_job.result(page_size=page_size, timeout=max(60, int(getattr(settings, 'BIGQUERY_QUERY_TIMEOUT_SECONDS', 1800) or 1800)))
+        timeout = max(60, int(getattr(settings, 'BIGQUERY_QUERY_TIMEOUT_SECONDS', 1800) or 1800))
+        start_wait = time.monotonic()
+        last_wait_log = start_wait
+        while not query_job.done(reload=True):
+            now = time.monotonic()
+            if log_callback and (now - last_wait_log) >= wait_log_seconds:
+                elapsed = int(now - start_wait)
+                state = getattr(query_job, 'state', 'UNKNOWN')
+                log_callback(f'⏳ BigQuery job {query_job.job_id} toujours en attente ({elapsed}s, state={state})')
+                last_wait_log = now
+            if (now - start_wait) > timeout:
+                raise TimeoutError(f'BigQuery query timeout after {timeout}s for {ref.full_name}')
+            time.sleep(1.0)
+        if log_callback:
+            state = getattr(query_job, 'state', 'DONE')
+            log_callback(f'✅ BigQuery job {query_job.job_id} terminé (state={state}), lecture des pages…')
+        result = query_job.result(page_size=page_size, timeout=timeout)
+        page_seen = False
         for page_idx, page in enumerate(result.pages, start=1):
+            page_seen = True
             page_rows = 0
+            if log_callback:
+                log_callback(f'📄 Lecture page résultat #{page_idx} démarrée')
             for row in page:
                 processed += 1
                 page_rows += 1
                 emit_progress()
                 yield dict(row.items())
-            if log_callback and page_rows:
+            if log_callback:
                 log_callback(f'📄 Page BigQuery {page_idx} reçue ({page_rows} lignes, cumul={processed})')
+        if log_callback and not page_seen:
+            log_callback("ℹ️ BigQuery n'a renvoyé aucune page de résultat")
 
     def export_table_to_csv(
         self,
