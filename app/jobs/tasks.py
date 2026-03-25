@@ -325,9 +325,11 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
 
     progress(55, 'AI Review ciblée sur lignes à faible confiance')
     ai_service = AIReviewService(progress_callback=progress, log_callback=log)
+    ai_review_mapping = dict(parameters.get('ai_review_mapping') or {})
+    ai_review_mapping.pop('segmentation_confidence', None)
     ai_options = AIReviewOptions(
         ai_review_sheet_name=None,
-        ai_review_mapping=parameters.get('ai_review_mapping') or {},
+        ai_review_mapping=ai_review_mapping,
         low_confidence_threshold=low_conf_threshold,
         only_low_confidence=True,
         action_profile=(parameters.get('ai_review_action_profile') or 'standard'),
@@ -393,18 +395,22 @@ def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: P
             except Exception:
                 rules_conf = 0.0
 
+            rules_has_segments = any(rules_segments)
             if ai_selected and ai_segments and ai_source.startswith('llm_'):
                 final_segments = (ai_segments + ['', '', '', ''])[:4]
                 final_source = ai_source
-            elif not ai_selected and rules_conf >= low_conf_threshold:
+            elif not ai_selected and rules_conf >= low_conf_threshold and rules_has_segments:
                 final_segments = rules_segments
                 final_source = 'rules_confident'
             elif ai_segments and ai_source != 'rules_initial':
                 final_segments = (ai_segments + ['', '', '', ''])[:4]
                 final_source = ai_source or 'ai_fallback'
-            else:
+            elif rules_has_segments:
                 final_segments = rules_segments
                 final_source = 'rules_fallback'
+            else:
+                final_segments = ['', '', '', '']
+                final_source = 'none'
 
             simple_row = {
                 'google_place_id': google_place_id,

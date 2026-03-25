@@ -201,7 +201,7 @@
                 <button class="btn btn-secondary" type="button" id="inspect-ai-review-btn">Inspecter le fichier AI Review</button>
                 <div class="muted small" id="inspect-ai-review-status">Aucune inspection AI Review lancée.</div>
             </div>
-            <div class="muted small">Colonnes minimales recommandées : <span class="code-inline">name</span> et <span class="code-inline">segmentation_confidence</span>. Colonnes fortement utiles : <span class="code-inline">website</span>, <span class="code-inline">menu_url</span>, <span class="code-inline">google_id</span>, <span class="code-inline">place_id</span>, <span class="code-inline">main_type</span>, <span class="code-inline">all_types</span>.</div>
+            <div class="muted small">Colonnes minimales recommandées en AI Review autonome : <span class="code-inline">name</span> et <span class="code-inline">segmentation_confidence</span>. En enchaînement automatique après le Market Segmenter, <span class="code-inline">segmentation_confidence</span> et les segments FYRE sont générés automatiquement par l’étape précédente et ne doivent pas être mappés depuis la source BigQuery. Colonnes fortement utiles : <span class="code-inline">website</span>, <span class="code-inline">menu_url</span>, <span class="code-inline">google_id</span>, <span class="code-inline">place_id</span>, <span class="code-inline">main_type</span>, <span class="code-inline">all_types</span>.</div>
         </div>
 
     </section>
@@ -321,7 +321,8 @@
     const matcherRequired = new Set(['id', 'name', 'address', 'zipcode', 'city']);
     const geocoderRequired = new Set(['id', 'address', 'zipcode', 'city']);
     const marketsegmenterRequired = new Set(['name', 'main_type']);
-    const aiReviewRequired = new Set(['name', 'segmentation_confidence']);
+    const aiReviewRequiredStandalone = new Set(['outlet_name', 'segmentation_confidence']);
+    const aiReviewRequiredChained = new Set(['outlet_name']);
     const jobType = document.getElementById('id_job_type');
     const inputFile = document.getElementById('id_input_file_1');
     const inputFile2 = document.getElementById('id_input_file_2');
@@ -554,7 +555,7 @@
             aiReviewSheetInput.value = sheet.name === '__csv__' ? '' : sheet.name;
             document.querySelectorAll('#ai-review-inspection-results .sheet-item').forEach(el => el.classList.remove('active'));
             card.classList.add('active');
-            buildMappingCard(aiReviewMappingGrid, aiReviewFields, aiReviewRequired, 'id_ai_review_', sheet.detected_columns, sheet.mapping_suggestions || {});
+            buildMappingCard(aiReviewMappingGrid, aiReviewFields, aiReviewRequiredStandalone, 'id_ai_review_', sheet.detected_columns, sheet.mapping_suggestions || {});
             inspectAiReviewStatus.textContent = `Inspection AI Review prête : ${sheet.name === '__csv__' ? 'CSV' : sheet.name}`;
             aiReviewMappingCard.classList.remove('hidden');
         });
@@ -665,7 +666,7 @@
             if (jobType.value === 'marketsegmenter') {
                 marketsegmenterSheetInput.value = selected.name === '__csv__' || selected.name === '__bigquery__' ? '' : selected.name;
                 buildMappingCard(geocoderMappingGrid, marketsegmenterFields, marketsegmenterRequired, 'id_marketsegmenter_', selected.detected_columns, selected.mapping_suggestions || {});
-                buildMappingCard(aiReviewMappingGrid, aiReviewFields, aiReviewRequired, 'id_ai_review_', selected.detected_columns, selected.ai_review_mapping_suggestions || {});
+                buildMappingCard(aiReviewMappingGrid, aiReviewFields, aiReviewRequiredChained, 'id_ai_review_', selected.detected_columns, selected.ai_review_mapping_suggestions || {});
                 aiReviewMappingCard.classList.remove('hidden');
                 aiReviewPanel.classList.remove('hidden');
             } else {
@@ -700,7 +701,7 @@
             const selected = firstSheetOrWarn(data, inspectAiReviewStatus, 'Aucun onglet exploitable détecté pour ce fichier AI Review.');
             if (!selected) return;
             aiReviewSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
-            buildMappingCard(aiReviewMappingGrid, aiReviewFields, aiReviewRequired, 'id_ai_review_', selected.detected_columns, selected.mapping_suggestions || {});
+            buildMappingCard(aiReviewMappingGrid, aiReviewFields, aiReviewRequiredStandalone, 'id_ai_review_', selected.detected_columns, selected.mapping_suggestions || {});
             aiReviewInspectionCard.classList.remove('hidden');
             aiReviewMappingCard.classList.remove('hidden');
             inspectAiReviewStatus.textContent = `Inspection AI Review prête — ${data.filename}.`;

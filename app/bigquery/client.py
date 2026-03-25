@@ -35,6 +35,7 @@ class BigQueryService:
         self.dataset = (settings.BIGQUERY_DATASET or '').strip()
         self.location = (settings.BIGQUERY_LOCATION or '').strip() or None
         self.credentials_file = (settings.BIGQUERY_CREDENTIALS_FILE or '').strip()
+        self._schema_cache: dict[str, list[str]] = {}
         if not self.project_id:
             raise BigQueryConfigError('BIGQUERY_PROJECT_ID est requis.')
         if not self.dataset:
@@ -49,7 +50,23 @@ class BigQueryService:
 
     def table_ref(self, table_name: str | None) -> BigQueryTableRef:
         normalized = (table_name or '').strip() or settings.BIGQUERY_INPUT_TABLE
+        normalized = normalized.strip('`')
+        parts = [part for part in normalized.split('.') if part]
+        if len(parts) == 3:
+            project_id, dataset, table = parts
+            return BigQueryTableRef(project_id=project_id, dataset=dataset, table_name=table)
+        if len(parts) == 2:
+            dataset, table = parts
+            return BigQueryTableRef(project_id=self.project_id, dataset=dataset, table_name=table)
         return BigQueryTableRef(project_id=self.project_id, dataset=self.dataset, table_name=normalized)
+
+    def _get_table_columns(self, table_name: str | None) -> list[str]:
+        ref = self.table_ref(table_name)
+        cache_key = ref.full_name
+        if cache_key not in self._schema_cache:
+            table = self.client.get_table(ref.full_name)
+            self._schema_cache[cache_key] = [field.name for field in table.schema]
+        return self._schema_cache[cache_key]
 
     def build_select_query(self, table_name: str | None, country_code: str = '', limit: int | None = None) -> Tuple[str, bigquery.QueryJobConfig]:
         ref = self.table_ref(table_name)
@@ -57,8 +74,10 @@ class BigQueryService:
         query_parameters: list[bigquery.query.ScalarQueryParameter] = []
         normalized_country = (country_code or '').strip().upper()
         if normalized_country:
-            sql += " WHERE UPPER(country_code) = @country_code"
-            query_parameters.append(bigquery.ScalarQueryParameter('country_code', 'STRING', normalized_country))
+            available_columns = {col.lower() for col in self._get_table_columns(ref.table_name)}
+            if 'country_code' in available_columns:
+                sql += " WHERE UPPER(country_code) = @country_code"
+                query_parameters.append(bigquery.ScalarQueryParameter('country_code', 'STRING', normalized_country))
         if limit is not None:
             safe_limit = max(1, int(limit))
             sql += f" LIMIT {safe_limit}"
@@ -68,6 +87,7 @@ class BigQueryService:
         ref = self.table_ref(table_name)
         table = self.client.get_table(ref.full_name)
         columns = [field.name for field in table.schema]
+        self._schema_cache[ref.full_name] = columns
         preview_rows = list(self.iter_rows(ref.table_name, country_code=country_code, limit=limit))
         preview = [columns] + [[self._stringify(row.get(col, '')) for col in columns] for row in preview_rows]
         total_rows = table.num_rows

@@ -351,7 +351,8 @@ def inspect_marketsegmenter(request):
     try:
         payload = inspect_marketsegmenter_file(uploaded)
         for sheet in payload.get('sheets', []):
-            sheet['ai_review_mapping_suggestions'] = suggest_ai_review_mapping(sheet.get('detected_columns', []))
+            ai_columns = list(sheet.get('detected_columns', [])) + ['segmentation_confidence', 'fyre_market_segment_type0', 'fyre_market_segment_type1', 'fyre_market_segment_type2', 'fyre_market_segment_type3', 'segmentation_reasons']
+            sheet['ai_review_mapping_suggestions'] = suggest_ai_review_mapping(ai_columns)
     except Exception as exc:
         return JsonResponse({'ok': False, 'error': f'Impossible d’inspecter le fichier : {exc}'}, status=400)
     payload['mapping_fields'] = MARKETSEGMENTER_MAPPING_FIELDS
@@ -369,7 +370,8 @@ def inspect_marketsegmenter_bigquery(request):
         for sheet in payload.get('sheets', []):
             columns = sheet.get('detected_columns', [])
             sheet['mapping_suggestions'] = suggest_marketsegmenter_mapping(columns)
-            sheet['ai_review_mapping_suggestions'] = suggest_ai_review_mapping(columns)
+            ai_columns = list(columns) + ['segmentation_confidence', 'fyre_market_segment_type0', 'fyre_market_segment_type1', 'fyre_market_segment_type2', 'fyre_market_segment_type3', 'segmentation_reasons']
+            sheet['ai_review_mapping_suggestions'] = suggest_ai_review_mapping(ai_columns)
         return JsonResponse({'ok': True, **payload})
     except (BigQueryConfigError, Exception) as exc:
         return JsonResponse({'ok': False, 'error': str(exc)}, status=400)

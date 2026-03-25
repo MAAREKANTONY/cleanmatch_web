@@ -1,6 +1,6 @@
+from unittest.mock import Mock, patch
 from types import SimpleNamespace
 from unittest import TestCase
-from unittest.mock import patch
 
 from bigquery.client import BigQueryService
 
@@ -28,6 +28,8 @@ class BigQueryServiceQueryTests(TestCase):
     @patch('django.conf.settings.BIGQUERY_INPUT_TABLE', 'google_map_clean')
     def test_build_select_query_with_country(self):
         service = self._make_service()
+        service.client = Mock()
+        service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'country_code'})()]})()
         sql, config = service.build_select_query('google_map_clean', country_code='es', limit=None)
         self.assertEqual(sql, 'SELECT * FROM `proj.dataset.google_map_clean` WHERE UPPER(country_code) = @country_code')
         self.assertEqual(len(config.query_parameters), 1)
@@ -52,3 +54,27 @@ class BigQueryServiceQueryTests(TestCase):
         self.assertEqual(payload['table_name'], 'google_map')
         self.assertIn('mapping_suggestions', sheet)
         self.assertIn('ai_review_mapping_suggestions', sheet)
+
+
+    @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
+    @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
+    @patch('django.conf.settings.BIGQUERY_LOCATION', '')
+    @patch('django.conf.settings.BIGQUERY_CREDENTIALS_FILE', '')
+    @patch('django.conf.settings.BIGQUERY_INPUT_TABLE', 'google_map_clean')
+    def test_build_select_query_skips_country_filter_when_column_missing(self):
+        service = self._make_service()
+        service.client = Mock()
+        service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'google_place_id'})()]})()
+        sql, config = service.build_select_query('google_map_clean', country_code='fr', limit=None)
+        self.assertEqual(sql, 'SELECT * FROM `proj.dataset.google_map_clean`')
+        self.assertEqual(config.query_parameters, [])
+
+    @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
+    @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
+    @patch('django.conf.settings.BIGQUERY_LOCATION', '')
+    @patch('django.conf.settings.BIGQUERY_CREDENTIALS_FILE', '')
+    @patch('django.conf.settings.BIGQUERY_INPUT_TABLE', 'google_map_clean')
+    def test_table_ref_accepts_fully_qualified_name(self):
+        service = self._make_service()
+        ref = service.table_ref('other_proj.other_ds.some_table')
+        self.assertEqual(ref.full_name, 'other_proj.other_ds.some_table')
