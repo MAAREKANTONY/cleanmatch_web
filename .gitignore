@@ -8,3 +8,4 @@ app/staticfiles/
 *.log
 .vscode/
 .idea/
+runtime_data/secret/gcp_sa_key.json
