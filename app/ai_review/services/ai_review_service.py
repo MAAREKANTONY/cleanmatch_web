@@ -130,6 +130,7 @@ class AIReviewService:
 
     def run(self, input_path: Path, output_path: Path, options: AIReviewOptions) -> Path:
         threshold = options.low_confidence_threshold if options.low_confidence_threshold is not None else AI_THRESHOLD_LOW_CONFIDENCE
+        min_threshold = getattr(options, 'min_confidence_threshold', 0.0)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         runtime_llm_enabled = AI_LLM_ENABLED if options.llm_enabled is None else bool(options.llm_enabled)
         runtime_llm_provider = str(options.llm_provider or AI_LLM_PROVIDER or 'openai_compatible_json')
