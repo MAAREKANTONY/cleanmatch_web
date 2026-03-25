@@ -470,6 +470,7 @@
     }
 
     function renderMatcherSheetCard(role, sheet, index) {
+        sheet = normalizeSheetForRender(sheet);
         const card = document.createElement('div');
         card.className = 'sheet-item' + (index === 0 ? ' active' : '');
         const hiddenSheetInput = document.getElementById(`id_matcher_${role}_sheet_name`);
@@ -496,7 +497,18 @@
         return card;
     }
 
+    function normalizeSheetForRender(sheet) {
+        const normalized = sheet || {};
+        normalized.detected_columns = Array.isArray(normalized.detected_columns) ? normalized.detected_columns : [];
+        normalized.missing_required = Array.isArray(normalized.missing_required) ? normalized.missing_required : [];
+        normalized.preview = Array.isArray(normalized.preview) ? normalized.preview : [];
+        normalized.mapping_suggestions = normalized.mapping_suggestions || {};
+        normalized.ai_review_mapping_suggestions = normalized.ai_review_mapping_suggestions || {};
+        return normalized;
+    }
+
     function renderGeocoderSheetCard(sheet, index) {
+        sheet = normalizeSheetForRender(sheet);
         const card = document.createElement('div');
         card.className = 'sheet-item' + (index === 0 ? ' active' : '');
         card.innerHTML = `
@@ -524,6 +536,7 @@
 
 
     function renderAiReviewSheetCard(sheet, index) {
+        sheet = normalizeSheetForRender(sheet);
         const card = document.createElement('div');
         card.className = 'sheet-item' + (index === 0 ? ' active' : '');
         card.innerHTML = `
@@ -635,7 +648,7 @@
             let response;
             if (marketsegmenterUsesBigQuery) {
                 const formData = new FormData();
-                formData.append('table_name', marketsegmenterBqTable ? marketsegmenterBqTable.value : 'google_map_clean');
+                formData.append('table_name', marketsegmenterBqTable && marketsegmenterBqTable.value ? marketsegmenterBqTable.value : '{{ bigquery_input_table_default|escapejs }}');
                 formData.append('country_code', marketsegmenterBqCountry ? marketsegmenterBqCountry.value : '');
                 response = await fetch('{% url "jobs:inspect_marketsegmenter_bigquery" %}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
             } else {

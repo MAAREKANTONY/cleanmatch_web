@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Iterable, Tuple
 
 from django.conf import settings
+
+from marketsegmenter.services.marketsegmenter_service import MARKETSEGMENTER_REQUIRED_FIELDS, suggest_column_mapping
+from ai_review.services.ai_review_service import suggest_ai_review_mapping
 from google.cloud import bigquery
 from google.oauth2 import service_account
 
@@ -69,6 +72,8 @@ class BigQueryService:
         preview = [columns] + [[self._stringify(row.get(col, '')) for col in columns] for row in preview_rows]
         total_rows = table.num_rows
         sql, _ = self.build_select_query(ref.table_name, country_code=country_code, limit=limit)
+        marketsegmenter_mapping = suggest_column_mapping(columns)
+        ai_review_mapping = suggest_ai_review_mapping(columns)
         return {
             'filename': ref.full_name,
             'kind': 'bigquery',
@@ -81,6 +86,9 @@ class BigQueryService:
                 'max_column': len(columns),
                 'preview': preview,
                 'detected_columns': columns,
+                'mapping_suggestions': marketsegmenter_mapping,
+                'ai_review_mapping_suggestions': ai_review_mapping,
+                'missing_required': sorted(MARKETSEGMENTER_REQUIRED_FIELDS - set(marketsegmenter_mapping.keys())),
             }],
         }
 

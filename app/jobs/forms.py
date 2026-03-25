@@ -1,4 +1,5 @@
 from django import forms
+from django.conf import settings
 
 from normalizer.services.normalizer_service import CANONICAL_MAPPING_FIELDS, REQUIRED_MATCHCODE_FIELDS, EUROPE_COUNTRY_CHOICES
 from matcher.services.matcher_service import MATCHER_MAPPING_FIELDS, MATCHER_REQUIRED_FIELDS
@@ -72,9 +73,9 @@ class JobCreateForm(forms.Form):
         choices=[('uploaded', 'Fichier uploadé'), ('bigquery', 'Table BigQuery')],
         initial='uploaded',
     )
-    marketsegmenter_bq_table_name = forms.CharField(label='Table BigQuery source', required=False, initial='google_map_clean')
+    marketsegmenter_bq_table_name = forms.CharField(label='Table BigQuery source', required=False, initial=settings.BIGQUERY_INPUT_TABLE)
     marketsegmenter_bq_country_code = forms.CharField(label='Filtre country_code', required=False, initial='')
-    marketsegmenter_bq_output_table_name = forms.CharField(label='Table BigQuery de sortie', required=False, initial='google_map_clean_segmented')
+    marketsegmenter_bq_output_table_name = forms.CharField(label='Table BigQuery de sortie', required=False, initial=settings.BIGQUERY_OUTPUT_TABLE)
     ai_review_sheet_name = forms.CharField(required=False, widget=forms.HiddenInput())
     ai_review_low_confidence_threshold = forms.FloatField(label='Seuil faible confiance AI review', required=False, initial=0.65, min_value=0.0, max_value=1.0)
     ai_review_action_profile = forms.ChoiceField(label='Profil d’action AI review', required=False, choices=[(k, k) for k in sorted(AI_REVIEW_ACTION_PROFILES.keys())], initial=AI_REVIEW_DEFAULT_ACTION_PROFILE)

@@ -1,6 +1,7 @@
 
 from pathlib import Path
 
+from django.conf import settings
 from django.contrib import messages
 from django.db.models import Count
 from django.http import JsonResponse
@@ -119,9 +120,9 @@ def create_job(request):
                     'ai_review_llm_max_budget_eur': float(form.cleaned_data.get('ai_review_llm_max_budget_eur') or 0.0),
                     'ai_review_llm_max_cost_per_row_eur': float(form.cleaned_data.get('ai_review_llm_max_cost_per_row_eur') or 0.0),
                     'ai_review_llm_max_calls_per_row': int(form.cleaned_data.get('ai_review_llm_max_calls_per_row') or 1),
-                    'marketsegmenter_bq_table_name': (form.cleaned_data.get('marketsegmenter_bq_table_name') or '').strip() or 'google_map_clean',
+                    'marketsegmenter_bq_table_name': (form.cleaned_data.get('marketsegmenter_bq_table_name') or '').strip() or settings.BIGQUERY_INPUT_TABLE,
                     'marketsegmenter_bq_country_code': (form.cleaned_data.get('marketsegmenter_bq_country_code') or '').strip(),
-                    'marketsegmenter_bq_output_table_name': (form.cleaned_data.get('marketsegmenter_bq_output_table_name') or '').strip() or 'google_map_clean_segmented',
+                    'marketsegmenter_bq_output_table_name': (form.cleaned_data.get('marketsegmenter_bq_output_table_name') or '').strip() or settings.BIGQUERY_OUTPUT_TABLE,
                 })
             elif form.cleaned_data['job_type'] == Job.JobType.AI_REVIEW:
                 parameters.update({
@@ -156,6 +157,8 @@ def create_job(request):
                     'ai_review_mapping_fields': AI_REVIEW_MAPPING_FIELDS,
                     'ai_review_action_profiles': sorted(AI_REVIEW_ACTION_PROFILES.keys()),
                     'ai_review_capabilities': AI_REVIEW_CAPABILITIES,
+                    'bigquery_input_table_default': settings.BIGQUERY_INPUT_TABLE,
+                    'bigquery_output_table_default': settings.BIGQUERY_OUTPUT_TABLE,
                 })
 
             job = Job.objects.create(
@@ -178,11 +181,13 @@ def create_job(request):
         'canonical_mapping_fields': CANONICAL_MAPPING_FIELDS,
         'matcher_mapping_fields': MATCHER_MAPPING_FIELDS,
         'geocoder_mapping_fields': GEOCODER_MAPPING_FIELDS,
-                    'geoclass_mapping_fields': GEOCLASS_MAPPING_FIELDS,
-                    'marketsegmenter_mapping_fields': MARKETSEGMENTER_MAPPING_FIELDS,
-                    'ai_review_mapping_fields': AI_REVIEW_MAPPING_FIELDS,
-                    'ai_review_action_profiles': sorted(AI_REVIEW_ACTION_PROFILES.keys()),
-                    'ai_review_capabilities': AI_REVIEW_CAPABILITIES,
+        'geoclass_mapping_fields': GEOCLASS_MAPPING_FIELDS,
+        'marketsegmenter_mapping_fields': MARKETSEGMENTER_MAPPING_FIELDS,
+        'ai_review_mapping_fields': AI_REVIEW_MAPPING_FIELDS,
+        'ai_review_action_profiles': sorted(AI_REVIEW_ACTION_PROFILES.keys()),
+        'ai_review_capabilities': AI_REVIEW_CAPABILITIES,
+        'bigquery_input_table_default': settings.BIGQUERY_INPUT_TABLE,
+        'bigquery_output_table_default': settings.BIGQUERY_OUTPUT_TABLE,
     })
 
 
@@ -356,7 +361,7 @@ def inspect_marketsegmenter(request):
 
 @require_POST
 def inspect_marketsegmenter_bigquery(request):
-    table_name = (request.POST.get('table_name') or '').strip() or 'google_map_clean'
+    table_name = (request.POST.get('table_name') or '').strip() or settings.BIGQUERY_INPUT_TABLE
     country_code = (request.POST.get('country_code') or '').strip()
     try:
         service = BigQueryService()
