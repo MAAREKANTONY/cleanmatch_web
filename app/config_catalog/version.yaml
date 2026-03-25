@@ -1,5 +1,5 @@
 catalog_version: 1.1.0
 updated_at: '2026-03-25'
-display_label: Iteration 47 - Sprint 1.1
+display_label: Iteration 47 - Sprint 1.2
 summary: Base stable + version fiable + gating AI à deux seuils.
 notes: Sprint 1.1 - correctif NameError min_threshold + seuil minimum AI review, branche hors cible et lecture dynamique de la version.

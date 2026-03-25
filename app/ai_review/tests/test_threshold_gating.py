@@ -58,3 +58,16 @@ def test_above_high_threshold_skips_ai_review_and_keeps_rules():
     assert result.ai_selected_for_review == 'no'
     assert result.ai_review_status == 'skipped'
     assert result.ai_segment_source == 'rules_initial'
+
+
+
+def test_above_high_threshold_does_not_call_llm(monkeypatch):
+    service = AIReviewService()
+
+    def _boom(*args, **kwargs):
+        raise AssertionError('LLM should not be called for high-confidence rows')
+
+    monkeypatch.setattr(service, '_run_llm_guardrails', _boom)
+    result = service._build_feature_extraction_result(_make_input(0.90), 0.65, 0.20, True)
+    assert result.ai_selected_for_review == 'no'
+    assert result.ai_review_status == 'skipped'

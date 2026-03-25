@@ -141,7 +141,7 @@ class BigQueryService:
                 writer.writeheader()
         return output_path, headers, count
 
-    def write_segmented_rows(self, table_name: str | None, rows: list[dict[str, object]]) -> int:
+    def write_segmented_rows(self, table_name: str | None, rows: list[dict[str, object]], batch_size: int = 1000) -> int:
         ref = self.table_ref(table_name or settings.BIGQUERY_OUTPUT_TABLE)
         table_id = ref.full_name
         schema = [
@@ -155,10 +155,16 @@ class BigQueryService:
         ]
         table = bigquery.Table(table_id, schema=schema)
         self.client.create_table(table, exists_ok=True)
-        errors = self.client.insert_rows_json(table_id, rows)
-        if errors:
-            raise RuntimeError(f'Échec écriture BigQuery vers {table_id}: {errors[:3]}')
-        return len(rows)
+        total_inserted = 0
+        safe_batch_size = max(1, int(batch_size or 1000))
+        for start in range(0, len(rows), safe_batch_size):
+            batch = rows[start:start + safe_batch_size]
+            normalized_batch = [self._normalize_segmented_row(row) for row in batch]
+            errors = self.client.insert_rows_json(table_id, normalized_batch)
+            if errors:
+                raise RuntimeError(f'Échec écriture BigQuery vers {table_id}: {errors[:3]}')
+            total_inserted += len(normalized_batch)
+        return total_inserted
 
     @staticmethod
     def build_segmented_row(*, google_place_id: str, segments: list[str], process_id: str) -> dict[str, object]:
@@ -169,9 +175,28 @@ class BigQueryService:
             'market_segment_type1': parts[1],
             'market_segment_type2': parts[2],
             'market_segment_type3': parts[3],
-            'created_at': datetime.now(timezone.utc).isoformat(),
+            'created_at': BigQueryService._utc_rfc3339_now(),
             'process_id': str(process_id),
         }
+
+    @staticmethod
+    def _utc_rfc3339_now() -> str:
+        return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+
+    @staticmethod
+    def _normalize_segmented_row(row: dict[str, object]) -> dict[str, object]:
+        normalized = dict(row)
+        created_at = normalized.get('created_at')
+        if isinstance(created_at, datetime):
+            created_at = created_at.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        elif created_at in (None, ''):
+            created_at = BigQueryService._utc_rfc3339_now()
+        else:
+            created_at = str(created_at).strip().replace('+00:00', 'Z')
+        normalized['created_at'] = created_at
+        normalized['google_place_id'] = str(normalized.get('google_place_id') or '').strip()
+        normalized['process_id'] = str(normalized.get('process_id') or '').strip()
+        return normalized
 
     @staticmethod
     def _stringify(value: object) -> str:

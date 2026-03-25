@@ -78,3 +78,31 @@ class BigQueryServiceQueryTests(TestCase):
         service = self._make_service()
         ref = service.table_ref('other_proj.other_ds.some_table')
         self.assertEqual(ref.full_name, 'other_proj.other_ds.some_table')
+
+
+    @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
+    @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
+    @patch('django.conf.settings.BIGQUERY_LOCATION', '')
+    @patch('django.conf.settings.BIGQUERY_CREDENTIALS_FILE', '')
+    @patch('django.conf.settings.BIGQUERY_INPUT_TABLE', 'google_map_clean')
+    def test_build_segmented_row_uses_rfc3339_zulu_timestamp(self):
+        row = BigQueryService.build_segmented_row(google_place_id='g1', segments=['restaurant', '', '', ''], process_id='pid1')
+        self.assertTrue(str(row['created_at']).endswith('Z'))
+        self.assertIn('T', str(row['created_at']))
+
+    @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
+    @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
+    @patch('django.conf.settings.BIGQUERY_LOCATION', '')
+    @patch('django.conf.settings.BIGQUERY_CREDENTIALS_FILE', '')
+    @patch('django.conf.settings.BIGQUERY_INPUT_TABLE', 'google_map_clean')
+    def test_write_segmented_rows_batches_and_normalizes_timestamp(self):
+        service = self._make_service()
+        service.client = Mock()
+        rows = [
+            {'google_place_id': 'g1', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'created_at': '2026-03-26T10:11:12+00:00', 'process_id': 'p1'},
+            {'google_place_id': 'g2', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'created_at': '', 'process_id': 'p1'},
+        ]
+        service.write_segmented_rows('google_map_clean', rows, batch_size=1)
+        self.assertEqual(service.client.insert_rows_json.call_count, 2)
+        first_batch = service.client.insert_rows_json.call_args_list[0].args[1]
+        self.assertTrue(first_batch[0]['created_at'].endswith('Z'))

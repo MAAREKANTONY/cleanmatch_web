@@ -99,6 +99,7 @@ class AIReviewOptions:
     ai_review_sheet_name: str | None = None
     ai_review_mapping: dict[str, str] = field(default_factory=dict)
     low_confidence_threshold: float | None = None
+    min_confidence_threshold: float | None = None
     only_low_confidence: bool = True
     action_profile: str = AI_REVIEW_DEFAULT_ACTION_PROFILE
     llm_enabled: bool | None = None
@@ -375,7 +376,9 @@ class AIReviewService:
             'provider': '',
             'model': '',
             'result_json': {},
-        } if forced_out_of_scope else self._run_llm_guardrails(review_input, homepage_title=homepage_title, homepage_meta=homepage_meta, menu_excerpt=menu_excerpt, web_text=web_text_content)
+        }
+        if selected and not forced_out_of_scope:
+            llm_payload = self._run_llm_guardrails(review_input, homepage_title=homepage_title, homepage_meta=homepage_meta, menu_excerpt=menu_excerpt, web_text=web_text_content)
         llm_result = llm_payload.get('result_json', {}) or {}
         llm_result_source = str(llm_payload.get('result_source', '') or '')
         llm_structured_available = bool(llm_result) and llm_result_source in {'live', 'cache'}

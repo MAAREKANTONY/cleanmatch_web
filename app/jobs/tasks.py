@@ -332,6 +332,7 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         ai_review_sheet_name=None,
         ai_review_mapping=ai_review_mapping,
         low_confidence_threshold=low_conf_threshold,
+        min_confidence_threshold=min_conf_threshold,
         only_low_confidence=True,
         action_profile=(parameters.get('ai_review_action_profile') or 'standard'),
         llm_enabled=_parse_bool(parameters.get('ai_review_llm_enabled', False)),
