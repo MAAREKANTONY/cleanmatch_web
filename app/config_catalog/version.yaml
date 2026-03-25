@@ -1,5 +1,5 @@
-catalog_version: 1.1.1
+catalog_version: 1.1.2
 updated_at: '2026-03-26'
-display_label: Iteration 47 - Sprint 1.3
-summary: Base stable + version fiable + gating AI à deux seuils + compatibilité BigQuery DATETIME/TIMESTAMP.
-notes: Sprint 1.3 - correction insert BigQuery created_at selon le type réel de colonne (DATETIME ou TIMESTAMP) et conservation du gating AI optimisé.
+display_label: Iteration 47 - Sprint 2
+summary: Base stable + observabilité safe sans migration, logs structurés et métriques persistées dans parameters_json.
+notes: Sprint 2 safe - ajout du JobTracker, métriques RULES/AI/BQ_WRITE et résumé d'observabilité sans changement de schéma Django.

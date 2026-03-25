@@ -10,7 +10,7 @@ from django.core.files.base import ContentFile
 from django.conf import settings
 
 from jobs.models import Job
-from jobs.services import JobCancelledError, JobService
+from jobs.services import JobCancelledError, JobService, JobTracker
 from normalizer.services.normalizer_service import NormalizerOptions, NormalizerService
 from matcher.services.matcher_service import MatcherOptions, MatcherService
 from geocoder.services.geocoder_service import GeocoderOptions, GeocoderService
@@ -297,6 +297,7 @@ def _run_marketsegmenter_job(job: Job):
 
 
 def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log):
+    tracker = JobTracker(job)
     bq = BigQueryService()
     table_name = str(parameters.get('marketsegmenter_bq_table_name') or settings.BIGQUERY_INPUT_TABLE)
     output_table_name = str(parameters.get('marketsegmenter_bq_output_table_name') or settings.BIGQUERY_OUTPUT_TABLE)
@@ -310,12 +311,18 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     ai_csv = job_root / f'{table_name}_ai_review.csv'
     final_csv = job_root / f'{table_name}_segmented_simple.csv'
 
+    tracker.step('INIT', 'Initialisation du job BigQuery')
+    tracker.log(f'[JOB] Step=INIT | source={table_name} | output={output_table_name} | country_code={country_code or 'ALL'}')
     progress(5, 'Lecture BigQuery source')
+    tracker.step('BQ_READ', 'Lecture BigQuery source')
     log(f'🧾 Source BigQuery: {table_name} | filtre country_code={country_code or "ALL"}')
     source_path, source_headers, row_count = bq.export_table_to_csv(table_name=table_name, output_path=source_csv, country_code=country_code)
+    tracker.set_metric('total_rows', row_count)
+    tracker.log(f'[JOB] Step=BQ_READ | rows={row_count} | file={source_path.name}')
     log(f'📥 {row_count} ligne(s) exportées depuis BigQuery dans {source_path.name}')
 
     progress(20, 'Segmentation règles / keywords')
+    tracker.step('RULES', 'Segmentation règles / keywords')
     ms_service = MarketSegmenterService(progress_callback=progress, log_callback=log)
     ms_options = MarketSegmenterOptions(
         marketsegmenter_sheet_name=None,
@@ -323,8 +330,18 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         country_default=parameters.get('marketsegmenter_country_default') or country_code,
     )
     ms_service.run(input_path=source_path, output_path=first_csv, options=ms_options)
+    rules_metrics = _compute_rules_gating_metrics(first_csv, low_conf_threshold, min_conf_threshold)
+    for key, value in rules_metrics.items():
+        tracker.set_metric(key, value)
+    tracker.log('[JOB] Step=RULES | total={total} | high={high} | ai={mid} | out={low}'.format(
+        total=rules_metrics.get('total_rows', 0),
+        high=rules_metrics.get('rules_high_confidence', 0),
+        mid=rules_metrics.get('rules_low_confidence_ai', 0),
+        low=rules_metrics.get('rules_very_low_out_of_scope', 0),
+    ))
 
     progress(55, 'AI Review ciblée sur lignes à faible confiance')
+    tracker.step('AI_REVIEW', 'AI Review ciblée sur lignes à faible confiance')
     ai_service = AIReviewService(progress_callback=progress, log_callback=log)
     ai_review_mapping = dict(parameters.get('ai_review_mapping') or {})
     ai_review_mapping.pop('segmentation_confidence', None)
@@ -343,12 +360,28 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         llm_max_calls_per_row=int(parameters.get('ai_review_llm_max_calls_per_row') or 1),
     )
     ai_service.run(input_path=first_csv, output_path=ai_csv, options=ai_options)
+    ai_metrics = _compute_ai_review_metrics(ai_csv, low_conf_threshold, min_conf_threshold)
+    for key, value in ai_metrics.items():
+        tracker.set_metric(key, value)
+    tracker.log('[JOB] Step=AI_REVIEW | selected={selected} | llm_calls={llm_calls} | llm_success={llm_success} | llm_failed={llm_failed}'.format(
+        selected=ai_metrics.get('rules_low_confidence_ai', 0),
+        llm_calls=ai_metrics.get('llm_calls', 0),
+        llm_success=ai_metrics.get('llm_success', 0),
+        llm_failed=ai_metrics.get('llm_failed', 0),
+    ))
 
     progress(82, 'Consolidation résultat simple + écriture BigQuery')
-    simple_rows, bq_rows = _consolidate_marketsegmenter_ai_results(ai_csv, final_csv, str(job.id), low_conf_threshold, min_conf_threshold, progress, log)
+    tracker.step('CONSOLIDATION', 'Consolidation résultat simple + écriture BigQuery')
+    simple_rows, bq_rows, consolidation_metrics = _consolidate_marketsegmenter_ai_results(ai_csv, final_csv, str(job.id), low_conf_threshold, min_conf_threshold, progress, log)
+    for key, value in consolidation_metrics.items():
+        tracker.set_metric(key, value)
+    tracker.step('BQ_WRITE', 'Écriture BigQuery du résultat final')
     inserted = bq.write_segmented_rows(output_table_name, bq_rows)
+    tracker.set_metric('rows_written', inserted)
+    tracker.log(f'[JOB] Step=BQ_WRITE | written={inserted} | table={output_table_name}')
     log(f'📤 {inserted} ligne(s) écrites dans BigQuery table {output_table_name}')
 
+    tracker.step('DONE', 'Résumé et finalisation du job')
     summary = {
         'job_id': str(job.id),
         'source_mode': 'bigquery',
@@ -360,6 +393,7 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         'output_csv': final_csv.name,
         'low_confidence_threshold': low_conf_threshold,
         'min_confidence_threshold': min_conf_threshold,
+        'observability': tracker.snapshot(),
     }
     final_csv.with_name(final_csv.stem + '_summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
 
@@ -380,6 +414,14 @@ def _split_segment_path(raw_value: str) -> list[str]:
 def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: Path, process_id: str, low_conf_threshold: float, min_conf_threshold: float, progress, log):
     simple_rows: list[dict[str, str]] = []
     bq_rows: list[dict[str, object]] = []
+    metrics = {
+        'consolidated_rules_confident': 0,
+        'consolidated_llm': 0,
+        'consolidated_out_of_scope': 0,
+        'consolidated_rules_fallback': 0,
+        'consolidated_ai_fallback': 0,
+        'consolidated_none': 0,
+    }
     with ai_csv_path.open('r', encoding='utf-8-sig', newline='') as fh:
         reader = csv.DictReader(fh, delimiter=';')
         for idx, row in enumerate(reader, start=1):
@@ -402,21 +444,27 @@ def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: P
             if rules_conf <= min_conf_threshold:
                 final_segments = ['hors cible', '', '', '']
                 final_source = 'rules_below_min_threshold'
+                metrics['consolidated_out_of_scope'] += 1
             elif ai_selected and ai_segments and ai_source.startswith('llm_'):
                 final_segments = (ai_segments + ['', '', '', ''])[:4]
                 final_source = ai_source
+                metrics['consolidated_llm'] += 1
             elif not ai_selected and rules_conf >= low_conf_threshold and rules_has_segments:
                 final_segments = rules_segments
                 final_source = 'rules_confident'
+                metrics['consolidated_rules_confident'] += 1
             elif ai_segments and ai_source != 'rules_initial':
                 final_segments = (ai_segments + ['', '', '', ''])[:4]
                 final_source = ai_source or 'ai_fallback'
+                metrics['consolidated_ai_fallback'] += 1
             elif rules_has_segments:
                 final_segments = rules_segments
                 final_source = 'rules_fallback'
+                metrics['consolidated_rules_fallback'] += 1
             else:
                 final_segments = ['', '', '', '']
                 final_source = 'none'
+                metrics['consolidated_none'] += 1
 
             simple_row = {
                 'google_place_id': google_place_id,
@@ -434,9 +482,61 @@ def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: P
         writer = csv.DictWriter(fh, fieldnames=['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3'], delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL, lineterminator='\n')
         writer.writeheader()
         writer.writerows(simple_rows)
+    metrics['result_rows'] = len(simple_rows)
     log(f'🧩 Consolidation finale terminée : {len(simple_rows)} ligne(s), seuil haut={low_conf_threshold}, seuil min={min_conf_threshold}')
-    return simple_rows, bq_rows
+    return simple_rows, bq_rows, metrics
 
+
+
+def _compute_rules_gating_metrics(csv_path: Path, low_conf_threshold: float, min_conf_threshold: float) -> dict[str, int]:
+    metrics = {
+        'total_rows': 0,
+        'rules_high_confidence': 0,
+        'rules_low_confidence_ai': 0,
+        'rules_very_low_out_of_scope': 0,
+        'rules_unclassified': 0,
+    }
+    with csv_path.open('r', encoding='utf-8-sig', newline='') as fh:
+        reader = csv.DictReader(fh, delimiter=';')
+        for row in reader:
+            metrics['total_rows'] += 1
+            try:
+                conf = float(str(row.get('segmentation_confidence') or '').replace(',', '.'))
+            except Exception:
+                conf = 0.0
+            if conf >= low_conf_threshold:
+                metrics['rules_high_confidence'] += 1
+            elif conf <= min_conf_threshold:
+                metrics['rules_very_low_out_of_scope'] += 1
+            else:
+                metrics['rules_low_confidence_ai'] += 1
+    metrics['rules_unclassified'] = metrics['total_rows'] - (
+        metrics['rules_high_confidence'] + metrics['rules_low_confidence_ai'] + metrics['rules_very_low_out_of_scope']
+    )
+    return metrics
+
+
+def _compute_ai_review_metrics(csv_path: Path, low_conf_threshold: float, min_conf_threshold: float) -> dict[str, int]:
+    metrics = {
+        'llm_calls': 0,
+        'llm_success': 0,
+        'llm_failed': 0,
+        'ai_selected_yes': 0,
+    }
+    with csv_path.open('r', encoding='utf-8-sig', newline='') as fh:
+        reader = csv.DictReader(fh, delimiter=';')
+        for row in reader:
+            selected = (row.get('ai_selected_for_review') or '').strip().lower() == 'yes'
+            if selected:
+                metrics['ai_selected_yes'] += 1
+            source = (row.get('ai_segment_source') or '').strip().lower()
+            if source.startswith('llm_'):
+                metrics['llm_calls'] += 1
+                if 'error' in source or 'failed' in source:
+                    metrics['llm_failed'] += 1
+                else:
+                    metrics['llm_success'] += 1
+    return metrics
 
 
 def _run_ai_review_job(job: Job):

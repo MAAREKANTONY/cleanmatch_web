@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from shutil import disk_usage
 from typing import Iterable
 
@@ -24,6 +25,63 @@ class DiskSpaceStatus:
     @property
     def has_enough_space(self) -> bool:
         return self.free_bytes >= self.threshold_bytes
+
+
+
+
+class JobTracker:
+    OBS_KEY = "_observability"
+
+    def __init__(self, job: Job):
+        self.job = job
+
+    def _load(self) -> dict:
+        payload = dict(self.job.parameters_json or {})
+        obs = dict(payload.get(self.OBS_KEY) or {})
+        obs.setdefault('current_step', '')
+        obs.setdefault('metrics', {})
+        payload[self.OBS_KEY] = obs
+        return payload
+
+    def _save(self, payload: dict, update_fields: list[str] | None = None) -> None:
+        self.job.parameters_json = payload
+        self.job.beat()
+        fields = ['parameters_json', 'last_heartbeat']
+        if update_fields:
+            fields.extend(update_fields)
+        self.job.save(update_fields=list(dict.fromkeys(fields)))
+
+    def step(self, name: str, message: str | None = None) -> None:
+        payload = self._load()
+        payload[self.OBS_KEY]['current_step'] = name
+        if message:
+            self.job.progress_message = message
+            self.job.append_log(f"[{timezone.now().isoformat()}] [JOB] Step={name} | {message}")
+            self._save(payload, ['progress_message', 'log_text'])
+        else:
+            self._save(payload)
+
+    def set_metric(self, key: str, value) -> None:
+        payload = self._load()
+        payload[self.OBS_KEY]['metrics'][key] = value
+        self._save(payload)
+
+    def incr(self, key: str, value: int = 1) -> None:
+        payload = self._load()
+        metrics = payload[self.OBS_KEY]['metrics']
+        metrics[key] = int(metrics.get(key) or 0) + int(value)
+        self._save(payload)
+
+    def log(self, message: str) -> None:
+        JobService.append_runtime_log(self.job, message)
+
+    def progress(self, percent: int, message: str) -> None:
+        JobService.update_progress(self.job, percent, message)
+
+    def snapshot(self) -> dict:
+        payload = dict(self.job.parameters_json or {})
+        obs = dict(payload.get(self.OBS_KEY) or {})
+        return {'current_step': obs.get('current_step') or '', 'metrics': dict(obs.get('metrics') or {})}
 
 
 class JobService:
