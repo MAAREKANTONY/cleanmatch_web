@@ -55,7 +55,6 @@ AI_REVIEW_OUTPUT_FIELDS = [
     'ai_llm_provider', 'ai_llm_model', 'ai_llm_result_json', 'ai_llm_raw_excerpt',
 ]
 AI_THRESHOLD_LOW_CONFIDENCE = float(_AI_THRESHOLDS.get('low_confidence_threshold', 0.65))
-AI_SKIP_IF_CONFIDENCE_ABOVE = float(_AI_THRESHOLDS.get('skip_if_confidence_above', 0.80))
 AI_MAX_SOCIAL_LINKS = int(_AI_BUDGET.get('max_social_links', 3))
 AI_MAX_PHOTO_LINKS = int(_AI_BUDGET.get('max_photo_links', 3))
 AI_MAX_PAGES_PER_OUTLET = int(_AI_BUDGET.get('max_pages_per_outlet', 2))
@@ -294,8 +293,54 @@ class AIReviewService:
     def _build_feature_extraction_result(self, review_input: AIReviewInput, threshold: float, only_low_confidence: bool) -> AIReviewResult:
         raw_conf = review_input.segmentation_confidence
         selected = True
-        if raw_conf is not None and only_low_confidence and raw_conf >= max(threshold, AI_SKIP_IF_CONFIDENCE_ABOVE):
+        if raw_conf is not None and only_low_confidence and raw_conf >= threshold:
             selected = False
+
+        if not selected:
+            initial_segments = [segment for segment in review_input.initial_segments if str(segment).strip()]
+            return AIReviewResult(
+                ai_review_status='skipped',
+                ai_confidence=f'{float(raw_conf):.3f}' if raw_conf not in (None, '') else '',
+                ai_segment_suggested=' > '.join(initial_segments),
+                ai_segment_source='rules_initial',
+                ai_sources_used='',
+                ai_evidence_summary=f"skipped_high_confidence(threshold={threshold:.3f}, confidence={float(raw_conf):.3f})" if raw_conf not in (None, '') else f"skipped_high_confidence(threshold={threshold:.3f})",
+                ai_requires_human_review='no',
+                ai_input_pack_summary=self._build_input_pack_summary(review_input),
+                ai_selected_for_review='no',
+                ai_detected_service_mode='',
+                ai_detected_cuisine='',
+                ai_detected_keywords='',
+                ai_detected_signals_json=json.dumps({'segment_source': 'rules_initial', 'skip_reason': 'high_confidence_threshold'}, ensure_ascii=False, sort_keys=True),
+                ai_keyword_service_mode_candidates='',
+                ai_keyword_cuisine_candidates='',
+                ai_keyword_signals_json=json.dumps({'service_mode': [], 'cuisine': [], 'signals': []}, ensure_ascii=False, sort_keys=True),
+                ai_source_count='0',
+                ai_web_fetch_status='skipped_high_confidence',
+                ai_sources_fetched='',
+                ai_web_text_content='',
+                ai_menu_text_excerpt='',
+                ai_homepage_title='',
+                ai_homepage_meta_description='',
+                ai_action_profile=review_input.profile_name,
+                ai_enabled_capabilities=' | '.join(review_input.enabled_capabilities),
+                ai_capability_field_usage=json.dumps({}, ensure_ascii=False, sort_keys=True),
+                ai_llm_status='skipped_high_confidence',
+                ai_llm_reason='confidence_above_job_threshold',
+                ai_llm_configured='yes' if bool(getattr(self.llm_client, 'enabled', AI_LLM_ENABLED)) else 'no',
+                ai_llm_live_ready='yes' if bool(getattr(self.llm_client, 'live_ready', False)) else 'no',
+                ai_llm_attempted='no',
+                ai_llm_result_source='skipped_high_confidence',
+                ai_llm_cost_estimated_eur='0',
+                ai_llm_cost_actual_eur='0',
+                ai_llm_budget_remaining_eur=f"{self.budget_manager.remaining_budget():.6f}" if self.budget_manager else '',
+                ai_llm_cache_hit='no',
+                ai_llm_calls_used='0',
+                ai_llm_provider=str(getattr(self.llm_client, 'provider', '')),
+                ai_llm_model=str(getattr(self.llm_client, 'model', '')),
+                ai_llm_result_json='',
+                ai_llm_raw_excerpt='',
+            )
 
         detected_service_mode = self._scan_keywords(review_input, SERVICE_MODE_KEYWORDS, review_input.enabled_capabilities)
         detected_cuisine = self._scan_keywords(review_input, CUISINE_KEYWORDS, review_input.enabled_capabilities)
