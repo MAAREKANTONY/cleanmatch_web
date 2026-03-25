@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Tuple
+import uuid
 
 from django.conf import settings
 
@@ -141,24 +142,96 @@ class BigQueryService:
                 writer.writeheader()
         return output_path, headers, count
 
-    def write_segmented_rows(self, table_name: str | None, rows: list[dict[str, object]]) -> int:
+
+    def ensure_source_readable(self, table_name: str | None, country_code: str = '') -> dict[str, object]:
+        ref = self.table_ref(table_name)
+        table = self.client.get_table(ref.full_name)
+        columns = [field.name for field in table.schema]
+        self._schema_cache[ref.full_name] = columns
+        sql, job_config = self.build_select_query(table_name=ref.table_name, country_code=country_code, limit=1)
+        list(self.client.query(sql, job_config=job_config, location=self.location).result(max_results=1))
+        return {
+            'table': ref.full_name,
+            'columns': columns,
+        }
+
+    def ensure_output_writable(self, table_name: str | None) -> dict[str, object]:
         ref = self.table_ref(table_name or settings.BIGQUERY_OUTPUT_TABLE)
         table_id = ref.full_name
+        dataset_ref = bigquery.DatasetReference(ref.project_id, ref.dataset)
+        self.client.get_dataset(dataset_ref)
+        try:
+            table = self.client.get_table(table_id)
+            return {
+                'table': table_id,
+                'created': False,
+                'exists': True,
+                'schema_types': {field.name: field.field_type for field in getattr(table, 'schema', [])},
+            }
+        except Exception as exc:
+            if getattr(exc, 'code', None) not in {404, '404'}:
+                raise
+
         schema = [
             bigquery.SchemaField('google_place_id', 'STRING', mode='REQUIRED'),
             bigquery.SchemaField('market_segment_type0', 'STRING'),
             bigquery.SchemaField('market_segment_type1', 'STRING'),
             bigquery.SchemaField('market_segment_type2', 'STRING'),
             bigquery.SchemaField('market_segment_type3', 'STRING'),
-            bigquery.SchemaField('created_at', 'TIMESTAMP', mode='REQUIRED'),
+            bigquery.SchemaField('created_at', 'DATETIME', mode='REQUIRED'),
             bigquery.SchemaField('process_id', 'STRING', mode='REQUIRED'),
         ]
         table = bigquery.Table(table_id, schema=schema)
-        self.client.create_table(table, exists_ok=True)
-        errors = self.client.insert_rows_json(table_id, rows)
+        created_table = self.client.create_table(table, exists_ok=True)
+        return {
+            'table': table_id,
+            'created': True,
+            'exists': False,
+            'schema_types': {field.name: field.field_type for field in getattr(created_table, 'schema', schema)},
+        }
+
+    def write_segmented_rows(self, table_name: str | None, rows: list[dict[str, object]]) -> int:
+        access = self.ensure_output_writable(table_name)
+        table_id = access['table']
+        normalized_rows = self._normalize_rows_for_schema(rows, access.get('schema_types') or {})
+        errors = self.client.insert_rows_json(table_id, normalized_rows)
         if errors:
             raise RuntimeError(f'Échec écriture BigQuery vers {table_id}: {errors[:3]}')
-        return len(rows)
+        return len(normalized_rows)
+
+
+    @staticmethod
+    def _normalize_rows_for_schema(rows: list[dict[str, object]], schema_types: dict[str, str]) -> list[dict[str, object]]:
+        if not rows:
+            return rows
+        normalized: list[dict[str, object]] = []
+        for row in rows:
+            current = dict(row)
+            if 'created_at' in current:
+                current['created_at'] = BigQueryService._normalize_datetime_value(
+                    current['created_at'],
+                    (schema_types.get('created_at') or 'DATETIME').upper(),
+                )
+            normalized.append(current)
+        return normalized
+
+    @staticmethod
+    def _normalize_datetime_value(value: object, field_type: str) -> str:
+        dt: datetime
+        if isinstance(value, datetime):
+            dt = value
+        else:
+            raw = str(value or '').strip()
+            if not raw:
+                dt = datetime.now(timezone.utc)
+            else:
+                raw = raw.replace('Z', '+00:00')
+                dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if field_type == 'TIMESTAMP':
+            return dt.astimezone(timezone.utc).isoformat()
+        return dt.astimezone(timezone.utc).replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S.%f')
 
     @staticmethod
     def build_segmented_row(*, google_place_id: str, segments: list[str], process_id: str) -> dict[str, object]:
@@ -169,7 +242,7 @@ class BigQueryService:
             'market_segment_type1': parts[1],
             'market_segment_type2': parts[2],
             'market_segment_type3': parts[3],
-            'created_at': datetime.now(timezone.utc).isoformat(),
+            'created_at': datetime.now(timezone.utc),
             'process_id': str(process_id),
         }
 

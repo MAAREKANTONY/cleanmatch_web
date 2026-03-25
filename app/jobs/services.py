@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from shutil import disk_usage
 from typing import Iterable
+import signal
 
 from celery import current_app
 from django.conf import settings
@@ -27,6 +28,41 @@ class DiskSpaceStatus:
 
 
 class JobService:
+    @staticmethod
+    def _celery_inspect_payload(method_name: str):
+        try:
+            inspect = current_app.control.inspect(timeout=1.0)
+            method = getattr(inspect, method_name, None)
+            if method is None:
+                return {}
+            return method() or {}
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _task_ids_from_inspect_payload(payload: dict, method_name: str) -> set[str]:
+        task_ids: set[str] = set()
+        for tasks in (payload or {}).values():
+            for item in tasks or []:
+                if not isinstance(item, dict):
+                    continue
+                if method_name == 'scheduled':
+                    request = item.get('request') or {}
+                    task_id = request.get('id')
+                else:
+                    task_id = item.get('id')
+                if task_id:
+                    task_ids.add(str(task_id))
+        return task_ids
+
+    @staticmethod
+    def celery_known_task_ids() -> set[str]:
+        task_ids: set[str] = set()
+        for method_name in ('active', 'reserved', 'scheduled'):
+            payload = JobService._celery_inspect_payload(method_name)
+            task_ids |= JobService._task_ids_from_inspect_payload(payload, method_name)
+        return task_ids
+
     @staticmethod
     def mark_queued(job: Job, celery_task_id: str = '') -> Job:
         job.status = Job.Status.QUEUED
@@ -112,7 +148,11 @@ class JobService:
         job.append_log(f"[{timezone.now().isoformat()}] CANCEL_REQUESTED: {job.cancellation_reason}")
         job.save(update_fields=['cancellation_requested', 'cancellation_reason', 'cancelled_at', 'last_heartbeat', 'log_text'])
         if job.celery_task_id:
-            current_app.control.revoke(job.celery_task_id, terminate=False)
+            terminate = job.status == Job.Status.RUNNING
+            revoke_kwargs = {'terminate': terminate}
+            if terminate:
+                revoke_kwargs['signal'] = getattr(signal, 'SIGTERM', None) or 'SIGTERM'
+            current_app.control.revoke(job.celery_task_id, **revoke_kwargs)
         if job.status in {Job.Status.PENDING, Job.Status.QUEUED}:
             return JobService.mark_cancelled(job, job.cancellation_reason)
         return job
@@ -156,9 +196,14 @@ class JobService:
         now = timezone.now()
         running_timeout = getattr(settings, 'JOB_STALE_RUNNING_MINUTES', 30)
         queued_timeout = getattr(settings, 'JOB_STALE_QUEUED_MINUTES', 60)
+        orphan_running_timeout = getattr(settings, 'JOB_ORPHANED_RUNNING_MINUTES', 5)
+        orphan_queued_timeout = getattr(settings, 'JOB_ORPHANED_QUEUED_MINUTES', 10)
         running_cutoff = now - timezone.timedelta(minutes=running_timeout)
         queued_cutoff = now - timezone.timedelta(minutes=queued_timeout)
+        orphan_running_cutoff = now - timezone.timedelta(minutes=orphan_running_timeout)
+        orphan_queued_cutoff = now - timezone.timedelta(minutes=orphan_queued_timeout)
 
+        known_task_ids = JobService.celery_known_task_ids()
         stale_jobs: Iterable[Job] = Job.objects.filter(
             Q(status=Job.Status.RUNNING, last_heartbeat__lt=running_cutoff) |
             Q(status=Job.Status.QUEUED, created_at__lt=queued_cutoff, last_heartbeat__lt=queued_cutoff)
@@ -168,6 +213,26 @@ class JobService:
             reason = (
                 f"Job auto-fail: heartbeat expiré. Dernier heartbeat: {job.last_heartbeat or 'jamais'}"
             )
+            JobService.mark_failed(job, reason)
+            updated.append(str(job.id))
+
+        orphaned_jobs = Job.objects.filter(status__in=[Job.Status.RUNNING, Job.Status.QUEUED]).exclude(celery_task_id='')
+        for job in orphaned_jobs:
+            if str(job.id) in updated:
+                continue
+            task_id = (job.celery_task_id or '').strip()
+            if not task_id or task_id in known_task_ids:
+                continue
+            reference_time = job.last_heartbeat or job.started_at or job.created_at
+            if job.status == Job.Status.RUNNING:
+                cutoff = orphan_running_cutoff
+                reason_prefix = 'Job auto-fail: task Celery introuvable pour un job running'
+            else:
+                cutoff = orphan_queued_cutoff
+                reason_prefix = 'Job auto-fail: task Celery introuvable pour un job queued'
+            if reference_time and reference_time > cutoff:
+                continue
+            reason = f"{reason_prefix}. celery_task_id={task_id}"
             JobService.mark_failed(job, reason)
             updated.append(str(job.id))
         return updated

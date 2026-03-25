@@ -54,6 +54,10 @@ def _parse_bool(value) -> bool:
 @shared_task(bind=True)
 def run_uploaded_job(self, job_id: str):
     job = Job.objects.get(id=job_id)
+    current_task_id = str(getattr(getattr(self, 'request', None), 'id', '') or '')
+    if current_task_id and job.celery_task_id != current_task_id:
+        job.celery_task_id = current_task_id
+        job.save(update_fields=['celery_task_id'])
     input_path = job.input_file_1.path if job.input_file_1 else ''
     second_input_path = job.input_file_2.path if job.input_file_2 else ''
 
@@ -309,8 +313,17 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     ai_csv = job_root / f'{table_name}_ai_review.csv'
     final_csv = job_root / f'{table_name}_segmented_simple.csv'
 
-    progress(5, 'Lecture BigQuery source')
+    progress(3, 'Préflight BigQuery source + sortie')
     log(f'🧾 Source BigQuery: {table_name} | filtre country_code={country_code or "ALL"}')
+    source_access = bq.ensure_source_readable(table_name=table_name, country_code=country_code)
+    log(f"✅ Accès lecture BigQuery validé sur {source_access['table']}")
+    output_access = bq.ensure_output_writable(output_table_name)
+    if output_access.get('created'):
+        log(f"✅ Table BigQuery de sortie créée avant traitement : {output_access['table']}")
+    else:
+        log(f"✅ Accès écriture BigQuery validé sur {output_access['table']}")
+
+    progress(5, 'Lecture BigQuery source')
     source_path, source_headers, row_count = bq.export_table_to_csv(table_name=table_name, output_path=source_csv, country_code=country_code)
     log(f'📥 {row_count} ligne(s) exportées depuis BigQuery dans {source_path.name}')
 
@@ -344,8 +357,6 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
 
     progress(82, 'Consolidation résultat simple + écriture BigQuery')
     simple_rows, bq_rows = _consolidate_marketsegmenter_ai_results(ai_csv, final_csv, str(job.id), low_conf_threshold, progress, log)
-    inserted = bq.write_segmented_rows(output_table_name, bq_rows)
-    log(f'📤 {inserted} ligne(s) écrites dans BigQuery table {output_table_name}')
 
     summary = {
         'job_id': str(job.id),
@@ -358,12 +369,32 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         'output_csv': final_csv.name,
         'low_confidence_threshold': low_conf_threshold,
     }
+    try:
+        inserted = bq.write_segmented_rows(output_table_name, bq_rows)
+        log(f'📤 {inserted} ligne(s) écrites dans BigQuery table {output_table_name}')
+        summary['bigquery_write_status'] = 'success'
+        summary['bigquery_rows_inserted'] = inserted
+        success_message = 'Market segmenter BigQuery + AI terminé avec succès'
+        final_error = None
+    except Exception as exc:
+        log(f'⚠️ Persistance BigQuery échouée après calcul : {exc}')
+        summary['bigquery_write_status'] = 'failed'
+        summary['bigquery_error'] = str(exc)
+        success_message = None
+        final_error = (
+            'Segmentation terminée, fichier résultat disponible, mais écriture BigQuery impossible : '
+            f'{exc}'
+        )
+
     final_csv.with_name(final_csv.stem + '_summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
 
     job.refresh_from_db(); JobService.enforce_not_cancelled(job)
     with final_csv.open('rb') as fh:
         job.output_file.save(final_csv.name, File(fh), save=False)
-    JobService.mark_success(job, message='Market segmenter BigQuery + AI terminé avec succès')
+    if final_error:
+        JobService.mark_failed(job, error_message=final_error)
+    else:
+        JobService.mark_success(job, message=success_message)
     return str(job.id)
 
 
