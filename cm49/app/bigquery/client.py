@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from itertools import islice
 from pathlib import Path
-from typing import Iterable, Tuple
+from typing import Callable, Iterable, Iterator, Tuple
 import uuid
 
 from django.conf import settings
@@ -70,6 +70,10 @@ class BigQueryService:
             self._schema_cache[cache_key] = [field.name for field in table.schema]
         return self._schema_cache[cache_key]
 
+    def _count_query_sql(self, table_name: str | None, country_code: str = '') -> tuple[str, bigquery.QueryJobConfig]:
+        sql, job_config = self.build_select_query(table_name=table_name, country_code=country_code, limit=None)
+        return f"SELECT COUNT(1) AS row_count FROM ({sql})", job_config
+
     def build_select_query(self, table_name: str | None, country_code: str = '', limit: int | None = None) -> Tuple[str, bigquery.QueryJobConfig]:
         ref = self.table_ref(table_name)
         sql = f"SELECT * FROM `{ref.full_name}`"
@@ -114,18 +118,95 @@ class BigQueryService:
             }],
         }
 
-    def iter_rows(self, table_name: str | None, country_code: str = '', limit: int | None = None) -> Iterable[dict[str, object]]:
-        sql, job_config = self.build_select_query(table_name=table_name, country_code=country_code, limit=limit)
-        page_size = max(1, int(getattr(settings, 'BIGQUERY_EXPORT_PAGE_SIZE', 1000) or 1000))
-        result = self.client.query(sql, job_config=job_config, location=self.location).result(page_size=page_size)
-        for row in result:
-            yield dict(row.items())
+    def estimate_row_count(self, table_name: str | None, country_code: str = '') -> int | None:
+        ref = self.table_ref(table_name)
+        normalized_country = (country_code or '').strip().upper()
+        if not normalized_country:
+            table = self.client.get_table(ref.full_name)
+            return int(table.num_rows or 0)
+        try:
+            sql, job_config = self._count_query_sql(table_name=table_name, country_code=country_code)
+            row = next(iter(self.client.query(sql, job_config=job_config, location=self.location).result(max_results=1, timeout=max(60, int(getattr(settings, 'BIGQUERY_QUERY_TIMEOUT_SECONDS', 1800) or 1800)))), None)
+            if row is None:
+                return 0
+            return int(row.get('row_count') if isinstance(row, dict) else row[0])
+        except Exception:
+            return None
 
-    def export_table_to_csv(self, table_name: str | None, output_path: Path, country_code: str = '') -> tuple[Path, list[str], int]:
+    def iter_rows(self, table_name: str | None, country_code: str = '', limit: int | None = None) -> Iterable[dict[str, object]]:
+        page_size = max(1, int(getattr(settings, 'BIGQUERY_EXPORT_PAGE_SIZE', 1000) or 1000))
+        yield from self.iter_rows_streaming(table_name=table_name, country_code=country_code, limit=limit, page_size=page_size)
+
+    def iter_rows_streaming(
+        self,
+        table_name: str | None,
+        country_code: str = '',
+        limit: int | None = None,
+        page_size: int | None = None,
+        progress_callback: Callable[[int], None] | None = None,
+        log_callback: Callable[[str], None] | None = None,
+    ) -> Iterator[dict[str, object]]:
+        ref = self.table_ref(table_name)
+        page_size = max(1, int(page_size or getattr(settings, 'BIGQUERY_EXPORT_PAGE_SIZE', 1000) or 1000))
+        use_direct_read = not (country_code or '').strip() and limit is None
+        processed = 0
+        progress_log_every = max(1, int(getattr(settings, 'BIGQUERY_PROGRESS_LOG_EVERY', 5000) or 5000))
+
+        def emit_progress() -> None:
+            if progress_callback:
+                progress_callback(processed)
+            if log_callback and (processed == 1 or processed % progress_log_every == 0):
+                log_callback(f'📥 Lecture BigQuery en cours : {processed} ligne(s) déjà lues')
+
+        if use_direct_read:
+            if log_callback:
+                log_callback(f'📡 Lecture BigQuery directe tabledata.list sur {ref.full_name} (page_size={page_size})')
+            table = self.client.get_table(ref.full_name)
+            self._schema_cache[ref.full_name] = [field.name for field in table.schema]
+            row_iter = self.client.list_rows(table, page_size=page_size)
+            for page in row_iter.pages:
+                for row in page:
+                    processed += 1
+                    emit_progress()
+                    yield dict(row.items())
+            return
+
+        sql, job_config = self.build_select_query(table_name=table_name, country_code=country_code, limit=limit)
+        if log_callback:
+            log_callback(f'📡 Requête BigQuery soumise (page_size={page_size}) sur {ref.full_name}')
+        query_job = self.client.query(sql, job_config=job_config, location=self.location)
+        if log_callback:
+            log_callback(f'🧮 BigQuery job_id={query_job.job_id} soumis, attente du premier lot…')
+        result = query_job.result(page_size=page_size, timeout=max(60, int(getattr(settings, 'BIGQUERY_QUERY_TIMEOUT_SECONDS', 1800) or 1800)))
+        for page_idx, page in enumerate(result.pages, start=1):
+            page_rows = 0
+            for row in page:
+                processed += 1
+                page_rows += 1
+                emit_progress()
+                yield dict(row.items())
+            if log_callback and page_rows:
+                log_callback(f'📄 Page BigQuery {page_idx} reçue ({page_rows} lignes, cumul={processed})')
+
+    def export_table_to_csv(
+        self,
+        table_name: str | None,
+        output_path: Path,
+        country_code: str = '',
+        progress_callback: Callable[[int], None] | None = None,
+        log_callback: Callable[[str], None] | None = None,
+    ) -> tuple[Path, list[str], int]:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        rows = self.iter_rows(table_name, country_code=country_code, limit=None)
         count = 0
         headers: list[str] = []
+        rows = self.iter_rows_streaming(
+            table_name=table_name,
+            country_code=country_code,
+            limit=None,
+            page_size=max(1, int(getattr(settings, 'BIGQUERY_EXPORT_PAGE_SIZE', 1000) or 1000)),
+            progress_callback=progress_callback,
+            log_callback=log_callback,
+        )
         with output_path.open('w', encoding='utf-8-sig', newline='') as fh:
             writer = None
             for row in rows:
@@ -144,14 +225,13 @@ class BigQueryService:
                 writer.writeheader()
         return output_path, headers, count
 
-
     def ensure_source_readable(self, table_name: str | None, country_code: str = '') -> dict[str, object]:
         ref = self.table_ref(table_name)
         table = self.client.get_table(ref.full_name)
         columns = [field.name for field in table.schema]
         self._schema_cache[ref.full_name] = columns
         sql, job_config = self.build_select_query(table_name=ref.table_name, country_code=country_code, limit=1)
-        list(self.client.query(sql, job_config=job_config, location=self.location).result(max_results=1))
+        list(self.client.query(sql, job_config=job_config, location=self.location).result(max_results=1, timeout=max(60, int(getattr(settings, 'BIGQUERY_QUERY_TIMEOUT_SECONDS', 1800) or 1800))))
         return {
             'table': ref.full_name,
             'columns': columns,
@@ -163,12 +243,11 @@ class BigQueryService:
         dataset_ref = bigquery.DatasetReference(ref.project_id, ref.dataset)
         self.client.get_dataset(dataset_ref)
         try:
-            table = self.client.get_table(table_id)
+            self.client.get_table(table_id)
             return {'table': table_id, 'created': False, 'exists': True}
         except Exception as exc:
             if getattr(exc, 'code', None) not in {404, '404'}:
                 raise
-
         schema = [
             bigquery.SchemaField('google_place_id', 'STRING', mode='REQUIRED'),
             bigquery.SchemaField('market_segment_type0', 'STRING'),
@@ -199,24 +278,19 @@ class BigQueryService:
         return len(rows)
 
     def write_segmented_rows_in_batches(self, table_name: str | None, rows: Iterable[dict[str, object]], batch_size: int | None = None) -> int:
-        access = self.ensure_output_writable(table_name)
-        table_id = access['table']
-        size = max(1, int(batch_size or getattr(settings, 'BIGQUERY_INSERT_BATCH_SIZE', 1000) or 1000))
-        total = 0
+        batch_size = max(1, int(batch_size or getattr(settings, 'BIGQUERY_INSERT_BATCH_SIZE', 1000) or 1000))
+        inserted = 0
         iterator = iter(rows)
         while True:
-            batch = list(islice(iterator, size))
-            if not batch:
+            chunk = list(islice(iterator, batch_size))
+            if not chunk:
                 break
-            errors = self.client.insert_rows_json(table_id, batch)
-            if errors:
-                raise RuntimeError(f'Échec écriture BigQuery vers {table_id}: {errors[:3]}')
-            total += len(batch)
-        return total
+            inserted += self.write_segmented_rows(table_name, chunk)
+        return inserted
 
     @staticmethod
-    def _format_created_at_for_mode(value: datetime, mode: str) -> str:
-        normalized_mode = (mode or 'DATETIME').upper()
+    def _format_created_at_for_mode(value: datetime, mode: str = 'DATETIME') -> str:
+        normalized_mode = str(mode or 'DATETIME').upper()
         aware_utc = value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
         if normalized_mode == 'TIMESTAMP':
             return aware_utc.isoformat()

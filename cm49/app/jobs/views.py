@@ -113,7 +113,6 @@ def create_job(request):
                     'marketsegmenter_mapping': form.get_marketsegmenter_mapping_payload(form.cleaned_data),
                     'ai_review_mapping': form.get_ai_review_mapping_payload(form.cleaned_data),
                     'ai_review_low_confidence_threshold': float(form.cleaned_data.get('ai_review_low_confidence_threshold') or 0.65),
-                    'ai_review_min_confidence_threshold': float(form.cleaned_data.get('ai_review_min_confidence_threshold') or 0.15),
                     'ai_review_action_profile': (form.cleaned_data.get('ai_review_action_profile') or 'standard').strip() or 'standard',
                     'ai_review_llm_enabled': bool(form.cleaned_data.get('ai_review_llm_enabled')),
                     'ai_review_llm_provider': str(form.cleaned_data.get('ai_review_llm_provider') or ''),
@@ -129,7 +128,6 @@ def create_job(request):
                 parameters.update({
                     'ai_review_sheet_name': (form.cleaned_data.get('ai_review_sheet_name') or '').strip() or None,
                     'ai_review_low_confidence_threshold': float(form.cleaned_data.get('ai_review_low_confidence_threshold') or 0.65),
-                    'ai_review_min_confidence_threshold': float(form.cleaned_data.get('ai_review_min_confidence_threshold') or 0.15),
                     'ai_review_action_profile': (form.cleaned_data.get('ai_review_action_profile') or 'standard').strip() or 'standard',
                     'ai_review_llm_enabled': bool(form.cleaned_data.get('ai_review_llm_enabled')),
                     'ai_review_llm_provider': str(form.cleaned_data.get('ai_review_llm_provider') or ''),

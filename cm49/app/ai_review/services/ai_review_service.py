@@ -98,7 +98,6 @@ class AIReviewOptions:
     ai_review_sheet_name: str | None = None
     ai_review_mapping: dict[str, str] = field(default_factory=dict)
     low_confidence_threshold: float | None = None
-    min_confidence_threshold: float | None = None
     only_low_confidence: bool = True
     action_profile: str = AI_REVIEW_DEFAULT_ACTION_PROFILE
     llm_enabled: bool | None = None
@@ -130,7 +129,6 @@ class AIReviewService:
 
     def run(self, input_path: Path, output_path: Path, options: AIReviewOptions) -> Path:
         threshold = options.low_confidence_threshold if options.low_confidence_threshold is not None else AI_THRESHOLD_LOW_CONFIDENCE
-        min_threshold = float(options.min_confidence_threshold) if options.min_confidence_threshold is not None else None
         output_path.parent.mkdir(parents=True, exist_ok=True)
         runtime_llm_enabled = AI_LLM_ENABLED if options.llm_enabled is None else bool(options.llm_enabled)
         runtime_llm_provider = str(options.llm_provider or AI_LLM_PROVIDER or 'openai_compatible_json')
@@ -160,12 +158,12 @@ class AIReviewService:
         self._llm_stats = {'calls_attempted': 0, 'calls_executed': 0, 'cache_hits': 0, 'budget_skips': 0, 'row_budget_skips': 0, 'max_call_skips': 0}
         self.mapping_service = CanonicalMappingService(options.ai_review_mapping)
         total = estimate_total_rows(input_path, options.ai_review_sheet_name) or 0
-        processed = selected = skipped = extracted = skipped_low_floor = 0
+        processed = selected = skipped = extracted = 0
         source_headers: list[str] | None = None
         canonical_headers: list[str] | None = None
 
         self.progress(5, 'Préparation du process AI review hardened')
-        self.log(f'[AI_REVIEW] Fenêtre AI active: ]{min_threshold if min_threshold is not None else '-inf'} ; {threshold:.2f}[ | profile={options.action_profile}')
+        self.log(f'[AI_REVIEW] Threshold bas confiance actif: {threshold:.2f} | profile={options.action_profile}')
         self.log(f'[AI_REVIEW] Guardrails LLM actifs: provider={runtime_llm_provider} model={runtime_llm_model} enabled={runtime_llm_enabled} budget={runtime_llm_max_budget_eur:.2f}€ row_max={runtime_llm_max_cost_per_row_eur:.4f}€ calls/row={runtime_llm_max_calls_per_row}')
         runtime_diag = self.llm_client.live_call_diagnostics()
         runtime_diag_json = json.dumps(runtime_diag, ensure_ascii=False)
@@ -186,28 +184,23 @@ class AIReviewService:
                 if not any(str(v).strip() for v in mapped.values()):
                     continue
                 review_input = self._build_review_input(mapped, options.action_profile)
-                result = self._build_feature_extraction_result(review_input, threshold, min_threshold, options.only_low_confidence)
+                result = self._build_feature_extraction_result(review_input, threshold, options.only_low_confidence)
                 out = {col: csv_safe(mapped.get(col, '')) for col in (canonical_headers or [])}
                 out.update({field: csv_safe(getattr(result, field, '')) for field in AI_REVIEW_OUTPUT_FIELDS})
                 writer.writerow(out)
                 processed += 1
                 selected += 1 if result.ai_selected_for_review == 'yes' else 0
                 skipped += 1 if result.ai_selected_for_review != 'yes' else 0
-                skipped_low_floor += 1 if getattr(result, 'ai_llm_reason', '') == 'confidence_below_ai_floor' else 0
                 extracted += 1 if result.ai_detected_service_mode or result.ai_detected_cuisine or result.ai_detected_keywords else 0
-                progress_every = max(1, int(getattr(__import__('django.conf').conf.settings, 'AI_REVIEW_PROGRESS_LOG_EVERY', 1000) or 1000))
-                if processed == 1 or processed % progress_every == 0 or (total and processed == total):
+                if processed == 1 or processed % 500 == 0 or (total and processed == total):
                     self.progress(min(96, 12 + int((processed / max(total, processed)) * 84)), f'AI review hardening en cours : {processed}/{total or "?"}')
-                    self.log(f'[AI_REVIEW] Progress {processed}/{total or "?"} | selected={selected} | skipped={skipped} | low_floor={skipped_low_floor} | llm_calls={self._llm_stats["calls_executed"]} | web_ok={self._web_fetch_stats["pages_ok"]}')
 
         summary = {
             'rows': int(processed),
             'selected_for_ai_review': int(selected),
-            'skipped_not_sent_to_ai': int(skipped),
-            'skipped_low_confidence_floor': int(skipped_low_floor),
+            'skipped_high_confidence': int(skipped),
             'feature_extraction_rows': int(extracted),
             'low_confidence_threshold': threshold,
-            'min_confidence_threshold': min_threshold,
             'only_low_confidence': bool(options.only_low_confidence),
             'foundation_mode': False,
             'feature_extraction_enabled': True,
@@ -230,7 +223,7 @@ class AIReviewService:
             'canonical_mapping_fields': AI_REVIEW_MAPPING_FIELDS,
         }
         output_path.with_name(output_path.stem + '_summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
-        self.log(f"[AI_REVIEW] {selected} / {processed} lignes envoyées en review, skipped={skipped}, low_floor={skipped_low_floor}, extraction locale sur {extracted} ligne(s), web_fetch_ok={self._web_fetch_stats['pages_ok']}, llm_calls={self._llm_stats['calls_executed']}, llm_spend={self.budget_manager.current_spend_eur if self.budget_manager else 0.0:.4f}€")
+        self.log(f"[AI_REVIEW] {selected} / {processed} lignes envoyées en review, extraction locale sur {extracted} ligne(s), web_fetch_ok={self._web_fetch_stats['pages_ok']}, llm_calls={self._llm_stats['calls_executed']}, llm_spend={self.budget_manager.current_spend_eur if self.budget_manager else 0.0:.4f}€")
         self.progress(100, 'AI review hardening terminé')
         return output_path
 
@@ -297,53 +290,9 @@ class AIReviewService:
             segmentation_reasons=str(context.get('segmentation_reasons', '')),
         )
 
-    def _build_feature_extraction_result(self, review_input: AIReviewInput, threshold: float, min_confidence_threshold: float | None, only_low_confidence: bool) -> AIReviewResult:
+    def _build_feature_extraction_result(self, review_input: AIReviewInput, threshold: float, only_low_confidence: bool) -> AIReviewResult:
         raw_conf = review_input.segmentation_confidence
         selected = True
-        if raw_conf is not None and min_confidence_threshold is not None and raw_conf <= min_confidence_threshold:
-            return AIReviewResult(
-                ai_review_status='skipped',
-                ai_confidence=f'{float(raw_conf):.3f}' if raw_conf not in (None, '') else '',
-                ai_segment_suggested='hors cible',
-                ai_segment_source='rules_out_of_scope_low_confidence',
-                ai_sources_used='',
-                ai_evidence_summary=f"skipped_low_confidence_floor(min_threshold={min_confidence_threshold:.3f}, confidence={float(raw_conf):.3f})" if raw_conf not in (None, '') else f"skipped_low_confidence_floor(min_threshold={min_confidence_threshold:.3f})",
-                ai_requires_human_review='yes',
-                ai_input_pack_summary=self._build_input_pack_summary(review_input),
-                ai_selected_for_review='no',
-                ai_detected_service_mode='',
-                ai_detected_cuisine='',
-                ai_detected_keywords='',
-                ai_detected_signals_json=json.dumps({'segment_source': 'rules_out_of_scope_low_confidence', 'skip_reason': 'low_confidence_floor'}, ensure_ascii=False, sort_keys=True),
-                ai_keyword_service_mode_candidates='',
-                ai_keyword_cuisine_candidates='',
-                ai_keyword_signals_json=json.dumps({'service_mode': [], 'cuisine': [], 'signals': []}, ensure_ascii=False, sort_keys=True),
-                ai_source_count='0',
-                ai_web_fetch_status='skipped_low_confidence_floor',
-                ai_sources_fetched='',
-                ai_web_text_content='',
-                ai_menu_text_excerpt='',
-                ai_homepage_title='',
-                ai_homepage_meta_description='',
-                ai_action_profile=review_input.profile_name,
-                ai_enabled_capabilities=' | '.join(review_input.enabled_capabilities),
-                ai_capability_field_usage=json.dumps({}, ensure_ascii=False, sort_keys=True),
-                ai_llm_status='skipped_low_confidence_floor',
-                ai_llm_reason='confidence_below_ai_floor',
-                ai_llm_configured='yes' if bool(getattr(self.llm_client, 'enabled', AI_LLM_ENABLED)) else 'no',
-                ai_llm_live_ready='yes' if bool(getattr(self.llm_client, 'live_ready', False)) else 'no',
-                ai_llm_attempted='no',
-                ai_llm_result_source='skipped_low_confidence_floor',
-                ai_llm_cost_estimated_eur='0',
-                ai_llm_cost_actual_eur='0',
-                ai_llm_budget_remaining_eur=f"{self.budget_manager.remaining_budget():.6f}" if self.budget_manager else '',
-                ai_llm_cache_hit='no',
-                ai_llm_calls_used='0',
-                ai_llm_provider=str(getattr(self.llm_client, 'provider', '')),
-                ai_llm_model=str(getattr(self.llm_client, 'model', '')),
-                ai_llm_result_json='',
-                ai_llm_raw_excerpt='',
-            )
         if raw_conf is not None and only_low_confidence and raw_conf >= threshold:
             selected = False
 

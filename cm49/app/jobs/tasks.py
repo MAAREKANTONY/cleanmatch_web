@@ -306,7 +306,6 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     output_table_name = str(parameters.get('marketsegmenter_bq_output_table_name') or settings.BIGQUERY_OUTPUT_TABLE)
     country_code = str(parameters.get('marketsegmenter_bq_country_code') or '').strip()
     low_conf_threshold = float(parameters.get('ai_review_low_confidence_threshold') or 0.65)
-    min_conf_threshold = float(parameters.get('ai_review_min_confidence_threshold') or 0.15)
     job_root = Path(job.output_file.field.storage.path(f'outputs/{job.id}'))
     job_root.mkdir(parents=True, exist_ok=True)
     source_csv = job_root / f'{table_name}_source.csv'
@@ -324,8 +323,18 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     else:
         log(f"✅ Accès écriture BigQuery validé sur {output_access['table']}")
 
+    estimated_rows = bq.estimate_row_count(table_name=table_name, country_code=country_code)
+    if estimated_rows is not None:
+        log(f'📊 BigQuery estime {estimated_rows} ligne(s) à exporter avant segmentation')
     progress(5, 'Lecture BigQuery source')
-    source_path, source_headers, row_count = bq.export_table_to_csv(table_name=table_name, output_path=source_csv, country_code=country_code)
+    export_progress_every = max(1, int(getattr(settings, 'BIGQUERY_PROGRESS_LOG_EVERY', 5000) or 5000))
+    source_path, source_headers, row_count = bq.export_table_to_csv(
+        table_name=table_name,
+        output_path=source_csv,
+        country_code=country_code,
+        progress_callback=lambda processed: progress(5, f'Lecture BigQuery source : {processed}/{estimated_rows or "?"}') if (processed == 1 or processed % export_progress_every == 0) else None,
+        log_callback=log,
+    )
     log(f'📥 {row_count} ligne(s) exportées depuis BigQuery dans {source_path.name}')
 
     progress(20, 'Segmentation règles / keywords')
@@ -345,7 +354,6 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         ai_review_sheet_name=None,
         ai_review_mapping=ai_review_mapping,
         low_confidence_threshold=low_conf_threshold,
-        min_confidence_threshold=min_conf_threshold,
         only_low_confidence=True,
         action_profile=(parameters.get('ai_review_action_profile') or 'standard'),
         llm_enabled=_parse_bool(parameters.get('ai_review_llm_enabled', False)),
@@ -384,7 +392,6 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         'result_rows': int(stats['result_rows']),
         'output_csv': final_csv.name,
         'low_confidence_threshold': low_conf_threshold,
-        'min_confidence_threshold': min_conf_threshold,
         'bigquery_created_at_mode': created_at_mode,
         'bigquery_insert_batch_size': insert_batch_size,
     }
@@ -426,11 +433,48 @@ def _split_segment_path(raw_value: str) -> list[str]:
     return [part.strip() for part in text.split('>') if part.strip()]
 
 
-def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: Path, process_id: str, low_conf_threshold: float, progress, log):
-    simple_rows: list[dict[str, str]] = []
-    bq_rows: list[dict[str, object]] = []
-    with ai_csv_path.open('r', encoding='utf-8-sig', newline='') as fh:
-        reader = csv.DictReader(fh, delimiter=';')
+def _consolidate_marketsegmenter_ai_results_streaming(
+    ai_csv_path: Path,
+    final_csv_path: Path,
+    process_id: str,
+    low_conf_threshold: float,
+    progress,
+    log,
+    bigquery_batch_callback,
+    created_at_mode: str = 'DATETIME',
+    insert_batch_size: int = 1000,
+    progress_log_every: int = 5000,
+):
+    final_csv_path.parent.mkdir(parents=True, exist_ok=True)
+    result_rows = 0
+    bigquery_rows_inserted = 0
+    bigquery_write_error = None
+    pending_batch: list[dict[str, object]] = []
+
+    def flush_batch() -> None:
+        nonlocal pending_batch, bigquery_rows_inserted, bigquery_write_error
+        if not pending_batch or bigquery_write_error:
+            pending_batch = []
+            return
+        try:
+            bigquery_rows_inserted += int(bigquery_batch_callback(list(pending_batch)) or 0)
+        except Exception as exc:
+            bigquery_write_error = str(exc)
+            log(f'⚠️ Erreur écriture BigQuery batch après {bigquery_rows_inserted} ligne(s) : {exc}')
+        finally:
+            pending_batch = []
+
+    with ai_csv_path.open('r', encoding='utf-8-sig', newline='') as in_fh, final_csv_path.open('w', encoding='utf-8-sig', newline='') as out_fh:
+        reader = csv.DictReader(in_fh, delimiter=';')
+        writer = csv.DictWriter(
+            out_fh,
+            fieldnames=['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3'],
+            delimiter=';',
+            quotechar='"',
+            quoting=csv.QUOTE_ALL,
+            lineterminator='\n',
+        )
+        writer.writeheader()
         for idx, row in enumerate(reader, start=1):
             google_place_id = (row.get('google_place_id') or row.get('place_id') or row.get('google_id') or '').strip()
             ai_source = (row.get('ai_segment_source') or '').strip()
@@ -450,39 +494,42 @@ def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: P
             rules_has_segments = any(rules_segments)
             if ai_selected and ai_segments and ai_source.startswith('llm_'):
                 final_segments = (ai_segments + ['', '', '', ''])[:4]
-                final_source = ai_source
             elif not ai_selected and rules_conf >= low_conf_threshold and rules_has_segments:
                 final_segments = rules_segments
-                final_source = 'rules_confident'
             elif ai_segments and ai_source != 'rules_initial':
                 final_segments = (ai_segments + ['', '', '', ''])[:4]
-                final_source = ai_source or 'ai_fallback'
             elif rules_has_segments:
                 final_segments = rules_segments
-                final_source = 'rules_fallback'
             else:
                 final_segments = ['', '', '', '']
-                final_source = 'none'
 
-            simple_row = {
+            writer.writerow({
                 'google_place_id': google_place_id,
                 'market_segment_type0': final_segments[0],
                 'market_segment_type1': final_segments[1],
                 'market_segment_type2': final_segments[2],
                 'market_segment_type3': final_segments[3],
-            }
-            simple_rows.append(simple_row)
-            bq_rows.append(BigQueryService.build_segmented_row(google_place_id=google_place_id, segments=final_segments, process_id=process_id))
-            if idx == 1 or idx % 5000 == 0:
+            })
+            pending_batch.append(BigQueryService.build_segmented_row(
+                google_place_id=google_place_id,
+                segments=final_segments,
+                process_id=process_id,
+                created_at_mode=created_at_mode,
+            ))
+            result_rows += 1
+            if len(pending_batch) >= max(1, int(insert_batch_size)):
+                flush_batch()
+            if idx == 1 or idx % max(1, int(progress_log_every)) == 0:
                 progress(82, f'Consolidation des résultats : {idx} ligne(s)')
-    final_csv_path.parent.mkdir(parents=True, exist_ok=True)
-    with final_csv_path.open('w', encoding='utf-8-sig', newline='') as fh:
-        writer = csv.DictWriter(fh, fieldnames=['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3'], delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL, lineterminator='\n')
-        writer.writeheader()
-        writer.writerows(simple_rows)
-    log(f'🧩 Consolidation finale terminée : {len(simple_rows)} ligne(s), seuil rules={low_conf_threshold}')
-    return simple_rows, bq_rows
+                log(f'🧩 Consolidation streaming: {idx} ligne(s) | BQ insérées={bigquery_rows_inserted} | erreur_bq={"yes" if bigquery_write_error else "no"}')
 
+    flush_batch()
+    log(f'🧩 Consolidation finale terminée : {result_rows} ligne(s), seuil rules={low_conf_threshold}, BQ insérées={bigquery_rows_inserted}')
+    return {
+        'result_rows': int(result_rows),
+        'bigquery_rows_inserted': int(bigquery_rows_inserted),
+        'bigquery_write_error': bigquery_write_error,
+    }
 
 
 def _run_ai_review_job(job: Job):
@@ -507,7 +554,6 @@ def _run_ai_review_job(job: Job):
         ai_review_sheet_name=parameters.get('ai_review_sheet_name') or None,
         ai_review_mapping=parameters.get('ai_review_mapping') or {},
         low_confidence_threshold=float(parameters.get('ai_review_low_confidence_threshold') or 0.65),
-        min_confidence_threshold=float(parameters.get('ai_review_min_confidence_threshold') or 0.15),
         only_low_confidence=True,
         action_profile=(parameters.get('ai_review_action_profile') or 'standard'),
         llm_enabled=_parse_bool(parameters.get('ai_review_llm_enabled', False)),
@@ -520,7 +566,7 @@ def _run_ai_review_job(job: Job):
 
     log('🚀 Lancement du process AI Review hardened multi-provider LLM')
     log(f'📂 Fichier source : {input_path.name}')
-    log(f"🎯 Fenêtre AI : ]{options.min_confidence_threshold} ; {options.low_confidence_threshold}[")
+    log(f"🎯 Seuil faible confiance : {options.low_confidence_threshold}")
     log(f"🧠 Profil d’action : {options.action_profile}")
     log(f"🤖 LLM enabled={options.llm_enabled} provider={options.llm_provider} model={options.llm_model} budget={options.llm_max_budget_eur}€ row_max={options.llm_max_cost_per_row_eur}€ calls/row={options.llm_max_calls_per_row}")
     log('💾 Format de sortie : CSV UTF-8 avec colonnes AI review additives + summary JSON + guardrails LLM + JSON provider output')

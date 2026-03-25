@@ -21,7 +21,7 @@ class AIReviewGatingShortCircuitTests(unittest.TestCase):
             initial_segments=['horeca', 'table_service'],
         )
 
-        result = service._build_feature_extraction_result(review_input, threshold=0.65, min_confidence_threshold=0.15, only_low_confidence=True)
+        result = service._build_feature_extraction_result(review_input, threshold=0.65, only_low_confidence=True)
 
         self.assertEqual(result.ai_selected_for_review, 'no')
         self.assertEqual(result.ai_review_status, 'skipped')
@@ -33,27 +33,6 @@ class AIReviewGatingShortCircuitTests(unittest.TestCase):
         self.assertEqual(result.ai_llm_calls_used, '0')
         self.assertIn('confidence=0.910', result.ai_evidence_summary)
 
-
-    def test_very_low_confidence_rows_are_sent_to_manual_out_of_scope_and_skip_ai(self):
-        service = AIReviewService()
-        review_input = AIReviewInput(
-            profile_name='default',
-            enabled_capabilities=['metadata_review', 'homepage_fetch', 'menu_fetch'],
-            name='Too Ambiguous Outlet',
-            segmentation_confidence=0.10,
-            initial_segments=['horeca'],
-        )
-
-        result = service._build_feature_extraction_result(review_input, threshold=0.65, min_confidence_threshold=0.15, only_low_confidence=True)
-
-        self.assertEqual(result.ai_selected_for_review, 'no')
-        self.assertEqual(result.ai_review_status, 'skipped')
-        self.assertEqual(result.ai_segment_suggested, 'hors cible')
-        self.assertEqual(result.ai_segment_source, 'rules_out_of_scope_low_confidence')
-        self.assertEqual(result.ai_web_fetch_status, 'skipped_low_confidence_floor')
-        self.assertEqual(result.ai_llm_status, 'skipped_low_confidence_floor')
-        self.assertEqual(result.ai_llm_reason, 'confidence_below_ai_floor')
-
     def test_job_threshold_is_the_only_threshold_used_for_skip_decision(self):
         service = AIReviewService()
         review_input = AIReviewInput(
@@ -64,7 +43,7 @@ class AIReviewGatingShortCircuitTests(unittest.TestCase):
             initial_segments=['horeca'],
         )
 
-        result = service._build_feature_extraction_result(review_input, threshold=0.85, min_confidence_threshold=0.15, only_low_confidence=True)
+        result = service._build_feature_extraction_result(review_input, threshold=0.85, only_low_confidence=True)
 
         self.assertEqual(result.ai_selected_for_review, 'yes')
         self.assertEqual(result.ai_review_status, 'selected')

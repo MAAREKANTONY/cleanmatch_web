@@ -21,6 +21,8 @@ class LLMCacheManager:
             'website_url': context.get('website_url', ''),
             'menu_urls': context.get('menu_urls', []),
             'photo_urls': context.get('photo_urls', []),
+            'google_id': context.get('google_id', ''),
+            'place_id': context.get('place_id', ''),
             'outlet_name': context.get('outlet_name', ''),
             'country': context.get('country', ''),
             'website_title': context.get('website_title', ''),

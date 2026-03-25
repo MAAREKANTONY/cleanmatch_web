@@ -78,7 +78,6 @@ class JobCreateForm(forms.Form):
     marketsegmenter_bq_output_table_name = forms.CharField(label='Table BigQuery de sortie', required=False, initial=settings.BIGQUERY_OUTPUT_TABLE)
     ai_review_sheet_name = forms.CharField(required=False, widget=forms.HiddenInput())
     ai_review_low_confidence_threshold = forms.FloatField(label='Seuil faible confiance AI review', required=False, initial=0.65, min_value=0.0, max_value=1.0)
-    ai_review_min_confidence_threshold = forms.FloatField(label='Seuil minimum AI review', required=False, initial=0.15, min_value=0.0, max_value=1.0)
     ai_review_action_profile = forms.ChoiceField(label='Profil d’action AI review', required=False, choices=[(k, k) for k in sorted(AI_REVIEW_ACTION_PROFILES.keys())], initial=AI_REVIEW_DEFAULT_ACTION_PROFILE)
     ai_review_llm_enabled = forms.BooleanField(label='Activer le LLM réel', required=False, initial=AI_LLM_ENABLED)
     ai_review_llm_provider = forms.ChoiceField(label='Provider LLM', required=False, choices=AI_LLM_PROVIDER_CHOICES, initial=AI_LLM_PROVIDER)
@@ -176,14 +175,6 @@ class JobCreateForm(forms.Form):
         if job_type == Job.JobType.MARKETSEGMENTER:
             marketsegmenter_mapping = self.get_marketsegmenter_mapping_payload(cleaned)
             ai_review_mapping = self.get_ai_review_mapping_payload(cleaned)
-            threshold = cleaned.get('ai_review_low_confidence_threshold')
-            min_threshold = cleaned.get('ai_review_min_confidence_threshold')
-            if threshold is None:
-                self.add_error('ai_review_low_confidence_threshold', 'Le seuil de faible confiance est requis pour l’enchaînement Market Segmenter + AI.')
-            if min_threshold is None:
-                self.add_error('ai_review_min_confidence_threshold', 'Le seuil minimum AI review est requis pour l’enchaînement Market Segmenter + AI.')
-            if threshold is not None and min_threshold is not None and min_threshold > threshold:
-                self.add_error('ai_review_min_confidence_threshold', 'Le seuil minimum AI review doit être inférieur ou égal au seuil de faible confiance.')
             values = list(marketsegmenter_mapping.values())
             duplicates = [src for src in values if values.count(src) > 1]
             if duplicates:
@@ -204,13 +195,8 @@ class JobCreateForm(forms.Form):
                 self.add_error('input_file_1', 'Sélectionne un fichier source pour le market segmenter.')
         if job_type == Job.JobType.AI_REVIEW and input_file_1:
             threshold = cleaned.get('ai_review_low_confidence_threshold')
-            min_threshold = cleaned.get('ai_review_min_confidence_threshold')
             if threshold is None:
                 self.add_error('ai_review_low_confidence_threshold', 'Le seuil de faible confiance est requis pour AI Review.')
-            if min_threshold is None:
-                self.add_error('ai_review_min_confidence_threshold', 'Le seuil minimum AI review est requis.')
-            if threshold is not None and min_threshold is not None and min_threshold > threshold:
-                self.add_error('ai_review_min_confidence_threshold', 'Le seuil minimum AI review doit être inférieur ou égal au seuil de faible confiance.')
             profile = (cleaned.get('ai_review_action_profile') or '').strip()
             if profile and profile not in AI_REVIEW_ACTION_PROFILES:
                 self.add_error('ai_review_action_profile', 'Le profil AI Review sélectionné est invalide.')
