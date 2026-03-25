@@ -1,0 +1,95 @@
+price_buckets:
+  very_low: !!set
+    budget: null
+    bon marche: null
+    cheap: null
+    very low: null
+    low cost: null
+    '1': null
+    inexpensive: null
+    pas cher: null
+    economy: null
+    $: null
+    economique: null
+  low: !!set
+    moderate low: null
+    low to moderate: null
+    moderate-low: null
+    low: null
+    '2': null
+  mid: !!set
+    moderate: null
+    medium: null
+    '3': null
+    average: null
+    mid: null
+    normal: null
+  high: !!set
+    expensive: null
+    premium: null
+    high: null
+    upscale: null
+    '4': null
+  very_high: !!set
+    fine dining: null
+    luxury: null
+    very high: null
+    '5': null
+price_score_rules:
+  very_low:
+  - segment0: horeca
+    segment1: fast_food
+    delta: 7.0
+    reason: price:very_low=>fast_food
+  - segment0: horeca
+    segment1: table_service
+    delta: -2.0
+    reason: price:very_low=>table_service_malus
+  - segment0: horeca
+    segment1: cafes_bars_discotheques
+    delta: 1.5
+    reason: price:very_low=>bars_minor
+  low:
+  - segment0: horeca
+    segment1: fast_food
+    delta: 5.0
+    reason: price:low=>fast_food
+  - segment0: horeca
+    segment1: table_service
+    delta: -1.0
+    reason: price:low=>table_service_malus
+  mid:
+  - segment0: horeca
+    segment1: table_service
+    delta: 2.0
+    reason: price:mid=>table_service
+  - segment0: horeca
+    segment1: cafes_bars_discotheques
+    delta: 1.0
+    reason: price:mid=>bars
+  high:
+  - segment0: horeca
+    segment1: table_service
+    delta: 5.0
+    reason: price:high=>table_service
+  - segment0: horeca
+    segment1: fast_food
+    delta: -2.5
+    reason: price:high=>fast_food_malus
+  - segment0: horeca
+    segment1: cafes_bars_discotheques
+    delta: 2.0
+    reason: price:high=>bars
+  very_high:
+  - segment0: horeca
+    segment1: table_service
+    delta: 6.0
+    reason: price:very_high=>table_service
+  - segment0: horeca
+    segment1: fast_food
+    delta: -3.0
+    reason: price:very_high=>fast_food_malus
+  - segment0: horeca
+    segment1: cafes_bars_discotheques
+    delta: 2.5
+    reason: price:very_high=>bars

@@ -1,0 +1,757 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="hero">
+    <div style="display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:flex-start;">
+        <div>
+            <h1 style="margin:0 0 10px 0; font-size:2rem; letter-spacing:-.04em;">Créer un nouveau job CleanMatch</h1>
+            <p>Charge un fichier, inspecte sa structure, prépare le mapping puis lance le traitement asynchrone adapté : Normalizer, Matcher, Geocoder, Geoclass, Market Segmenter ou AI Review.</p>
+        </div>
+    </div>
+</section>
+
+<form method="post" enctype="multipart/form-data" class="stack" id="job-form">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+        <div class="card">{{ form.non_field_errors }}</div>
+    {% endif %}
+    {% for field in form %}
+        {% if field.is_hidden %}{{ field }}{% endif %}
+    {% endfor %}
+
+    <section class="grid grid-2">
+        <div class="card stack">
+            <div>
+                <h2>1. Paramètres de base</h2>
+                <div class="muted">Choisis le type de traitement et charge les fichiers nécessaires.</div>
+            </div>
+
+            <div class="field">
+                <label for="id_job_type">{{ form.job_type.label }}</label>
+                {{ form.job_type }}
+            </div>
+
+            <div class="field">
+                <label for="id_input_file_1">{{ form.input_file_1.label }}</label>
+                {{ form.input_file_1 }}
+                <div class="field-help">Normalizer : Excel. Matcher / Geocoder / Geoclass : CSV ou Excel. Market Segmenter BigQuery : fichier non requis si source BigQuery.</div>
+                {% if form.input_file_1.errors %}{{ form.input_file_1.errors }}{% endif %}
+            </div>
+
+            <div class="field" id="secondary-file-field">
+                <label for="id_input_file_2">{{ form.input_file_2.label }}</label>
+                {{ form.input_file_2 }}
+                <div class="field-help">Requis uniquement pour le Matcher : fichier slave CSV ou Excel.</div>
+                {% if form.input_file_2.errors %}{{ form.input_file_2.errors }}{% endif %}
+            </div>
+        </div>
+
+        <div class="card stack" id="normalizer-panel">
+            <div>
+                <h2>2A. Options Normalizer</h2>
+                <div class="muted">Inspection Excel, preview et mapping guidé.</div>
+            </div>
+            <div class="checklist">
+                <label class="check-item">{{ form.normalizer_do_clean }} <span><strong>{{ form.normalizer_do_clean.label }}</strong><br><span class="muted small">Nettoyage et harmonisation.</span></span></label>
+                <label class="check-item">{{ form.normalizer_do_matchcode }} <span><strong>{{ form.normalizer_do_matchcode.label }}</strong><br><span class="muted small">Nécessite address, zipcode, city.</span></span></label>
+            </div>
+            <div class="grid grid-2">
+                <div class="field">
+                    <label for="id_normalizer_country_code">{{ form.normalizer_country_code.label }}</label>
+                    {{ form.normalizer_country_code }}
+                    <div class="field-help">Profil pays appliqué au parsing d’adresse, au code postal et au legal_id.</div>
+                </div>
+                <div class="field">
+                    <label for="id_normalizer_sheet_name">{{ form.normalizer_sheet_name.label }}</label>
+                    {{ form.normalizer_sheet_name }}
+                    <datalist id="sheet-options"></datalist>
+                    <div class="field-help">{{ form.normalizer_sheet_name.help_text }}</div>
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <button class="btn btn-secondary" type="button" id="inspect-btn">Inspecter la feuille de calcul</button>
+                <div class="muted small" id="inspect-status">Aucune inspection Normalizer lancée.</div>
+            </div>
+        </div>
+
+        <div class="card stack hidden" id="matcher-panel">
+            <div>
+                <h2>2B. Options Matcher</h2>
+                <div class="muted">Deux fichiers, mapping master/slave, scoring multi-country et livrable ZIP.</div>
+            </div>
+            <section class="grid grid-3">
+                <div class="field">
+                    <label for="id_matcher_threshold_name">{{ form.matcher_threshold_name.label }}</label>
+                    {{ form.matcher_threshold_name }}
+                </div>
+                <div class="field">
+                    <label for="id_matcher_threshold_voie">{{ form.matcher_threshold_voie.label }}</label>
+                    {{ form.matcher_threshold_voie }}
+                </div>
+                <div class="field">
+                    <label for="id_matcher_top_k">{{ form.matcher_top_k.label }}</label>
+                    {{ form.matcher_top_k }}
+                </div>
+            </section>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <button class="btn btn-secondary" type="button" id="inspect-matcher-btn">Inspecter master + slave</button>
+                <div class="muted small" id="inspect-matcher-status">Aucune inspection Matcher lancée.</div>
+            </div>
+            <div class="muted small">Colonnes minimales à mapper des deux côtés : <span class="code-inline">id</span>, <span class="code-inline">name</span>, <span class="code-inline">address</span>, <span class="code-inline">zipcode</span>, <span class="code-inline">city</span>. Colonnes recommandées : <span class="code-inline">country</span>, <span class="code-inline">legal_id</span>, <span class="code-inline">legal_id_type</span>.</div>
+        </div>
+
+        <div class="card stack hidden" id="geocoder-panel">
+            <div>
+                <h2>2C. Options Geocoder / Geoclass / Market Segmenter</h2>
+                <div class="muted">Inspection du fichier, mapping guidé et enrichissement lat/lng, classification heuristique ou segmentation FYRE.</div>
+            </div>
+            <div class="grid grid-2">
+                <div class="field">
+                    <label for="id_geocoder_provider">{{ form.geocoder_provider.label }}</label>
+                    {{ form.geocoder_provider }}
+                </div>
+                <div class="field">
+                    <label for="id_geocoder_country_hint">{{ form.geocoder_country_hint.label }}</label>
+                    {{ form.geocoder_country_hint }}
+                    <div class="field-help">Exemple : France, Italy, Israel. Ajouté à la requête si Nominatim est utilisé.</div>
+                </div>
+                <div class="field marketsegmenter-bq-only hidden">
+                    <label for="id_marketsegmenter_source_mode">{{ form.marketsegmenter_source_mode.label }}</label>
+                    {{ form.marketsegmenter_source_mode }}
+                    <div class="field-help">Mode V1 : source fichier ou lecture directe BigQuery.</div>
+                </div>
+                <div class="field marketsegmenter-bq-only hidden">
+                    <label for="id_marketsegmenter_bq_table_name">{{ form.marketsegmenter_bq_table_name.label }}</label>
+                    {{ form.marketsegmenter_bq_table_name }}
+                </div>
+                <div class="field marketsegmenter-bq-only hidden">
+                    <label for="id_marketsegmenter_bq_country_code">{{ form.marketsegmenter_bq_country_code.label }}</label>
+                    {{ form.marketsegmenter_bq_country_code }}
+                    <div class="field-help">Exemple : ES, FR, IT. Filtre appliqué dans BigQuery sur <span class="code-inline">country_code</span>.</div>
+                </div>
+                <div class="field marketsegmenter-bq-only hidden">
+                    <label for="id_marketsegmenter_bq_output_table_name">{{ form.marketsegmenter_bq_output_table_name.label }}</label>
+                    {{ form.marketsegmenter_bq_output_table_name }}
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <button class="btn btn-secondary" type="button" id="inspect-geocoder-btn">Inspecter le fichier Geocoder / Segmenter</button>
+                <div class="muted small" id="inspect-geocoder-status">Aucune inspection Geocoder / Segmenter lancée.</div>
+            </div>
+            <div class="muted small">Colonnes minimales : <span class="code-inline">id</span>, <span class="code-inline">address</span>, <span class="code-inline">zipcode</span>, <span class="code-inline">city</span>. Si <span class="code-inline">lat/lng</span> sont déjà présents, ils seront réutilisés.</div>
+        </div>
+
+        <div class="card stack hidden" id="ai-review-panel">
+            <div>
+                <h2>2D. Options AI Review</h2>
+                <div class="muted">Inspection / mapping AI Review, utilisé seul ou en second niveau après le Market Segmenter pour les outlets à faible confiance.</div>
+            </div>
+            <div class="grid grid-2">
+                <div class="field">
+                    <label for="id_ai_review_low_confidence_threshold">{{ form.ai_review_low_confidence_threshold.label }}</label>
+                    {{ form.ai_review_low_confidence_threshold }}
+                    <div class="field-help">Les lignes au-dessus de ce seuil sont ignorées par l’AI et restent sur le résultat rules.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_min_confidence_threshold">{{ form.ai_review_min_confidence_threshold.label }}</label>
+                    {{ form.ai_review_min_confidence_threshold }}
+                    <div class="field-help">Les lignes dont la confiance est inférieure ou égale à ce seuil ne partent pas en AI : elles passent en "hors cible" sur le segment niveau 0.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_action_profile">{{ form.ai_review_action_profile.label }}</label>
+                    {{ form.ai_review_action_profile }}
+                    <div class="field-help">Chaque profil active un sous-ensemble de capacités : light, standard ou deep.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_sheet_name">Onglet source (optionnel)</label>
+                    {{ form.ai_review_sheet_name }}
+                    <div class="field-help">Choisi automatiquement après inspection si tu travailles sur un fichier Excel.</div>
+                </div>
+                <div class="field">
+                    <label>Capacités disponibles</label>
+                    <div class="field-help">{{ ai_review_action_profiles|join:", " }}</div>
+                    <div class="field-help">Homepage fetch, menu fetch, social review, photo review, metadata review, entity resolution.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_llm_enabled">{{ form.ai_review_llm_enabled.label }}</label>
+                    {{ form.ai_review_llm_enabled }}
+                    <div class="field-help">Par défaut, la valeur vient du fichier de configuration. Si coché, le process peut appeler le provider LLM configuré.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_llm_provider">{{ form.ai_review_llm_provider.label }}</label>
+                    {{ form.ai_review_llm_provider }}
+                    <div class="field-help">Choisis le provider à utiliser : OpenAI-compatible, Gemini ou Claude.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_llm_model">{{ form.ai_review_llm_model.label }}</label>
+                    {{ form.ai_review_llm_model }}
+                    <div class="field-help">Liste versionnée des modèles supportés pour chaque provider. Les options sont filtrées automatiquement selon le provider choisi.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_llm_max_budget_eur">{{ form.ai_review_llm_max_budget_eur.label }}</label>
+                    {{ form.ai_review_llm_max_budget_eur }}
+                    <div class="field-help">Plafond dur par job. Le process s’arrête proprement pour les appels LLM quand ce budget est atteint.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_llm_max_cost_per_row_eur">{{ form.ai_review_llm_max_cost_per_row_eur.label }}</label>
+                    {{ form.ai_review_llm_max_cost_per_row_eur }}
+                    <div class="field-help">Plafond dur par ligne outlet. Empêche une ligne ambigüe de consommer trop de budget.</div>
+                </div>
+                <div class="field">
+                    <label for="id_ai_review_llm_max_calls_per_row">{{ form.ai_review_llm_max_calls_per_row.label }}</label>
+                    {{ form.ai_review_llm_max_calls_per_row }}
+                    <div class="field-help">Nombre maximum d’appels LLM autorisés par ligne, toutes capacités confondues.</div>
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <button class="btn btn-secondary" type="button" id="inspect-ai-review-btn">Inspecter le fichier AI Review</button>
+                <div class="muted small" id="inspect-ai-review-status">Aucune inspection AI Review lancée.</div>
+            </div>
+            <div class="muted small">Colonnes minimales recommandées en AI Review autonome : <span class="code-inline">name</span> et <span class="code-inline">segmentation_confidence</span>. En enchaînement automatique après le Market Segmenter, <span class="code-inline">segmentation_confidence</span> et les segments FYRE sont générés automatiquement par l’étape précédente et ne doivent pas être mappés depuis la source BigQuery. Colonnes fortement utiles : <span class="code-inline">website</span>, <span class="code-inline">menu_url</span>, <span class="code-inline">google_id</span>, <span class="code-inline">place_id</span>, <span class="code-inline">main_type</span>, <span class="code-inline">all_types</span>.</div>
+        </div>
+
+    </section>
+
+    <section class="card hidden" id="inspection-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">3A. Analyse de structure Normalizer</h2>
+                <div class="muted">Choisis l'onglet, contrôle la preview 20 lignes et prépare le mapping métier.</div>
+            </div>
+        </div>
+        <div id="inspection-results" class="grid grid-2"></div>
+    </section>
+
+    <section class="card hidden" id="mapping-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">4A. Mapping de colonnes Normalizer</h2>
+                <div class="muted">Suggestions automatiques + badges requis et auto-détectés.</div>
+            </div>
+        </div>
+        <div class="mapping-grid" id="mapping-grid"></div>
+    </section>
+
+    <section class="card hidden" id="matcher-inspection-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">3B. Analyse de structure Matcher</h2>
+                <div class="muted">Inspection indépendante du master et du slave avec aperçu 20 lignes et scroll horizontal.</div>
+            </div>
+        </div>
+        <div class="grid grid-2" id="matcher-inspection-results"></div>
+    </section>
+
+    <section class="card hidden" id="matcher-mapping-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">4B. Mapping master / slave</h2>
+                <div class="muted">Le matcher V4 multi-country produit un ZIP avec <span class="code-inline">all_matches.csv</span>, <span class="code-inline">automatch.csv</span>, <span class="code-inline">review.csv</span>, <span class="code-inline">unmatched.csv</span>, <span class="code-inline">diagnostics.csv</span> et <span class="code-inline">summary.json</span>.</div>
+            </div>
+        </div>
+        <div class="grid grid-2">
+            <div>
+                <h3 style="margin-top:0;">Master</h3>
+                <div class="mapping-grid" id="matcher-master-mapping-grid"></div>
+            </div>
+            <div>
+                <h3 style="margin-top:0;">Slave</h3>
+                <div class="mapping-grid" id="matcher-slave-mapping-grid"></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="card hidden" id="geocoder-inspection-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">3C. Analyse de structure Geocoder</h2>
+                <div class="muted">Inspection du fichier source avec aperçu 20 lignes et scroll horizontal.</div>
+            </div>
+        </div>
+        <div class="grid grid-2" id="geocoder-inspection-results"></div>
+    </section>
+
+    <section class="card hidden" id="geocoder-mapping-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">4C. Mapping Geocoder</h2>
+                <div class="muted">Le geocoder réutilise d'abord les coordonnées existantes, puis peut tenter Nominatim si nécessaire. Le geoclass réutilise la même inspection pour une classification heuristique. Sortie en CSV.</div>
+            </div>
+        </div>
+        <div class="mapping-grid" id="geocoder-mapping-grid"></div>
+    </section>
+
+    <section class="card hidden" id="ai-review-inspection-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">3D. Analyse de structure AI Review</h2>
+                <div class="muted">Inspection du fichier segmenté avec aperçu 20 lignes et détection des colonnes utiles au second niveau de revue.</div>
+            </div>
+        </div>
+        <div class="grid grid-2" id="ai-review-inspection-results"></div>
+    </section>
+
+    <section class="card hidden" id="ai-review-mapping-card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">4D. Mapping AI Review</h2>
+                <div class="muted">Ce sprint prépare l’agent JSON-only, avec mapping canonique, fetch web contrôlé, guardrails budgétaires et sortie LLM structurée.</div>
+            </div>
+        </div>
+        <div class="mapping-grid" id="ai-review-mapping-grid"></div>
+    </section>
+
+
+    <section class="card">
+        <div class="toolbar">
+            <div>
+                <h2 style="margin-bottom:6px;">5. Lancer le job</h2>
+                <div class="muted">Normalizer : CSV UTF-8. Matcher : ZIP multi-fichiers. Geocoder / Segmenter / AI Review : CSV enrichi + summary JSON. AI Review ajoute aussi les sorties JSON du provider si le LLM est activé.</div>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <a class="btn btn-secondary" href="{% url 'jobs:home' %}">Retour dashboard</a>
+                <button class="btn" type="submit">Créer et lancer le job</button>
+            </div>
+        </div>
+    </section>
+</form>
+
+<script>
+(function() {
+    const normalizerFields = {{ canonical_mapping_fields|safe }};
+    const matcherFields = {{ matcher_mapping_fields|safe }};
+    const geocoderFields = {{ geocoder_mapping_fields|safe }};
+    const marketsegmenterFields = {{ marketsegmenter_mapping_fields|safe }};
+    const aiReviewFields = {{ ai_review_mapping_fields|safe }};
+    const normalizerRequired = new Set(['address', 'zipcode', 'city']);
+    const matcherRequired = new Set(['id', 'name', 'address', 'zipcode', 'city']);
+    const geocoderRequired = new Set(['id', 'address', 'zipcode', 'city']);
+    const marketsegmenterRequired = new Set(['name', 'main_type']);
+    const aiReviewRequiredStandalone = new Set(['outlet_name', 'segmentation_confidence']);
+    const aiReviewRequiredChained = new Set(['outlet_name']);
+    const jobType = document.getElementById('id_job_type');
+    const inputFile = document.getElementById('id_input_file_1');
+    const inputFile2 = document.getElementById('id_input_file_2');
+    const secondaryFileField = document.getElementById('secondary-file-field');
+    const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+
+    const normalizerPanel = document.getElementById('normalizer-panel');
+    const matcherPanel = document.getElementById('matcher-panel');
+    const geocoderPanel = document.getElementById('geocoder-panel');
+    const aiReviewPanel = document.getElementById('ai-review-panel');
+
+    const inspectBtn = document.getElementById('inspect-btn');
+    const inspectStatus = document.getElementById('inspect-status');
+    const inspectionCard = document.getElementById('inspection-card');
+    const inspectionResults = document.getElementById('inspection-results');
+    const mappingCard = document.getElementById('mapping-card');
+    const mappingGrid = document.getElementById('mapping-grid');
+    const sheetNameInput = document.getElementById('id_normalizer_sheet_name');
+    const sheetOptions = document.getElementById('sheet-options');
+
+    const inspectMatcherBtn = document.getElementById('inspect-matcher-btn');
+    const inspectMatcherStatus = document.getElementById('inspect-matcher-status');
+    const matcherInspectionCard = document.getElementById('matcher-inspection-card');
+    const matcherInspectionResults = document.getElementById('matcher-inspection-results');
+    const matcherMappingCard = document.getElementById('matcher-mapping-card');
+    const matcherMasterGrid = document.getElementById('matcher-master-mapping-grid');
+    const matcherSlaveGrid = document.getElementById('matcher-slave-mapping-grid');
+
+    const inspectGeocoderBtn = document.getElementById('inspect-geocoder-btn');
+    const inspectGeocoderStatus = document.getElementById('inspect-geocoder-status');
+    const geocoderInspectionCard = document.getElementById('geocoder-inspection-card');
+    const geocoderInspectionResults = document.getElementById('geocoder-inspection-results');
+    const geocoderMappingCard = document.getElementById('geocoder-mapping-card');
+    const geocoderMappingGrid = document.getElementById('geocoder-mapping-grid');
+    const geocoderSheetInput = document.getElementById('id_geocoder_sheet_name');
+    const marketsegmenterSheetInput = document.getElementById('id_marketsegmenter_sheet_name');
+    const aiReviewSheetInput = document.getElementById('id_ai_review_sheet_name');
+
+    const inspectAiReviewBtn = document.getElementById('inspect-ai-review-btn');
+    const inspectAiReviewStatus = document.getElementById('inspect-ai-review-status');
+    const aiReviewInspectionCard = document.getElementById('ai-review-inspection-card');
+    const aiReviewInspectionResults = document.getElementById('ai-review-inspection-results');
+    const aiReviewMappingCard = document.getElementById('ai-review-mapping-card');
+    const aiReviewMappingGrid = document.getElementById('ai-review-mapping-grid');
+    const aiReviewLlmProvider = document.getElementById('id_ai_review_llm_provider');
+    const aiReviewLlmModel = document.getElementById('id_ai_review_llm_model');
+    const marketsegmenterSourceMode = document.getElementById('id_marketsegmenter_source_mode');
+    const marketsegmenterBqTable = document.getElementById('id_marketsegmenter_bq_table_name');
+    const marketsegmenterBqCountry = document.getElementById('id_marketsegmenter_bq_country_code');
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    }
+
+    function titleForField(field) {
+        const labels = {
+            id: 'ID', name: 'Name', address: 'Address', zipcode: 'Zipcode', city: 'City', lat: 'Latitude', lng: 'Longitude',
+            hexa_gmap: 'Hexa GMAP', phone_gmap: 'Phone GMAP', social_link_gmap: 'Website / Social link',
+            voie: 'Voie', num_voie: 'Num voie', matchcode: 'Matchcode', phone: 'Phone', cellular: 'Cellular', siret: 'Siret', hexa: 'Hexa',
+            email: 'Email', website: 'Website', country: 'Country'
+        };
+        return labels[field] || field;
+    }
+
+    function buildPreviewTable(preview) {
+        if (!preview || !preview.length) return '<div class="muted small">Aperçu indisponible.</div>';
+        const rows = preview.map((row, idx) => `<tr>${row.map(cell => `<${idx === 0 ? 'th' : 'td'}>${escapeHtml(cell || '')}</${idx === 0 ? 'th' : 'td'}>`).join('')}</tr>`).join('');
+        return `<div class="preview-wrap"><table class="preview-table">${rows}</table></div>`;
+    }
+
+    function buildMappingCard(grid, fields, requiredSet, prefix, columns, suggestions) {
+        grid.innerHTML = '';
+        const safeColumns = Array.isArray(columns) ? columns : [];
+        const safeSuggestions = suggestions && typeof suggestions === 'object' ? suggestions : {};
+        const options = ['<option value="__ignore__">Ignorer</option>']
+            .concat(safeColumns.map(col => `<option value="${escapeHtml(col)}">${escapeHtml(col)}</option>`))
+            .join('');
+        fields.forEach(field => {
+            const hidden = document.getElementById(`${prefix}${field}`);
+            const currentValue = hidden ? hidden.value : '';
+            const card = document.createElement('div');
+            card.className = 'mapping-item' + (requiredSet.has(field) ? ' required' : '');
+            card.innerHTML = `
+                <strong>${titleForField(field)}</strong>
+                <div class="preview-labels">${requiredSet.has(field) ? '<span class="mini-badge required">Requis</span>' : ''}${safeSuggestions[field] ? '<span class="mini-badge">Auto-détecté</span>' : ''}</div>
+                <select>${options}</select>`;
+            const select = card.querySelector('select');
+            select.value = safeSuggestions[field] || currentValue || '__ignore__';
+            if (hidden) {
+                hidden.value = select.value === '__ignore__' ? '' : select.value;
+                select.addEventListener('change', () => {
+                    hidden.value = select.value === '__ignore__' ? '' : select.value;
+                });
+            }
+            grid.appendChild(card);
+        });
+    }
+
+
+    function firstSheetOrWarn(data, statusEl, emptyMessage) {
+        if (!data || !Array.isArray(data.sheets) || data.sheets.length === 0) {
+            if (statusEl) statusEl.textContent = emptyMessage || 'Aucun onglet exploitable détecté.';
+            return null;
+        }
+        return data.sheets[0];
+    }
+
+    function renderNormalizerInspection(data) {
+        sheetOptions.innerHTML = '';
+        inspectionResults.innerHTML = '';
+        data.sheets.forEach((sheet, index) => {
+            const option = document.createElement('option'); option.value = sheet.name; sheetOptions.appendChild(option);
+            const card = document.createElement('div'); card.className = 'sheet-item' + (index === 0 ? ' active' : '');
+            const warnings = (sheet.validation_warnings || []).length ? `<ul class="warning-list">${sheet.validation_warnings.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '';
+            card.innerHTML = `
+                <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+                    <div><strong>${escapeHtml(sheet.name)}</strong><div class="sheet-meta"><span>${sheet.max_row} lignes</span><span>${sheet.max_column} colonnes</span><span>Entête détectée : ligne ${sheet.detected_header_row}</span></div></div>
+                    <button type="button" class="btn btn-secondary small choose-sheet">Utiliser cet onglet</button>
+                </div>
+                <div class="muted small" style="margin-top:10px;">Colonnes détectées : ${sheet.detected_columns.map(escapeHtml).join(', ') || 'aucune'}</div>
+                ${warnings}
+                ${buildPreviewTable(sheet.preview)}`;
+            card.querySelector('.choose-sheet').addEventListener('click', () => {
+                sheetNameInput.value = sheet.name;
+                document.querySelectorAll('#inspection-results .sheet-item').forEach(el => el.classList.remove('active'));
+                card.classList.add('active');
+                inspectStatus.textContent = `Onglet sélectionné : ${sheet.name}`;
+                buildMappingCard(mappingGrid, normalizerFields, normalizerRequired, 'id_mapping_', sheet.detected_columns, sheet.mapping_suggestions || {});
+                mappingCard.classList.remove('hidden');
+            });
+            inspectionResults.appendChild(card);
+        });
+        if (data.sheets.length) {
+            const selected = firstSheetOrWarn(data, inspectStatus, 'Aucun onglet exploitable détecté pour ce fichier.');
+            if (!selected) return;
+            sheetNameInput.value = selected.name;
+            buildMappingCard(mappingGrid, normalizerFields, normalizerRequired, 'id_mapping_', selected.detected_columns, selected.mapping_suggestions || {});
+            inspectionCard.classList.remove('hidden');
+            mappingCard.classList.remove('hidden');
+        }
+    }
+
+    function renderMatcherSheetCard(role, sheet, index) {
+        sheet = normalizeSheetForRender(sheet);
+        const card = document.createElement('div');
+        card.className = 'sheet-item' + (index === 0 ? ' active' : '');
+        const hiddenSheetInput = document.getElementById(`id_matcher_${role}_sheet_name`);
+        card.innerHTML = `
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+                <div>
+                    <strong>${role === 'master' ? 'Master' : 'Slave'} — ${escapeHtml(sheet.name === '__csv__' ? 'CSV' : sheet.name)}</strong>
+                    <div class="sheet-meta"><span>${sheet.max_column} colonnes</span><span>Aperçu : 20 lignes max</span></div>
+                </div>
+                <button type="button" class="btn btn-secondary small choose-sheet">Utiliser</button>
+            </div>
+            <div class="muted small" style="margin-top:10px;">Colonnes détectées : ${sheet.detected_columns.map(escapeHtml).join(', ') || 'aucune'}</div>
+            ${sheet.missing_required.length ? `<div class="preview-labels"><span class="mini-badge warning">Colonnes minimales non reconnues : ${sheet.missing_required.map(escapeHtml).join(', ')}</span></div>` : '<div class="preview-labels"><span class="mini-badge">Colonnes minimales reconnues</span></div>'}
+            ${buildPreviewTable(sheet.preview)}`;
+        card.querySelector('.choose-sheet').addEventListener('click', () => {
+            hiddenSheetInput.value = sheet.name === '__csv__' ? '' : sheet.name;
+            document.querySelectorAll(`.sheet-item[data-role="${role}"]`).forEach(el => el.classList.remove('active'));
+            card.classList.add('active');
+            buildMappingCard(role === 'master' ? matcherMasterGrid : matcherSlaveGrid, matcherFields, matcherRequired, `id_matcher_${role}_`, sheet.detected_columns, sheet.mapping_suggestions || {});
+            inspectMatcherStatus.textContent = `Inspection Matcher prête — ${role} : ${sheet.name === '__csv__' ? 'CSV' : sheet.name}`;
+            matcherMappingCard.classList.remove('hidden');
+        });
+        card.dataset.role = role;
+        return card;
+    }
+
+    function normalizeSheetForRender(sheet) {
+        const normalized = sheet || {};
+        normalized.detected_columns = Array.isArray(normalized.detected_columns) ? normalized.detected_columns : [];
+        normalized.missing_required = Array.isArray(normalized.missing_required) ? normalized.missing_required : [];
+        normalized.preview = Array.isArray(normalized.preview) ? normalized.preview : [];
+        normalized.mapping_suggestions = normalized.mapping_suggestions || {};
+        normalized.ai_review_mapping_suggestions = normalized.ai_review_mapping_suggestions || {};
+        return normalized;
+    }
+
+    function renderGeocoderSheetCard(sheet, index) {
+        sheet = normalizeSheetForRender(sheet);
+        const card = document.createElement('div');
+        card.className = 'sheet-item' + (index === 0 ? ' active' : '');
+        card.innerHTML = `
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+                <div>
+                    <strong>${escapeHtml(sheet.name === '__csv__' ? 'CSV' : sheet.name)}</strong>
+                    <div class="sheet-meta"><span>${sheet.max_column} colonnes</span><span>Aperçu : 20 lignes max</span></div>
+                </div>
+                <button type="button" class="btn btn-secondary small choose-sheet">Utiliser</button>
+            </div>
+            <div class="muted small" style="margin-top:10px;">Colonnes détectées : ${sheet.detected_columns.map(escapeHtml).join(', ') || 'aucune'}</div>
+            ${sheet.missing_required.length ? `<div class="preview-labels"><span class="mini-badge warning">Colonnes minimales non reconnues : ${sheet.missing_required.map(escapeHtml).join(', ')}</span></div>` : '<div class="preview-labels"><span class="mini-badge">Colonnes minimales reconnues</span></div>'}
+            ${buildPreviewTable(sheet.preview)}`;
+        card.querySelector('.choose-sheet').addEventListener('click', () => {
+            geocoderSheetInput.value = sheet.name === '__csv__' ? '' : sheet.name;
+            document.querySelectorAll('#geocoder-inspection-results .sheet-item').forEach(el => el.classList.remove('active'));
+            card.classList.add('active');
+            buildMappingCard(geocoderMappingGrid, geocoderFields, geocoderRequired, 'id_geocoder_', sheet.detected_columns, sheet.mapping_suggestions || {});
+            inspectGeocoderStatus.textContent = `Inspection Geocoder prête : ${sheet.name === '__csv__' ? 'CSV' : sheet.name}`;
+            geocoderMappingCard.classList.remove('hidden');
+        });
+        return card;
+    }
+
+
+
+    function renderAiReviewSheetCard(sheet, index) {
+        sheet = normalizeSheetForRender(sheet);
+        const card = document.createElement('div');
+        card.className = 'sheet-item' + (index === 0 ? ' active' : '');
+        card.innerHTML = `
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+                <div>
+                    <strong>${escapeHtml(sheet.name === '__csv__' ? 'CSV' : sheet.name)}</strong>
+                    <div class="sheet-meta"><span>${sheet.max_column} colonnes</span><span>Aperçu : 20 lignes max</span></div>
+                </div>
+                <button type="button" class="btn btn-secondary small choose-sheet">Utiliser</button>
+            </div>
+            <div class="muted small" style="margin-top:10px;">Colonnes détectées : ${sheet.detected_columns.map(escapeHtml).join(', ') || 'aucune'}</div>
+            ${sheet.missing_required.length ? `<div class="preview-labels"><span class="mini-badge warning">Colonnes minimales non reconnues : ${sheet.missing_required.map(escapeHtml).join(', ')}</span></div>` : '<div class="preview-labels"><span class="mini-badge">Colonnes minimales reconnues</span></div>'}
+            ${buildPreviewTable(sheet.preview)}`;
+        card.querySelector('.choose-sheet').addEventListener('click', () => {
+            aiReviewSheetInput.value = sheet.name === '__csv__' ? '' : sheet.name;
+            document.querySelectorAll('#ai-review-inspection-results .sheet-item').forEach(el => el.classList.remove('active'));
+            card.classList.add('active');
+            buildMappingCard(aiReviewMappingGrid, aiReviewFields, aiReviewRequiredStandalone, 'id_ai_review_', sheet.detected_columns, sheet.mapping_suggestions || {});
+            inspectAiReviewStatus.textContent = `Inspection AI Review prête : ${sheet.name === '__csv__' ? 'CSV' : sheet.name}`;
+            aiReviewMappingCard.classList.remove('hidden');
+        });
+        return card;
+    }
+
+    function syncAiReviewLlmModels() {
+        if (!aiReviewLlmProvider || !aiReviewLlmModel) return;
+        const provider = aiReviewLlmProvider.value;
+        const optionGroups = Array.from(aiReviewLlmModel.querySelectorAll('optgroup'));
+        let firstAllowed = '';
+        optionGroups.forEach(group => {
+            const label = (group.getAttribute('label') || '').toLowerCase();
+            const visible = (provider === 'openai_compatible_json' && label.includes('openai'))
+                || (provider === 'gemini_generate_content' && label.includes('gemini'))
+                || (provider === 'anthropic_messages_json' && label.includes('claude'));
+            group.style.display = visible ? '' : 'none';
+            Array.from(group.querySelectorAll('option')).forEach(option => {
+                option.hidden = !visible;
+                option.disabled = !visible;
+                if (visible && !firstAllowed) firstAllowed = option.value;
+            });
+        });
+        const current = aiReviewLlmModel.value;
+        const currentOption = Array.from(aiReviewLlmModel.querySelectorAll('option')).find(opt => opt.value === current);
+        if (!currentOption || currentOption.disabled) {
+            aiReviewLlmModel.value = firstAllowed || '';
+        }
+    }
+
+    async function inspectWorkbook() {
+        if (jobType.value !== 'normalizer') return;
+        if (!inputFile.files.length) { inspectStatus.textContent = 'Sélectionne d’abord un fichier Excel.'; return; }
+        inspectStatus.textContent = 'Inspection du fichier en cours...'; inspectBtn.disabled = true;
+        const formData = new FormData(); formData.append('input_file_1', inputFile.files[0]);
+        try {
+            const response = await fetch('{% url "jobs:inspect_excel" %}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
+            const data = await response.json();
+            if (!response.ok || data.ok === false) { inspectStatus.textContent = data.error || 'Inspection impossible.'; return; }
+            renderNormalizerInspection(data); inspectStatus.textContent = `${data.sheets.length} onglet(s) détecté(s) dans ${data.filename}.`;
+        } catch (error) { inspectStatus.textContent = error && error.message ? error.message : 'Erreur pendant l’inspection.'; }
+        finally { inspectBtn.disabled = false; }
+    }
+
+    async function inspectMatcher(role, file) {
+        const formData = new FormData();
+        formData.append('file', file); formData.append('role', role);
+        const response = await fetch('{% url "jobs:inspect_matcher_file" %}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
+        const data = await response.json();
+        if (!response.ok || data.ok === false) throw new Error(data.error || 'Inspection matcher impossible.');
+        return data;
+    }
+
+    async function inspectMatcherFiles() {
+        if (jobType.value !== 'matcher') return;
+        if (!inputFile.files.length || !inputFile2.files.length) { inspectMatcherStatus.textContent = 'Sélectionne le master et le slave avant inspection.'; return; }
+        inspectMatcherStatus.textContent = 'Inspection master/slave en cours...';
+        inspectMatcherBtn.disabled = true;
+        matcherInspectionResults.innerHTML = '';
+        try {
+            const [masterData, slaveData] = await Promise.all([inspectMatcher('master', inputFile.files[0]), inspectMatcher('slave', inputFile2.files[0])]);
+            [masterData, slaveData].forEach(payload => {
+                const role = payload.role;
+                const wrapper = document.createElement('div'); wrapper.className = 'stack';
+                payload.sheets.forEach((sheet, index) => wrapper.appendChild(renderMatcherSheetCard(role, sheet, index)));
+                matcherInspectionResults.appendChild(wrapper);
+                const selected = firstSheetOrWarn(payload, inspectMatcherStatus, 'Aucun onglet exploitable détecté pour ce fichier matcher.');
+                if (!selected) return;
+                const hiddenSheetInput = document.getElementById(`id_matcher_${role}_sheet_name`);
+                hiddenSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
+                buildMappingCard(role === 'master' ? matcherMasterGrid : matcherSlaveGrid, matcherFields, matcherRequired, `id_matcher_${role}_`, selected.detected_columns, selected.mapping_suggestions || {});
+            });
+            matcherInspectionCard.classList.remove('hidden');
+            matcherMappingCard.classList.remove('hidden');
+            inspectMatcherStatus.textContent = `Inspection prête — master: ${masterData.filename}, slave: ${slaveData.filename}.`;
+        } catch (error) {
+            inspectMatcherStatus.textContent = error.message || 'Erreur réseau pendant l’inspection matcher.';
+        } finally {
+            inspectMatcherBtn.disabled = false;
+        }
+    }
+
+    async function inspectGeocoderFile() {
+        if (!(jobType.value === 'geocoder' || jobType.value === 'geoclass' || jobType.value === 'marketsegmenter')) return;
+        const marketsegmenterUsesBigQuery = jobType.value === 'marketsegmenter' && marketsegmenterSourceMode && marketsegmenterSourceMode.value === 'bigquery';
+        if (!marketsegmenterUsesBigQuery && !inputFile.files.length) { inspectGeocoderStatus.textContent = 'Sélectionne d’abord un fichier source.'; return; }
+        inspectGeocoderStatus.textContent = jobType.value === 'marketsegmenter' ? 'Inspection market segmenter en cours...' : 'Inspection geocoder en cours...';
+        inspectGeocoderBtn.disabled = true;
+        geocoderInspectionResults.innerHTML = '';
+        try {
+            let response;
+            if (marketsegmenterUsesBigQuery) {
+                const formData = new FormData();
+                formData.append('table_name', marketsegmenterBqTable && marketsegmenterBqTable.value ? marketsegmenterBqTable.value : '{{ bigquery_input_table_default|escapejs }}');
+                formData.append('country_code', marketsegmenterBqCountry ? marketsegmenterBqCountry.value : '');
+                response = await fetch('{% url "jobs:inspect_marketsegmenter_bigquery" %}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
+            } else {
+                const formData = new FormData();
+                formData.append('file', inputFile.files[0]);
+                const inspectUrl = jobType.value === 'marketsegmenter' ? '{% url "jobs:inspect_marketsegmenter" %}' : '{% url "jobs:inspect_geocoder" %}';
+                response = await fetch(inspectUrl, { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
+            }
+            const data = await response.json();
+            if (!response.ok || data.ok === false) { inspectGeocoderStatus.textContent = data.error || 'Inspection geocoder impossible.'; return; }
+            data.sheets.forEach((sheet, index) => geocoderInspectionResults.appendChild(renderGeocoderSheetCard(sheet, index)));
+            const selected = firstSheetOrWarn(data, inspectGeocoderStatus, 'Aucune source exploitable détectée.');
+            if (!selected) return;
+            if (jobType.value === 'marketsegmenter') {
+                marketsegmenterSheetInput.value = selected.name === '__csv__' || selected.name === '__bigquery__' ? '' : selected.name;
+                buildMappingCard(geocoderMappingGrid, marketsegmenterFields, marketsegmenterRequired, 'id_marketsegmenter_', selected.detected_columns, selected.mapping_suggestions || {});
+                buildMappingCard(aiReviewMappingGrid, aiReviewFields, aiReviewRequiredChained, 'id_ai_review_', selected.detected_columns, selected.ai_review_mapping_suggestions || {});
+                aiReviewMappingCard.classList.remove('hidden');
+                aiReviewPanel.classList.remove('hidden');
+            } else {
+                geocoderSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
+                buildMappingCard(geocoderMappingGrid, geocoderFields, geocoderRequired, 'id_geocoder_', selected.detected_columns, selected.mapping_suggestions || {});
+            }
+            geocoderInspectionCard.classList.remove('hidden');
+            geocoderMappingCard.classList.remove('hidden');
+            inspectGeocoderStatus.textContent = `Inspection prête — ${data.filename}.`;
+        } catch (error) {
+            inspectGeocoderStatus.textContent = error && error.message ? error.message : 'Erreur pendant l’inspection geocoder.';
+        } finally {
+            inspectGeocoderBtn.disabled = false;
+        }
+    }
+
+
+
+    async function inspectAiReviewFile() {
+        if (jobType.value !== 'ai_review') return;
+        if (!inputFile.files.length) { inspectAiReviewStatus.textContent = 'Sélectionne d’abord un fichier source.'; return; }
+        inspectAiReviewStatus.textContent = 'Inspection AI Review en cours...';
+        inspectAiReviewBtn.disabled = true;
+        aiReviewInspectionResults.innerHTML = '';
+        const formData = new FormData();
+        formData.append('file', inputFile.files[0]);
+        try {
+            const response = await fetch('{% url "jobs:inspect_ai_review" %}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
+            const data = await response.json();
+            if (!response.ok || data.ok === false) { inspectAiReviewStatus.textContent = data.error || 'Inspection AI Review impossible.'; return; }
+            data.sheets.forEach((sheet, index) => aiReviewInspectionResults.appendChild(renderAiReviewSheetCard(sheet, index)));
+            const selected = firstSheetOrWarn(data, inspectAiReviewStatus, 'Aucun onglet exploitable détecté pour ce fichier AI Review.');
+            if (!selected) return;
+            aiReviewSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
+            buildMappingCard(aiReviewMappingGrid, aiReviewFields, aiReviewRequiredStandalone, 'id_ai_review_', selected.detected_columns, selected.mapping_suggestions || {});
+            aiReviewInspectionCard.classList.remove('hidden');
+            aiReviewMappingCard.classList.remove('hidden');
+            inspectAiReviewStatus.textContent = `Inspection AI Review prête — ${data.filename}.`;
+        } catch (error) {
+            inspectAiReviewStatus.textContent = error && error.message ? error.message : 'Erreur pendant l’inspection AI Review.';
+        } finally {
+            inspectAiReviewBtn.disabled = false;
+        }
+    }
+
+    function togglePanels() {
+        const isNormalizer = jobType.value === 'normalizer';
+        const isMatcher = jobType.value === 'matcher';
+        const isMarketsegmenter = jobType.value === 'marketsegmenter';
+        const isGeocoder = jobType.value === 'geocoder' || jobType.value === 'geoclass' || isMarketsegmenter;
+        const isAiReview = jobType.value === 'ai_review' || isMarketsegmenter;
+        const usesBigQuery = isMarketsegmenter && marketsegmenterSourceMode && marketsegmenterSourceMode.value === 'bigquery';
+        normalizerPanel.classList.toggle('hidden', !isNormalizer);
+        inspectionCard.classList.toggle('hidden', !isNormalizer || !inspectionResults.children.length);
+        mappingCard.classList.toggle('hidden', !isNormalizer || !mappingGrid.children.length);
+        matcherPanel.classList.toggle('hidden', !isMatcher);
+        matcherInspectionCard.classList.toggle('hidden', !isMatcher || !matcherInspectionResults.children.length);
+        matcherMappingCard.classList.toggle('hidden', !isMatcher || (!matcherMasterGrid.children.length && !matcherSlaveGrid.children.length));
+        geocoderPanel.classList.toggle('hidden', !isGeocoder);
+        aiReviewPanel.classList.toggle('hidden', !isAiReview);
+        geocoderInspectionCard.classList.toggle('hidden', !isGeocoder || !geocoderInspectionResults.children.length);
+        geocoderMappingCard.classList.toggle('hidden', !isGeocoder || !geocoderMappingGrid.children.length);
+        aiReviewInspectionCard.classList.toggle('hidden', !((jobType.value === 'ai_review') && aiReviewInspectionResults.children.length));
+        aiReviewMappingCard.classList.toggle('hidden', !isAiReview || !aiReviewMappingGrid.children.length);
+        secondaryFileField.classList.toggle('hidden', !isMatcher);
+        document.querySelectorAll('.marketsegmenter-bq-only').forEach(el => el.classList.toggle('hidden', !isMarketsegmenter));
+        inputFile.closest('.field').classList.toggle('hidden', usesBigQuery);
+    }
+
+    inspectBtn.addEventListener('click', inspectWorkbook);
+    inspectMatcherBtn.addEventListener('click', inspectMatcherFiles);
+    inspectGeocoderBtn.addEventListener('click', inspectGeocoderFile);
+    inspectAiReviewBtn.addEventListener('click', inspectAiReviewFile);
+    if (aiReviewLlmProvider) {
+        aiReviewLlmProvider.addEventListener('change', syncAiReviewLlmModels);
+        syncAiReviewLlmModels();
+    }
+    jobType.addEventListener('change', togglePanels);
+    if (marketsegmenterSourceMode) { marketsegmenterSourceMode.addEventListener('change', togglePanels); }
+    togglePanels();
+})();
+</script>
+{% endblock %}

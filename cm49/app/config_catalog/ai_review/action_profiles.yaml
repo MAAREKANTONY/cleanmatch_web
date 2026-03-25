@@ -1,0 +1,20 @@
+default_profile: standard
+profiles:
+  light:
+    capabilities:
+      - metadata_review
+      - homepage_fetch
+  standard:
+    capabilities:
+      - metadata_review
+      - homepage_fetch
+      - menu_fetch
+      - social_review
+  deep:
+    capabilities:
+      - metadata_review
+      - homepage_fetch
+      - menu_fetch
+      - social_review
+      - photo_review
+      - entity_resolution

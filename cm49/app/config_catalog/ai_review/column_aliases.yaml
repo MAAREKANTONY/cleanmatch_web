@@ -1,0 +1,116 @@
+aliases:
+  outlet_id:
+    - id
+    - outlet_id
+    - Google ID
+  outlet_name:
+    - name
+    - Name
+    - outlet_name
+    - restaurant_name
+  full_address:
+    - address
+    - Address
+    - Full address
+    - full_address
+  country:
+    - country
+    - Country
+  country_code:
+    - country_code
+    - Country code
+    - Country Code
+  google_id:
+    - google_id
+    - Google ID
+  place_id:
+    - place_id
+    - Place ID
+    - Place Id
+  website_url:
+    - website
+    - Website
+    - site_web
+  website_root_url:
+    - website_root_url
+    - Website (root url)
+  website_title:
+    - website_title
+    - Website title
+  website_meta_description:
+    - website_meta_description
+    - Website meta description
+  menu_urls:
+    - menu_url
+    - Menu link
+    - Offerings link
+    - menu
+  photo_urls:
+    - photo_1
+    - Photo 1
+    - photo_2
+    - Photo 2
+    - all_photos
+    - All photos
+    - menu_photos
+    - Menu photos
+  social_facebook_urls:
+    - facebook_link
+    - Facebook link
+  social_instagram_urls:
+    - instagram_link
+    - Instagram link
+  social_linkedin_urls:
+    - linkedin_link
+    - Linkedin link
+  social_youtube_urls:
+    - youtube_link
+    - Youtube link
+  social_twitter_urls:
+    - twitter_link
+    - Twitter link
+  segmentation_confidence:
+    - segmentation_confidence
+  fyre_market_segment_type0:
+    - fyre_market_segment_type0
+  fyre_market_segment_type1:
+    - fyre_market_segment_type1
+  fyre_market_segment_type2:
+    - fyre_market_segment_type2
+  fyre_market_segment_type3:
+    - fyre_market_segment_type3
+  main_type:
+    - main_type
+    - Main type
+  all_types:
+    - all_types
+    - All types
+  description_1:
+    - description_1
+    - Description 1
+  description_2:
+    - description_2
+    - Description 2
+  description_3:
+    - description_3
+    - Description 3
+  reviews_tags:
+    - reviews_tags
+    - Reviews tag
+  characteristics:
+    - characteristics
+    - Characteristics
+  hotel_additional_informations:
+    - hotel_additional_informations
+    - Hotel additional information
+  price_range_simplified:
+    - price_range_simplified
+    - Price range simplified
+  customer_reported_price_range:
+    - customer_reported_price_range
+    - Customer reported price range
+  website_lang:
+    - website_lang
+    - Website lang
+  segmentation_reasons:
+    - segmentation_reasons

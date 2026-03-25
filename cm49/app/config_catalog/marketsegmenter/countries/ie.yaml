@@ -1,0 +1,17 @@
+country_code: IE
+languages:
+- en
+keyword_rules:
+- segment:
+  - horeca
+  - cafes_bars_discotheques
+  - beer_bars_beer_temples_pubs
+  - ''
+  family:
+  - horeca
+  - cafes_bars_discotheques
+  weight: 12
+  keywords:
+  - gastropub
+  - public house
+  - pub grub

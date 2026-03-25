@@ -1,0 +1,92 @@
+{
+  "rows": 1,
+  "selected_for_ai_review": 1,
+  "skipped_high_confidence": 0,
+  "low_confidence_threshold": 0.65,
+  "only_low_confidence": true,
+  "foundation_mode": true,
+  "web_fetch_enabled": false,
+  "llm_enabled": false,
+  "source_groups": {
+    "id_fields": [
+      "outlet_id",
+      "id",
+      "ID",
+      "Google ID",
+      "google_id"
+    ],
+    "name_fields": [
+      "name",
+      "Name",
+      "outlet_name"
+    ],
+    "address_fields": [
+      "address",
+      "Address",
+      "Full address",
+      "Full Address",
+      "full_address"
+    ],
+    "country_fields": [
+      "country",
+      "Country"
+    ],
+    "country_code_fields": [
+      "country_code",
+      "Country code",
+      "Country Code"
+    ],
+    "google_id_fields": [
+      "google_id",
+      "Google ID"
+    ],
+    "place_id_fields": [
+      "place_id",
+      "Place Id",
+      "Place ID"
+    ],
+    "website_fields": [
+      "website",
+      "Website"
+    ],
+    "website_root_fields": [
+      "website_root_url",
+      "Website (root url)"
+    ],
+    "website_title_fields": [
+      "website_title",
+      "Website title"
+    ],
+    "website_meta_description_fields": [
+      "website_meta_description",
+      "Website meta description"
+    ],
+    "menu_fields": [
+      "menu_url",
+      "Offerings link",
+      "Menu link"
+    ],
+    "social_fields": [
+      "facebook_link",
+      "instagram_link",
+      "linkedin_link",
+      "youtube_link",
+      "twitter_link",
+      "Facebook link",
+      "Instagram link",
+      "Linkedin link",
+      "Youtube link",
+      "Twitter link"
+    ],
+    "photo_fields": [
+      "photo_1",
+      "photo_2",
+      "all_photos",
+      "menu_photos",
+      "Photo 1",
+      "Photo 2",
+      "All photos",
+      "Menu photos"
+    ]
+  }
+}

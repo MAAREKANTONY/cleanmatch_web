@@ -1,0 +1,3 @@
+checkpoint_every: 50
+resume_enabled: true
+checkpoint_suffix: .checkpoint.json

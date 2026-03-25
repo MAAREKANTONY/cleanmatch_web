@@ -1,0 +1,20 @@
+country_code: ES
+languages:
+- es
+- en
+keyword_rules:
+- segment:
+  - horeca
+  - cafes_bars_discotheques
+  - wine_tapas_bars
+  - ''
+  family:
+  - horeca
+  - cafes_bars_discotheques
+  weight: 12
+  keywords:
+  - tapas
+  - pinchos
+  - cerveceria
+  - cervecería
+  - taberna

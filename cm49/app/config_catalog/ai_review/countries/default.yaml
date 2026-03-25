@@ -1,0 +1,13 @@
+overrides:
+  metadata_review:
+    enabled: true
+  homepage_fetch:
+    priority: medium
+  menu_fetch:
+    priority: high
+  social_review:
+    priority: medium
+  photo_review:
+    priority: low
+  entity_resolution:
+    priority: low

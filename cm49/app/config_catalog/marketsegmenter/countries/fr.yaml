@@ -1,0 +1,19 @@
+country_code: FR
+languages:
+- fr
+- en
+keyword_rules:
+- segment:
+  - horeca
+  - table_service
+  - creperies
+  - ''
+  family:
+  - horeca
+  - table_service
+  weight: 12
+  keywords:
+  - galette
+  - galettes
+  - crêperie
+  - creperie

@@ -1,0 +1,10 @@
+max_social_links: 3
+max_photo_links: 3
+max_pages_per_outlet: 2
+llm_enabled: false
+web_fetch_enabled: true
+timeout_seconds: 5
+max_text_chars_per_page: 3000
+max_download_bytes_per_page: 300000
+fetch_user_agent: cleanmatch-web-ai-review
+cache_subdir: ai_review_web_cache

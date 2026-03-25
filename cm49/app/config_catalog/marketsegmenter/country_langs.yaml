@@ -1,0 +1,55 @@
+country_langs:
+  FR:
+  - fr
+  - en
+  BE:
+  - fr
+  - nl
+  - en
+  CH:
+  - fr
+  - de
+  - it
+  - en
+  ES:
+  - es
+  - en
+  PT:
+  - pt
+  - en
+  IT:
+  - it
+  - en
+  DE:
+  - de
+  - en
+  AT:
+  - de
+  - en
+  NL:
+  - nl
+  - en
+  GB:
+  - en
+  IE:
+  - en
+  US:
+  - en
+  CA:
+  - en
+  - fr
+  MX:
+  - es
+  - en
+  BR:
+  - pt
+  - en
+  IL:
+  - he
+  - en
+  GR:
+  - el
+  - en
+  TR:
+  - tr
+  - en

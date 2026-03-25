@@ -1,0 +1,61 @@
+default_provider: openai_compatible_json
+default_model_by_provider:
+  openai_compatible_json: gpt-4.1-mini
+  gemini_generate_content: gemini-2.5-flash
+  anthropic_messages_json: claude-sonnet-4-6
+providers:
+  openai_compatible_json:
+    label: OpenAI compatible
+    endpoint_style: openai_compatible_json
+    api_key_env: OPENAI_API_KEY
+    base_url: https://api.openai.com/v1/chat/completions
+    models:
+      - id: gpt-4.1-mini
+        label: GPT-4.1 mini
+      - id: gpt-4.1
+        label: GPT-4.1
+      - id: gpt-4o-mini
+        label: GPT-4o mini
+      - id: gpt-4o
+        label: GPT-4o
+  gemini_generate_content:
+    label: Google Gemini
+    endpoint_style: gemini_generate_content
+    api_key_env: GEMINI_API_KEY
+    base_url: https://generativelanguage.googleapis.com/v1beta
+    models:
+      - id: gemini-3.1-pro-preview
+        label: Gemini 3.1 Pro Preview
+      - id: gemini-3-flash-preview
+        label: Gemini 3 Flash Preview
+      - id: gemini-3.1-flash-lite-preview
+        label: Gemini 3.1 Flash-Lite Preview
+      - id: gemini-2.5-pro
+        label: Gemini 2.5 Pro
+      - id: gemini-2.5-flash
+        label: Gemini 2.5 Flash
+      - id: gemini-2.5-flash-lite
+        label: Gemini 2.5 Flash-Lite
+  anthropic_messages_json:
+    label: Anthropic Claude
+    endpoint_style: anthropic_messages_json
+    api_key_env: ANTHROPIC_API_KEY
+    base_url: https://api.anthropic.com/v1/messages
+    anthropic_version: '2023-06-01'
+    models:
+      - id: claude-opus-4-6
+        label: Claude Opus 4.6
+      - id: claude-sonnet-4-6
+        label: Claude Sonnet 4.6
+      - id: claude-haiku-4-5-20251001
+        label: Claude Haiku 4.5
+      - id: claude-opus-4-5-20251101
+        label: Claude Opus 4.5
+      - id: claude-sonnet-4-5-20250929
+        label: Claude Sonnet 4.5
+      - id: claude-opus-4-1-20250805
+        label: Claude Opus 4.1
+      - id: claude-opus-4-20250514
+        label: Claude Opus 4
+      - id: claude-sonnet-4-20250514
+        label: Claude Sonnet 4

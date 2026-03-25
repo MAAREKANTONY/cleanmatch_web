@@ -1,0 +1,131 @@
+service_mode_keywords:
+  fast_food:
+  - fast food
+  - takeout
+  - takeaway
+  - delivery
+  - drive thru
+  - drive-through
+  - quick bite
+  - counter service
+  - hamburger
+  - burger
+  - pizza delivery
+  - pizza takeaway
+  - snack
+  table_service:
+  - restaurant
+  - brasserie
+  - bistro
+  - reservation
+  - book a table
+  - table service
+  - dining room
+  - parrilla
+  - grill
+  - trattoria
+  bar:
+  - bar
+  - pub
+  - cocktail
+  - beer
+  - wine bar
+  - vinoteca
+  - cerveceria
+  - tapas
+  cafe:
+  - coffee
+  - cafe
+  - café
+  - espresso
+  - latte
+  - tea room
+  - ice cream
+  hotel:
+  - hotel
+  - lodging
+  - resort
+  - guest house
+  - hostel
+  - spa hotel
+  retail_food:
+  - bakery
+  - boulangerie
+  - butcher
+  - supermarket
+  - grocery
+  - wine shop
+  - pastry
+cuisine_keywords:
+  burger:
+  - burger
+  - hamburger
+  - smash burger
+  - whopper
+  - cheeseburger
+  pizza:
+  - pizza
+  - pizzeria
+  - pepperoni
+  - napolitana
+  italian:
+  - pasta
+  - trattoria
+  - osteria
+  - carbonara
+  - antipasti
+  japanese:
+  - sushi
+  - ramen
+  - izakaya
+  - yakitori
+  lebanese:
+  - shawarma
+  - mezze
+  - libanais
+  - lebanese
+  mexican:
+  - tacos
+  - burrito
+  - quesadilla
+  - mexican
+  seafood:
+  - seafood
+  - fish
+  - marisco
+  - marisqueria
+  bakery:
+  - bakery
+  - boulangerie
+  - croissant
+  - panaderia
+  - patisserie
+signal_keywords:
+  delivery:
+  - delivery
+  - a domicilio
+  - livraison
+  takeaway:
+  - takeaway
+  - takeout
+  - para llevar
+  - à emporter
+  counter_service:
+  - counter service
+  - self-service
+  - autoservicio
+  reservation:
+  - reservation
+  - reserva
+  - book a table
+  alcohol:
+  - beer
+  - wine
+  - cocktail
+  - serves alcohol
+  - bar onsite
+  family:
+  - family-friendly
+  - good for kids
+  - kids menu
+max_keywords_in_output: 18

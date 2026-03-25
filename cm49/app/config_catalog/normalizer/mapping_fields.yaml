@@ -1,0 +1,82 @@
+mapping_fields:
+- id
+- name
+- address
+- zipcode
+- city
+- country
+- legal_id
+- lat
+- lng
+- hexa_gmap
+- phone_gmap
+- social_link_gmap
+required_matchcode_fields:
+- address
+- city
+- zipcode
+supported_country_codes:
+- FR
+- IT
+- ES
+- DE
+- BE
+- NL
+- GB
+- PT
+default_country_code: FR
+country_choices:
+- - ''
+  - Auto / non précisé
+- - FR
+  - France
+- - IT
+  - Italie
+- - ES
+  - Espagne
+- - DE
+  - Allemagne
+- - BE
+  - Belgique
+- - NL
+  - Pays-Bas
+- - GB
+  - Royaume-Uni
+- - PT
+  - Portugal
+country_name_to_code:
+  france: FR
+  fr: FR
+  italy: IT
+  italia: IT
+  italie: IT
+  it: IT
+  spain: ES
+  espana: ES
+  españa: ES
+  espagne: ES
+  es: ES
+  germany: DE
+  deutschland: DE
+  allemagne: DE
+  de: DE
+  belgium: BE
+  belgique: BE
+  belgie: BE
+  belgië: BE
+  be: BE
+  netherlands: NL
+  pays bas: NL
+  pays-bas: NL
+  nederland: NL
+  holland: NL
+  nl: NL
+  united kingdom: GB
+  uk: GB
+  gb: GB
+  great britain: GB
+  royaume uni: GB
+  royaume-uni: GB
+  england: GB
+  portugal: PT
+  pt: PT

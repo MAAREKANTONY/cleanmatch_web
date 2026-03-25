@@ -1,0 +1,22 @@
+base_family_score_rules:
+- segment0: horeca
+  segment1: table_service
+  initial_score: 0.0
+- segment0: horeca
+  segment1: fast_food
+  initial_score: 0.0
+- segment0: horeca
+  segment1: cafes_bars_discotheques
+  initial_score: 0.0
+- segment0: horeca
+  segment1: hotel_lodging
+  initial_score: 0.0
+- segment0: asc
+  segment1: food_store
+  initial_score: 0.0
+- segment0: asc
+  segment1: other_types_of_businesses
+  initial_score: 0.0
+- segment0: leisure
+  segment1: on_site_catering_events
+  initial_score: 0.0

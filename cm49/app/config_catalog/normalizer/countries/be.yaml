@@ -1,0 +1,24 @@
+country_code: BE
+street_types:
+- rue
+- avenue
+- chaussée
+- chaussee
+- boulevard
+- place
+- steenweg
+- straat
+- laan
+- plein
+postcode_regex: ^\d{4}$
+legal_id_type: vat_or_enterprise_number
+legal_prefixes:
+- be
+number_suffixes:
+- bis
+company_suffixes:
+- sprl
+- srl
+- sa
+- bv
+- nv

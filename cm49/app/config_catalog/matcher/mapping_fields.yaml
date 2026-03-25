@@ -1,0 +1,24 @@
+mapping_fields:
+- id
+- name
+- address
+- zipcode
+- city
+- country
+- legal_id
+- legal_id_type
+- voie
+- num_voie
+- matchcode
+- phone
+- cellular
+- siret
+- hexa
+- lat
+- lng
+required_fields:
+- address
+- city
+- id
+- name
+- zipcode

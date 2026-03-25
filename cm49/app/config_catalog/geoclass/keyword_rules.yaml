@@ -1,0 +1,48 @@
+keyword_rules:
+- code: hotel
+  category: hospitality
+  subcategory: hotel
+  keywords:
+  - hotel
+  - hostel
+  - resort
+- code: restaurant
+  category: food_service
+  subcategory: restaurant
+  keywords:
+  - restaurant
+  - ristorante
+  - restaurante
+  - brasserie
+  - bistrot
+- code: bar
+  category: food_service
+  subcategory: bar
+  keywords:
+  - bar
+  - pub
+  - cocktail
+  - taverna
+- code: bakery
+  category: food_retail
+  subcategory: bakery
+  keywords:
+  - boulangerie
+  - bakery
+  - patisserie
+  - pasteleria
+- code: pharmacy
+  category: retail
+  subcategory: pharmacy
+  keywords:
+  - pharmacie
+  - farmacia
+  - apotheek
+- code: supermarket
+  category: retail
+  subcategory: supermarket
+  keywords:
+  - supermarket
+  - supermercato
+  - supermercado
+  - market

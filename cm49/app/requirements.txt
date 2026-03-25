@@ -1,0 +1,15 @@
+Django==5.2.6
+djangorestframework==3.16.1
+celery[redis]==5.5.3
+gunicorn==23.0.0
+psycopg2-binary==2.9.10
+
+pandas==2.3.2
+openpyxl==3.1.5
+python-slugify==8.0.4
+rapidfuzz==3.14.1
+
+geopy==2.4.1
+PyYAML==6.0.2
+requests>=2.32.0
+google-cloud-bigquery==3.38.0

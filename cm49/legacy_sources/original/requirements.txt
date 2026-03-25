@@ -1,0 +1,28 @@
+# Librairies requises pour cleanmatch
+
+# Manipulation de donnees
+pandas>=2.0.0
+numpy>=1.24.0
+openpyxl>=3.1.0
+
+# Interface graphique
+PyQt6>=6.5.0
+
+# Traitement de texte et matching
+python-slugify>=8.0.0
+unidecode>=1.3.0
+rapidfuzz>=3.0.0
+
+# Geocoding et cartographie
+geopy>=2.4.0
+googlemaps>=4.10.0
+
+# Requetes HTTP
+requests>=2.31.0
+urllib3>=2.0.0
+
+# Barre de progression
+tqdm>=4.65.0
+
+# Theme sombre (optionnel)
+qdarkstyle>=3.1.0

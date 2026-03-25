@@ -1,0 +1,19 @@
+mapping_fields:
+- id
+- name
+- address
+- zipcode
+- city
+- lat
+- lng
+- phone
+- email
+- website
+- country
+- hexa
+- legal_id
+required_fields:
+- address
+- city
+- id
+- zipcode

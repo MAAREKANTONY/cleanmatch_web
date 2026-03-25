@@ -1,0 +1,24 @@
+country_code: DE
+street_types:
+- strasse
+- straße
+- platz
+- weg
+- allee
+- chaussee
+- ring
+- ufer
+- damm
+- gasse
+- markt
+postcode_regex: ^\d{5}$
+legal_id_type: vat_or_company_id
+legal_prefixes:
+- de
+number_suffixes: []
+company_suffixes:
+- gmbh
+- ag
+- ug
+- kg
+- ohg

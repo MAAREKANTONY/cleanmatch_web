@@ -1,0 +1,4 @@
+catalog_version: 1.0.0
+updated_at: '2026-03-22'
+notes: Iteration 27 - AI Review sprint 2 local feature extraction + full UI integration
+  + cleanup of legacy iteration references in templates.

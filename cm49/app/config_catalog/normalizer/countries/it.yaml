@@ -1,0 +1,27 @@
+country_code: IT
+street_types:
+- via
+- viale
+- piazza
+- corso
+- largo
+- strada
+- vicolo
+- piazzale
+- contrada
+- lungomare
+- galleria
+postcode_regex: ^\d{5}$
+legal_id_type: partita_iva_or_codice_fiscale
+legal_prefixes:
+- it
+number_suffixes:
+- bis
+- ter
+company_suffixes:
+- srl
+- spa
+- snc
+- sas
+- societa
+- società
