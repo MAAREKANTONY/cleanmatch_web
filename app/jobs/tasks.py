@@ -17,7 +17,7 @@ from geocoder.services.geocoder_service import GeocoderOptions, GeocoderService
 from geoclass.services.geoclass_service import GeoclassOptions, GeoclassService
 from marketsegmenter.services.marketsegmenter_service import MarketSegmenterOptions, MarketSegmenterService
 from ai_review.services.ai_review_service import AIReviewOptions, AIReviewService
-from integrations.bigquery_service import BigQueryService
+from bigquery.client import BigQueryService
 
 
 def _read_text_preview(path: str, limit: int = 4000) -> str:

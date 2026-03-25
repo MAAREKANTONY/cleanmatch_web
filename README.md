@@ -83,3 +83,10 @@ En plus, l'AI Review écrit maintenant dans les logs worker un diagnostic JSON c
 ## Iteration 39
 
 AI Review LLM output semantics were clarified to distinguish job-level configuration from row-level execution. Output now includes `ai_llm_configured`, `ai_llm_live_ready`, `ai_llm_attempted`, and `ai_llm_result_source`, and fallback rows no longer claim that no provider was enabled when the provider was actually configured.
+
+
+## Iteration 44
+
+- Added a dedicated `app/bigquery/client.py` service module.
+- BigQuery country filter now injects `@country_code` only when a country code is provided.
+- BigQuery preview now returns the executed SQL preview.
