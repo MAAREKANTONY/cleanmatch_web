@@ -13,8 +13,9 @@ from normalizer.services.normalizer_service import CANONICAL_MAPPING_FIELDS, ins
 from matcher.services.matcher_service import MATCHER_MAPPING_FIELDS, inspect_table_file
 from geocoder.services.geocoder_service import GEOCODER_MAPPING_FIELDS, inspect_geocoder_file
 from geoclass.services.geoclass_service import GEOCLASS_MAPPING_FIELDS
-from marketsegmenter.services.marketsegmenter_service import MARKETSEGMENTER_MAPPING_FIELDS, inspect_marketsegmenter_file
-from ai_review.services.ai_review_service import AI_REVIEW_MAPPING_FIELDS, inspect_ai_review_file
+from marketsegmenter.services.marketsegmenter_service import MARKETSEGMENTER_MAPPING_FIELDS, inspect_marketsegmenter_file, suggest_column_mapping as suggest_marketsegmenter_mapping
+from ai_review.services.ai_review_service import AI_REVIEW_MAPPING_FIELDS, inspect_ai_review_file, suggest_ai_review_mapping
+from integrations.bigquery_service import BigQueryService, BigQueryConfigError
 from ai_review.services.capability_engine import AI_REVIEW_ACTION_PROFILES, AI_REVIEW_CAPABILITIES
 
 from .forms import JobCreateForm
@@ -73,7 +74,7 @@ def create_job(request):
         if form.is_valid():
             parameters = {
                 'mode': 'uploaded',
-                'filename_1': form.cleaned_data['input_file_1'].name,
+                'filename_1': form.cleaned_data['input_file_1'].name if form.cleaned_data.get('input_file_1') else None,
                 'filename_2': form.cleaned_data['input_file_2'].name if form.cleaned_data.get('input_file_2') else None,
             }
             if form.cleaned_data['job_type'] == Job.JobType.NORMALIZER:
@@ -102,10 +103,25 @@ def create_job(request):
                     'geocoder_mapping': form.get_geocoder_mapping_payload(form.cleaned_data),
                 })
             elif form.cleaned_data['job_type'] == Job.JobType.MARKETSEGMENTER:
+                source_mode = (form.cleaned_data.get('marketsegmenter_source_mode') or 'uploaded').strip() or 'uploaded'
                 parameters.update({
+                    'mode': 'bigquery' if source_mode == 'bigquery' else 'uploaded',
+                    'marketsegmenter_source_mode': source_mode,
                     'marketsegmenter_sheet_name': (form.cleaned_data.get('marketsegmenter_sheet_name') or '').strip() or None,
                     'marketsegmenter_country_default': (form.cleaned_data.get('marketsegmenter_country_default') or '').strip(),
                     'marketsegmenter_mapping': form.get_marketsegmenter_mapping_payload(form.cleaned_data),
+                    'ai_review_mapping': form.get_ai_review_mapping_payload(form.cleaned_data),
+                    'ai_review_low_confidence_threshold': float(form.cleaned_data.get('ai_review_low_confidence_threshold') or 0.65),
+                    'ai_review_action_profile': (form.cleaned_data.get('ai_review_action_profile') or 'standard').strip() or 'standard',
+                    'ai_review_llm_enabled': bool(form.cleaned_data.get('ai_review_llm_enabled')),
+                    'ai_review_llm_provider': str(form.cleaned_data.get('ai_review_llm_provider') or ''),
+                    'ai_review_llm_model': str(form.cleaned_data.get('ai_review_llm_model') or ''),
+                    'ai_review_llm_max_budget_eur': float(form.cleaned_data.get('ai_review_llm_max_budget_eur') or 0.0),
+                    'ai_review_llm_max_cost_per_row_eur': float(form.cleaned_data.get('ai_review_llm_max_cost_per_row_eur') or 0.0),
+                    'ai_review_llm_max_calls_per_row': int(form.cleaned_data.get('ai_review_llm_max_calls_per_row') or 1),
+                    'marketsegmenter_bq_table_name': (form.cleaned_data.get('marketsegmenter_bq_table_name') or '').strip() or 'google_map_clean',
+                    'marketsegmenter_bq_country_code': (form.cleaned_data.get('marketsegmenter_bq_country_code') or '').strip(),
+                    'marketsegmenter_bq_output_table_name': (form.cleaned_data.get('marketsegmenter_bq_output_table_name') or '').strip() or 'google_map_clean_segmented',
                 })
             elif form.cleaned_data['job_type'] == Job.JobType.AI_REVIEW:
                 parameters.update({
@@ -147,7 +163,7 @@ def create_job(request):
                 status=Job.Status.PENDING,
                 progress_message='Job créé',
                 parameters_json=parameters,
-                input_file_1=form.cleaned_data['input_file_1'],
+                input_file_1=form.cleaned_data.get('input_file_1'),
                 input_file_2=form.cleaned_data.get('input_file_2') or None,
             )
             async_result = run_uploaded_job.delay(str(job.id))
@@ -329,8 +345,26 @@ def inspect_marketsegmenter(request):
         return JsonResponse({'ok': False, 'error': 'Aucun fichier fourni.'}, status=400)
     try:
         payload = inspect_marketsegmenter_file(uploaded)
+        for sheet in payload.get('sheets', []):
+            sheet['ai_review_mapping_suggestions'] = suggest_ai_review_mapping(sheet.get('detected_columns', []))
     except Exception as exc:
         return JsonResponse({'ok': False, 'error': f'Impossible d’inspecter le fichier : {exc}'}, status=400)
     payload['mapping_fields'] = MARKETSEGMENTER_MAPPING_FIELDS
     payload['ok'] = True
     return JsonResponse(payload)
+
+
+@require_POST
+def inspect_marketsegmenter_bigquery(request):
+    table_name = (request.POST.get('table_name') or '').strip() or 'google_map_clean'
+    country_code = (request.POST.get('country_code') or '').strip()
+    try:
+        service = BigQueryService()
+        payload = service.inspect_table(table_name=table_name, country_code=country_code, limit=20)
+        for sheet in payload.get('sheets', []):
+            columns = sheet.get('detected_columns', [])
+            sheet['mapping_suggestions'] = suggest_marketsegmenter_mapping(columns)
+            sheet['ai_review_mapping_suggestions'] = suggest_ai_review_mapping(columns)
+        return JsonResponse({'ok': True, **payload})
+    except (BigQueryConfigError, Exception) as exc:
+        return JsonResponse({'ok': False, 'error': str(exc)}, status=400)

@@ -12,3 +12,4 @@ rapidfuzz==3.14.1
 geopy==2.4.1
 PyYAML==6.0.2
 requests>=2.32.0
+google-cloud-bigquery==3.38.0

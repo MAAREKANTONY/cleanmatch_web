@@ -88,6 +88,13 @@ JOB_STALE_RUNNING_MINUTES = int(os.getenv('JOB_STALE_RUNNING_MINUTES', '30'))
 JOB_STALE_QUEUED_MINUTES = int(os.getenv('JOB_STALE_QUEUED_MINUTES', '60'))
 JOB_MIN_FREE_DISK_MB = int(os.getenv('JOB_MIN_FREE_DISK_MB', '1024'))
 
+BIGQUERY_PROJECT_ID = os.getenv('BIGQUERY_PROJECT_ID', '').strip()
+BIGQUERY_DATASET = os.getenv('BIGQUERY_DATASET', '').strip()
+BIGQUERY_LOCATION = os.getenv('BIGQUERY_LOCATION', '').strip()
+BIGQUERY_CREDENTIALS_FILE = os.getenv('BIGQUERY_CREDENTIALS_FILE', os.getenv('GOOGLE_APPLICATION_CREDENTIALS', '')).strip()
+BIGQUERY_INPUT_TABLE = os.getenv('BIGQUERY_INPUT_TABLE', 'google_map_clean').strip() or 'google_map_clean'
+BIGQUERY_OUTPUT_TABLE = os.getenv('BIGQUERY_OUTPUT_TABLE', 'google_map_clean_segmented').strip() or 'google_map_clean_segmented'
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

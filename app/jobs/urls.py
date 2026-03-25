@@ -13,6 +13,7 @@ urlpatterns = [
     path('inspect-matcher-file/', views.inspect_matcher_file, name='inspect_matcher_file'),
     path('inspect-geocoder-file/', views.inspect_geocoder, name='inspect_geocoder'),
     path('inspect-marketsegmenter-file/', views.inspect_marketsegmenter, name='inspect_marketsegmenter'),
+    path('inspect-marketsegmenter-bigquery/', views.inspect_marketsegmenter_bigquery, name='inspect_marketsegmenter_bigquery'),
     path('inspect-ai-review-file/', views.inspect_ai_review, name='inspect_ai_review'),
     path('maintenance/cleanup/', views.maintenance_cleanup, name='maintenance_cleanup'),
     path('<uuid:job_id>/', views.job_detail, name='detail'),

@@ -33,7 +33,7 @@
             <div class="field">
                 <label for="id_input_file_1">{{ form.input_file_1.label }}</label>
                 {{ form.input_file_1 }}
-                <div class="field-help">Normalizer : Excel. Matcher / Geocoder / Geoclass : CSV ou Excel.</div>
+                <div class="field-help">Normalizer : Excel. Matcher / Geocoder / Geoclass : CSV ou Excel. Market Segmenter BigQuery : fichier non requis si source BigQuery.</div>
                 {% if form.input_file_1.errors %}{{ form.input_file_1.errors }}{% endif %}
             </div>
 
@@ -114,6 +114,24 @@
                     {{ form.geocoder_country_hint }}
                     <div class="field-help">Exemple : France, Italy, Israel. Ajouté à la requête si Nominatim est utilisé.</div>
                 </div>
+                <div class="field marketsegmenter-bq-only hidden">
+                    <label for="id_marketsegmenter_source_mode">{{ form.marketsegmenter_source_mode.label }}</label>
+                    {{ form.marketsegmenter_source_mode }}
+                    <div class="field-help">Mode V1 : source fichier ou lecture directe BigQuery.</div>
+                </div>
+                <div class="field marketsegmenter-bq-only hidden">
+                    <label for="id_marketsegmenter_bq_table_name">{{ form.marketsegmenter_bq_table_name.label }}</label>
+                    {{ form.marketsegmenter_bq_table_name }}
+                </div>
+                <div class="field marketsegmenter-bq-only hidden">
+                    <label for="id_marketsegmenter_bq_country_code">{{ form.marketsegmenter_bq_country_code.label }}</label>
+                    {{ form.marketsegmenter_bq_country_code }}
+                    <div class="field-help">Exemple : ES, FR, IT. Filtre appliqué dans BigQuery sur <span class="code-inline">country_code</span>.</div>
+                </div>
+                <div class="field marketsegmenter-bq-only hidden">
+                    <label for="id_marketsegmenter_bq_output_table_name">{{ form.marketsegmenter_bq_output_table_name.label }}</label>
+                    {{ form.marketsegmenter_bq_output_table_name }}
+                </div>
             </div>
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
                 <button class="btn btn-secondary" type="button" id="inspect-geocoder-btn">Inspecter le fichier Geocoder / Segmenter</button>
@@ -125,7 +143,7 @@
         <div class="card stack hidden" id="ai-review-panel">
             <div>
                 <h2>2D. Options AI Review</h2>
-                <div class="muted">Inspection du fichier segmenté, mapping des colonnes utiles et constitution d’un dossier d’analyse pour les outlets à faible confiance.</div>
+                <div class="muted">Inspection / mapping AI Review, utilisé seul ou en second niveau après le Market Segmenter pour les outlets à faible confiance.</div>
             </div>
             <div class="grid grid-2">
                 <div class="field">
@@ -350,6 +368,9 @@
     const aiReviewMappingGrid = document.getElementById('ai-review-mapping-grid');
     const aiReviewLlmProvider = document.getElementById('id_ai_review_llm_provider');
     const aiReviewLlmModel = document.getElementById('id_ai_review_llm_model');
+    const marketsegmenterSourceMode = document.getElementById('id_marketsegmenter_source_mode');
+    const marketsegmenterBqTable = document.getElementById('id_marketsegmenter_bq_table_name');
+    const marketsegmenterBqCountry = document.getElementById('id_marketsegmenter_bq_country_code');
 
     function escapeHtml(value) {
         return String(value || '')
@@ -605,23 +626,35 @@
 
     async function inspectGeocoderFile() {
         if (!(jobType.value === 'geocoder' || jobType.value === 'geoclass' || jobType.value === 'marketsegmenter')) return;
-        if (!inputFile.files.length) { inspectGeocoderStatus.textContent = 'Sélectionne d’abord un fichier source.'; return; }
+        const marketsegmenterUsesBigQuery = jobType.value === 'marketsegmenter' && marketsegmenterSourceMode && marketsegmenterSourceMode.value === 'bigquery';
+        if (!marketsegmenterUsesBigQuery && !inputFile.files.length) { inspectGeocoderStatus.textContent = 'Sélectionne d’abord un fichier source.'; return; }
         inspectGeocoderStatus.textContent = jobType.value === 'marketsegmenter' ? 'Inspection market segmenter en cours...' : 'Inspection geocoder en cours...';
         inspectGeocoderBtn.disabled = true;
         geocoderInspectionResults.innerHTML = '';
-        const formData = new FormData();
-        formData.append('file', inputFile.files[0]);
         try {
-            const inspectUrl = jobType.value === 'marketsegmenter' ? '{% url "jobs:inspect_marketsegmenter" %}' : '{% url "jobs:inspect_geocoder" %}';
-            const response = await fetch(inspectUrl, { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
+            let response;
+            if (marketsegmenterUsesBigQuery) {
+                const formData = new FormData();
+                formData.append('table_name', marketsegmenterBqTable ? marketsegmenterBqTable.value : 'google_map_clean');
+                formData.append('country_code', marketsegmenterBqCountry ? marketsegmenterBqCountry.value : '');
+                response = await fetch('{% url "jobs:inspect_marketsegmenter_bigquery" %}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
+            } else {
+                const formData = new FormData();
+                formData.append('file', inputFile.files[0]);
+                const inspectUrl = jobType.value === 'marketsegmenter' ? '{% url "jobs:inspect_marketsegmenter" %}' : '{% url "jobs:inspect_geocoder" %}';
+                response = await fetch(inspectUrl, { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData });
+            }
             const data = await response.json();
             if (!response.ok || data.ok === false) { inspectGeocoderStatus.textContent = data.error || 'Inspection geocoder impossible.'; return; }
             data.sheets.forEach((sheet, index) => geocoderInspectionResults.appendChild(renderGeocoderSheetCard(sheet, index)));
-            const selected = firstSheetOrWarn(data, inspectGeocoderStatus, 'Aucun onglet exploitable détecté pour ce fichier.');
+            const selected = firstSheetOrWarn(data, inspectGeocoderStatus, 'Aucune source exploitable détectée.');
             if (!selected) return;
             if (jobType.value === 'marketsegmenter') {
-                marketsegmenterSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
+                marketsegmenterSheetInput.value = selected.name === '__csv__' || selected.name === '__bigquery__' ? '' : selected.name;
                 buildMappingCard(geocoderMappingGrid, marketsegmenterFields, marketsegmenterRequired, 'id_marketsegmenter_', selected.detected_columns, selected.mapping_suggestions || {});
+                buildMappingCard(aiReviewMappingGrid, aiReviewFields, aiReviewRequired, 'id_ai_review_', selected.detected_columns, selected.ai_review_mapping_suggestions || {});
+                aiReviewMappingCard.classList.remove('hidden');
+                aiReviewPanel.classList.remove('hidden');
             } else {
                 geocoderSheetInput.value = selected.name === '__csv__' ? '' : selected.name;
                 buildMappingCard(geocoderMappingGrid, geocoderFields, geocoderRequired, 'id_geocoder_', selected.detected_columns, selected.mapping_suggestions || {});
@@ -668,8 +701,10 @@
     function togglePanels() {
         const isNormalizer = jobType.value === 'normalizer';
         const isMatcher = jobType.value === 'matcher';
-        const isGeocoder = jobType.value === 'geocoder' || jobType.value === 'geoclass' || jobType.value === 'marketsegmenter';
-        const isAiReview = jobType.value === 'ai_review';
+        const isMarketsegmenter = jobType.value === 'marketsegmenter';
+        const isGeocoder = jobType.value === 'geocoder' || jobType.value === 'geoclass' || isMarketsegmenter;
+        const isAiReview = jobType.value === 'ai_review' || isMarketsegmenter;
+        const usesBigQuery = isMarketsegmenter && marketsegmenterSourceMode && marketsegmenterSourceMode.value === 'bigquery';
         normalizerPanel.classList.toggle('hidden', !isNormalizer);
         inspectionCard.classList.toggle('hidden', !isNormalizer || !inspectionResults.children.length);
         mappingCard.classList.toggle('hidden', !isNormalizer || !mappingGrid.children.length);
@@ -680,9 +715,11 @@
         aiReviewPanel.classList.toggle('hidden', !isAiReview);
         geocoderInspectionCard.classList.toggle('hidden', !isGeocoder || !geocoderInspectionResults.children.length);
         geocoderMappingCard.classList.toggle('hidden', !isGeocoder || !geocoderMappingGrid.children.length);
-        aiReviewInspectionCard.classList.toggle('hidden', !isAiReview || !aiReviewInspectionResults.children.length);
+        aiReviewInspectionCard.classList.toggle('hidden', !((jobType.value === 'ai_review') && aiReviewInspectionResults.children.length));
         aiReviewMappingCard.classList.toggle('hidden', !isAiReview || !aiReviewMappingGrid.children.length);
         secondaryFileField.classList.toggle('hidden', !isMatcher);
+        document.querySelectorAll('.marketsegmenter-bq-only').forEach(el => el.classList.toggle('hidden', !isMarketsegmenter));
+        inputFile.closest('.field').classList.toggle('hidden', usesBigQuery);
     }
 
     inspectBtn.addEventListener('click', inspectWorkbook);
@@ -694,6 +731,7 @@
         syncAiReviewLlmModels();
     }
     jobType.addEventListener('change', togglePanels);
+    if (marketsegmenterSourceMode) { marketsegmenterSourceMode.addEventListener('change', togglePanels); }
     togglePanels();
 })();
 </script>

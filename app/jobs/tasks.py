@@ -1,3 +1,5 @@
+import csv
+import json
 import os
 import time
 from pathlib import Path
@@ -15,6 +17,7 @@ from geocoder.services.geocoder_service import GeocoderOptions, GeocoderService
 from geoclass.services.geoclass_service import GeoclassOptions, GeoclassService
 from marketsegmenter.services.marketsegmenter_service import MarketSegmenterOptions, MarketSegmenterService
 from ai_review.services.ai_review_service import AIReviewOptions, AIReviewService
+from integrations.bigquery_service import BigQueryService
 
 
 def _read_text_preview(path: str, limit: int = 4000) -> str:
@@ -265,13 +268,20 @@ def _run_geoclass_job(job: Job):
 
 def _run_marketsegmenter_job(job: Job):
     parameters = job.parameters_json or {}
+    source_mode = str(parameters.get('marketsegmenter_source_mode') or parameters.get('mode') or 'uploaded')
+
+    def progress(percent: int, message: str) -> None:
+        job.refresh_from_db(); JobService.enforce_not_cancelled(job); JobService.ensure_disk_space(_job_storage_root()); JobService.update_progress(job, percent, message)
+
+    def log(message: str) -> None:
+        job.refresh_from_db(); JobService.enforce_not_cancelled(job); JobService.append_runtime_log(job, message)
+
+    if source_mode == 'bigquery':
+        return _run_marketsegmenter_bigquery_job(job, parameters, progress, log)
+
     input_path = Path(job.input_file_1.path)
     output_name = f"{input_path.stem}_market_segmented.csv"
     output_path = Path(job.output_file.field.storage.path(f'outputs/{output_name}'))
-    def progress(percent: int, message: str) -> None:
-        job.refresh_from_db(); JobService.enforce_not_cancelled(job); JobService.ensure_disk_space(_job_storage_root()); JobService.update_progress(job, percent, message)
-    def log(message: str) -> None:
-        job.refresh_from_db(); JobService.enforce_not_cancelled(job); JobService.append_runtime_log(job, message)
     service = MarketSegmenterService(progress_callback=progress, log_callback=log)
     options = MarketSegmenterOptions(
         marketsegmenter_sheet_name=parameters.get('marketsegmenter_sheet_name') or None,
@@ -284,6 +294,136 @@ def _run_marketsegmenter_job(job: Job):
         job.output_file.save(result_path.name, File(fh), save=False)
     JobService.mark_success(job, message='Market segmenter FYRE terminé avec succès')
     return str(job.id)
+
+
+def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log):
+    bq = BigQueryService()
+    table_name = str(parameters.get('marketsegmenter_bq_table_name') or settings.BIGQUERY_INPUT_TABLE)
+    output_table_name = str(parameters.get('marketsegmenter_bq_output_table_name') or settings.BIGQUERY_OUTPUT_TABLE)
+    country_code = str(parameters.get('marketsegmenter_bq_country_code') or '').strip()
+    low_conf_threshold = float(parameters.get('ai_review_low_confidence_threshold') or 0.65)
+    job_root = Path(job.output_file.field.storage.path(f'outputs/{job.id}'))
+    job_root.mkdir(parents=True, exist_ok=True)
+    source_csv = job_root / f'{table_name}_source.csv'
+    first_csv = job_root / f'{table_name}_marketsegmenter.csv'
+    ai_csv = job_root / f'{table_name}_ai_review.csv'
+    final_csv = job_root / f'{table_name}_segmented_simple.csv'
+
+    progress(5, 'Lecture BigQuery source')
+    log(f'🧾 Source BigQuery: {table_name} | filtre country_code={country_code or "ALL"}')
+    source_path, source_headers, row_count = bq.export_table_to_csv(table_name=table_name, output_path=source_csv, country_code=country_code)
+    log(f'📥 {row_count} ligne(s) exportées depuis BigQuery dans {source_path.name}')
+
+    progress(20, 'Segmentation règles / keywords')
+    ms_service = MarketSegmenterService(progress_callback=progress, log_callback=log)
+    ms_options = MarketSegmenterOptions(
+        marketsegmenter_sheet_name=None,
+        marketsegmenter_mapping=parameters.get('marketsegmenter_mapping') or {},
+        country_default=parameters.get('marketsegmenter_country_default') or country_code,
+    )
+    ms_service.run(input_path=source_path, output_path=first_csv, options=ms_options)
+
+    progress(55, 'AI Review ciblée sur lignes à faible confiance')
+    ai_service = AIReviewService(progress_callback=progress, log_callback=log)
+    ai_options = AIReviewOptions(
+        ai_review_sheet_name=None,
+        ai_review_mapping=parameters.get('ai_review_mapping') or {},
+        low_confidence_threshold=low_conf_threshold,
+        only_low_confidence=True,
+        action_profile=(parameters.get('ai_review_action_profile') or 'standard'),
+        llm_enabled=_parse_bool(parameters.get('ai_review_llm_enabled', False)),
+        llm_provider=str(parameters.get('ai_review_llm_provider') or ''),
+        llm_model=str(parameters.get('ai_review_llm_model') or ''),
+        llm_max_budget_eur=float(parameters.get('ai_review_llm_max_budget_eur') or 0.0),
+        llm_max_cost_per_row_eur=float(parameters.get('ai_review_llm_max_cost_per_row_eur') or 0.0),
+        llm_max_calls_per_row=int(parameters.get('ai_review_llm_max_calls_per_row') or 1),
+    )
+    ai_service.run(input_path=first_csv, output_path=ai_csv, options=ai_options)
+
+    progress(82, 'Consolidation résultat simple + écriture BigQuery')
+    simple_rows, bq_rows = _consolidate_marketsegmenter_ai_results(ai_csv, final_csv, str(job.id), low_conf_threshold, progress, log)
+    inserted = bq.write_segmented_rows(output_table_name, bq_rows)
+    log(f'📤 {inserted} ligne(s) écrites dans BigQuery table {output_table_name}')
+
+    summary = {
+        'job_id': str(job.id),
+        'source_mode': 'bigquery',
+        'source_table': table_name,
+        'source_country_code': country_code,
+        'output_table': output_table_name,
+        'source_rows': row_count,
+        'result_rows': len(simple_rows),
+        'output_csv': final_csv.name,
+        'low_confidence_threshold': low_conf_threshold,
+    }
+    final_csv.with_name(final_csv.stem + '_summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
+
+    job.refresh_from_db(); JobService.enforce_not_cancelled(job)
+    with final_csv.open('rb') as fh:
+        job.output_file.save(final_csv.name, File(fh), save=False)
+    JobService.mark_success(job, message='Market segmenter BigQuery + AI terminé avec succès')
+    return str(job.id)
+
+
+def _split_segment_path(raw_value: str) -> list[str]:
+    text = (raw_value or '').strip()
+    if not text:
+        return []
+    return [part.strip() for part in text.split('>') if part.strip()]
+
+
+def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: Path, process_id: str, low_conf_threshold: float, progress, log):
+    simple_rows: list[dict[str, str]] = []
+    bq_rows: list[dict[str, object]] = []
+    with ai_csv_path.open('r', encoding='utf-8-sig', newline='') as fh:
+        reader = csv.DictReader(fh, delimiter=';')
+        for idx, row in enumerate(reader, start=1):
+            google_place_id = (row.get('google_place_id') or row.get('place_id') or row.get('google_id') or '').strip()
+            ai_source = (row.get('ai_segment_source') or '').strip()
+            ai_selected = (row.get('ai_selected_for_review') or '').strip().lower() == 'yes'
+            ai_segments = _split_segment_path(row.get('ai_segment_suggested', ''))
+            rules_segments = [
+                (row.get('fyre_market_segment_type0') or '').strip(),
+                (row.get('fyre_market_segment_type1') or '').strip(),
+                (row.get('fyre_market_segment_type2') or '').strip(),
+                (row.get('fyre_market_segment_type3') or '').strip(),
+            ]
+            try:
+                rules_conf = float(str(row.get('segmentation_confidence') or '').replace(',', '.'))
+            except Exception:
+                rules_conf = 0.0
+
+            if ai_selected and ai_segments and ai_source.startswith('llm_'):
+                final_segments = (ai_segments + ['', '', '', ''])[:4]
+                final_source = ai_source
+            elif not ai_selected and rules_conf >= low_conf_threshold:
+                final_segments = rules_segments
+                final_source = 'rules_confident'
+            elif ai_segments and ai_source != 'rules_initial':
+                final_segments = (ai_segments + ['', '', '', ''])[:4]
+                final_source = ai_source or 'ai_fallback'
+            else:
+                final_segments = rules_segments
+                final_source = 'rules_fallback'
+
+            simple_row = {
+                'google_place_id': google_place_id,
+                'market_segment_type0': final_segments[0],
+                'market_segment_type1': final_segments[1],
+                'market_segment_type2': final_segments[2],
+                'market_segment_type3': final_segments[3],
+            }
+            simple_rows.append(simple_row)
+            bq_rows.append(BigQueryService.build_segmented_row(google_place_id=google_place_id, segments=final_segments, process_id=process_id))
+            if idx == 1 or idx % 5000 == 0:
+                progress(82, f'Consolidation des résultats : {idx} ligne(s)')
+    final_csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with final_csv_path.open('w', encoding='utf-8-sig', newline='') as fh:
+        writer = csv.DictWriter(fh, fieldnames=['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3'], delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL, lineterminator='\n')
+        writer.writeheader()
+        writer.writerows(simple_rows)
+    log(f'🧩 Consolidation finale terminée : {len(simple_rows)} ligne(s), seuil rules={low_conf_threshold}')
+    return simple_rows, bq_rows
 
 
 

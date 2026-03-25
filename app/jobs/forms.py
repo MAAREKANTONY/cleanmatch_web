@@ -36,7 +36,7 @@ class JobCreateForm(forms.Form):
         ],
         initial=Job.JobType.NORMALIZER,
     )
-    input_file_1 = forms.FileField(label='Fichier source', required=True)
+    input_file_1 = forms.FileField(label='Fichier source', required=False)
     input_file_2 = forms.FileField(label='Second fichier (optionnel)', required=False)
     normalizer_do_clean = forms.BooleanField(label='Nettoyage des colonnes', required=False, initial=True)
     normalizer_do_matchcode = forms.BooleanField(label='Génération matchcode / voie / num_voie', required=False, initial=True)
@@ -65,6 +65,16 @@ class JobCreateForm(forms.Form):
     geocoder_country_hint = forms.CharField(label='Pays / hint (optionnel)', required=False, initial='')
     marketsegmenter_sheet_name = forms.CharField(required=False, widget=forms.HiddenInput())
     marketsegmenter_country_default = forms.CharField(label='Pays par défaut (optionnel)', required=False, initial='')
+
+    marketsegmenter_source_mode = forms.ChoiceField(
+        label='Source Market Segmenter',
+        required=False,
+        choices=[('uploaded', 'Fichier uploadé'), ('bigquery', 'Table BigQuery')],
+        initial='uploaded',
+    )
+    marketsegmenter_bq_table_name = forms.CharField(label='Table BigQuery source', required=False, initial='google_map_clean')
+    marketsegmenter_bq_country_code = forms.CharField(label='Filtre country_code', required=False, initial='')
+    marketsegmenter_bq_output_table_name = forms.CharField(label='Table BigQuery de sortie', required=False, initial='google_map_clean_segmented')
     ai_review_sheet_name = forms.CharField(required=False, widget=forms.HiddenInput())
     ai_review_low_confidence_threshold = forms.FloatField(label='Seuil faible confiance AI review', required=False, initial=0.65, min_value=0.0, max_value=1.0)
     ai_review_action_profile = forms.ChoiceField(label='Profil d’action AI review', required=False, choices=[(k, k) for k in sorted(AI_REVIEW_ACTION_PROFILES.keys())], initial=AI_REVIEW_DEFAULT_ACTION_PROFILE)
@@ -102,7 +112,9 @@ class JobCreateForm(forms.Form):
     del field
 
     def clean_input_file_1(self):
-        uploaded = self.cleaned_data['input_file_1']
+        uploaded = self.cleaned_data.get('input_file_1')
+        if not uploaded:
+            return uploaded
         if uploaded.size <= 0:
             raise forms.ValidationError('Le fichier principal est vide.')
         return uploaded
@@ -112,6 +124,13 @@ class JobCreateForm(forms.Form):
         job_type = cleaned.get('job_type')
         input_file_1 = cleaned.get('input_file_1')
         input_file_2 = cleaned.get('input_file_2')
+        marketsegmenter_source_mode = (cleaned.get('marketsegmenter_source_mode') or 'uploaded').strip()
+
+        requires_primary_file = True
+        if job_type == Job.JobType.MARKETSEGMENTER and marketsegmenter_source_mode == 'bigquery':
+            requires_primary_file = False
+        if job_type != Job.JobType.DEMO and requires_primary_file and not input_file_1:
+            self.add_error('input_file_1', 'Ce job nécessite une source principale.')
         if job_type == Job.JobType.NORMALIZER and input_file_1:
             allowed_ext = {'.xlsx', '.xlsm', '.xltx', '.xltm'}
             filename = input_file_1.name.lower()
@@ -152,8 +171,9 @@ class JobCreateForm(forms.Form):
             missing_required = [field for field in GEOCODER_REQUIRED_FIELDS if field not in geocoder_mapping]
             if missing_required:
                 self.add_error(None, 'Le geocoder nécessite un mapping des colonnes : ' + ', '.join(sorted(missing_required)))
-        if job_type == Job.JobType.MARKETSEGMENTER and input_file_1:
+        if job_type == Job.JobType.MARKETSEGMENTER:
             marketsegmenter_mapping = self.get_marketsegmenter_mapping_payload(cleaned)
+            ai_review_mapping = self.get_ai_review_mapping_payload(cleaned)
             values = list(marketsegmenter_mapping.values())
             duplicates = [src for src in values if values.count(src) > 1]
             if duplicates:
@@ -161,6 +181,17 @@ class JobCreateForm(forms.Form):
             missing_required = [field for field in MARKETSEGMENTER_REQUIRED_FIELDS if field not in marketsegmenter_mapping]
             if missing_required:
                 self.add_error(None, 'Le market segmenter nécessite un mapping des colonnes : ' + ', '.join(sorted(missing_required)))
+            ai_values = [v for v in ai_review_mapping.values() if v]
+            ai_duplicates = [src for src in ai_values if ai_values.count(src) > 1]
+            if ai_duplicates:
+                self.add_error(None, 'Le mapping AI review contient une colonne source utilisée plusieurs fois.')
+            if marketsegmenter_source_mode == 'bigquery':
+                if not (cleaned.get('marketsegmenter_bq_table_name') or '').strip():
+                    self.add_error('marketsegmenter_bq_table_name', 'Le nom de table BigQuery source est requis.')
+                if not (cleaned.get('marketsegmenter_bq_output_table_name') or '').strip():
+                    self.add_error('marketsegmenter_bq_output_table_name', 'Le nom de table BigQuery de sortie est requis.')
+            elif not input_file_1:
+                self.add_error('input_file_1', 'Sélectionne un fichier source pour le market segmenter.')
         if job_type == Job.JobType.AI_REVIEW and input_file_1:
             threshold = cleaned.get('ai_review_low_confidence_threshold')
             if threshold is None:
