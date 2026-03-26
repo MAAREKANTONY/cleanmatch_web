@@ -41,3 +41,16 @@ def test_build_bigquery_selected_columns_dedupes_mapping_values():
     assert columns[:3] == ["name", "address", "website"]
     assert "google_place_id" in columns
     assert len(columns) == len(set(columns))
+
+
+def test_cleanup_empty_dir_removes_empty_directory(tmp_path):
+    from jobs.tasks import _cleanup_empty_dir
+
+    removed = []
+    workdir = tmp_path / 'jobdir'
+    workdir.mkdir()
+
+    _cleanup_empty_dir(workdir, log=lambda message: removed.append(message), tracker=None)
+
+    assert not workdir.exists()
+    assert any('Répertoire de travail supprimé' in message for message in removed)

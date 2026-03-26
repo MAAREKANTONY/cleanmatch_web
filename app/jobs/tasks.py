@@ -254,6 +254,7 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     read_page_size = int(parameters.get('marketsegmenter_bq_read_page_size') or getattr(settings, 'BIGQUERY_READ_PAGE_SIZE', 1000) or 1000)
     write_batch_size = int(parameters.get('marketsegmenter_bq_write_batch_size') or getattr(settings, 'BIGQUERY_WRITE_BATCH_SIZE', 1000) or 1000)
     cleanup_intermediate = _parse_bool(parameters.get('marketsegmenter_bq_cleanup_intermediate_files', getattr(settings, 'BIGQUERY_CLEANUP_INTERMEDIATE_FILES', True)))
+    cleanup_workdir = _parse_bool(parameters.get('marketsegmenter_bq_cleanup_workdir_files', getattr(settings, 'BIGQUERY_CLEANUP_WORKDIR_FILES', True)))
     source_column_pruning = _parse_bool(parameters.get('marketsegmenter_bq_source_column_pruning', getattr(settings, 'BIGQUERY_SOURCE_COLUMN_PRUNING', True)))
     selected_columns = _build_bigquery_selected_columns(parameters) if source_column_pruning else []
     job_root = Path(job.output_file.field.storage.path(f'outputs/{job.id}'))
@@ -266,23 +267,37 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     tracker.step('INIT', 'Initialisation du job BigQuery')
     tracker.set_metric('source_column_pruning_enabled', 1 if source_column_pruning else 0)
     tracker.set_metric('source_selected_columns_count', len(selected_columns))
-    tracker.log(f"[JOB] Step=INIT | source={table_name} | output={output_table_name} | country_code={country_code or 'ALL'} | read_page_size={read_page_size} | write_batch_size={write_batch_size} | cleanup_intermediate={cleanup_intermediate} | source_column_pruning={source_column_pruning} | selected_columns={len(selected_columns) or 'ALL'}")
+    tracker.log(f"[JOB] Step=INIT | source={table_name} | output={output_table_name} | country_code={country_code or 'ALL'} | read_page_size={read_page_size} | write_batch_size={write_batch_size} | cleanup_intermediate={cleanup_intermediate} | cleanup_workdir={cleanup_workdir} | source_column_pruning={source_column_pruning} | selected_columns={len(selected_columns) or 'ALL'}")
     if selected_columns:
         log(f"🧾 BigQuery column pruning actif: {len(selected_columns)} colonne(s) source sélectionnée(s)")
     progress(5, 'Lecture BigQuery source')
     tracker.step('BQ_READ', 'Lecture BigQuery source')
-    log(f'🧾 Source BigQuery: {table_name} | filtre country_code={country_code or "ALL"} | page_size={read_page_size}')
+    export_started = time.monotonic()
+    export_log_every = max(1, int(getattr(settings, 'PIPELINE_EXPORT_PROGRESS_LOG_EVERY_ROWS', 10000) or 10000))
+    log(f'🧾 Source BigQuery: {table_name} | filtre country_code={country_code or "ALL"} | page_size={read_page_size} | progress_every={export_log_every}')
+    def _on_export_progress(exported_rows: int) -> None:
+        elapsed = max(time.monotonic() - export_started, 0.001)
+        rate = exported_rows / elapsed * 60.0
+        tracker.set_metric('bq_read_rows_so_far', exported_rows)
+        tracker.set_metric('bq_read_rate_rows_per_min', round(rate, 2))
+        tracker.log(f'[JOB] Step=BQ_READ | exported={exported_rows} | rate={rate:.1f} rows/min')
     source_path, source_headers, row_count = bq.export_table_to_csv(
         table_name=table_name,
         output_path=source_csv,
         country_code=country_code,
         page_size=read_page_size,
         selected_columns=selected_columns,
+        progress_every_rows=export_log_every,
+        progress_callback=_on_export_progress,
     )
+    export_elapsed = max(time.monotonic() - export_started, 0.001)
+    export_rate = row_count / export_elapsed * 60.0 if row_count else 0.0
     tracker.set_metric('total_rows', row_count)
     tracker.set_metric('source_exported_columns_count', len(source_headers))
-    tracker.log(f'[JOB] Step=BQ_READ | rows={row_count} | columns={len(source_headers)} | file={source_path.name}')
-    log(f'📥 {row_count} ligne(s) exportées depuis BigQuery dans {source_path.name}')
+    tracker.set_metric('bq_read_elapsed_ms', int(export_elapsed * 1000))
+    tracker.set_metric('bq_read_rate_rows_per_min', round(export_rate, 2))
+    tracker.log(f'[JOB] Step=BQ_READ | rows={row_count} | columns={len(source_headers)} | elapsed_ms={int(export_elapsed * 1000)} | rate={export_rate:.1f} rows/min | file={source_path.name}')
+    log(f'📥 {row_count} ligne(s) exportées depuis BigQuery dans {source_path.name} en {export_elapsed:.1f}s ({export_rate:.1f} rows/min)')
     progress(20, 'Segmentation règles / keywords')
     tracker.step('RULES', 'Segmentation règles / keywords')
     ms_service = MarketSegmenterService(progress_callback=progress, log_callback=log)
@@ -326,7 +341,8 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     if cleanup_intermediate:
         _cleanup_temp_file(first_csv, log, tracker)
     ai_metrics = _compute_ai_review_metrics(ai_csv, low_conf_threshold, min_conf_threshold)
-    ai_summary = _read_json_if_exists(ai_csv.with_name(ai_csv.stem + '_summary.json'))
+    ai_summary_path = ai_csv.with_name(ai_csv.stem + '_summary.json')
+    ai_summary = _read_json_if_exists(ai_summary_path)
     if ai_summary:
         ai_metrics['ai_candidate_rows'] = int(ai_summary.get('ai_candidate_rows', ai_metrics.get('ai_selected_yes', 0)) or 0)
         ai_metrics['ai_hardened_rows'] = int(ai_summary.get('ai_hardened_rows', ai_metrics.get('ai_selected_yes', 0)) or 0)
@@ -358,9 +374,12 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         log=log,
         bq=bq,
         write_batch_size=write_batch_size,
+        progress_log_every=max(1, int(getattr(settings, 'PIPELINE_PROGRESS_LOG_EVERY_ROWS', 5000) or 5000)),
+        tracker=tracker,
     )
     if cleanup_intermediate:
         _cleanup_temp_file(ai_csv, log, tracker)
+        _cleanup_temp_file(ai_summary_path, log, tracker)
     for key, value in consolidation_metrics.items():
         tracker.set_metric(key, value)
     tracker.step('BQ_WRITE', 'Écriture BigQuery du résultat final')
@@ -383,14 +402,20 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         'read_page_size': read_page_size,
         'write_batch_size': write_batch_size,
         'cleanup_intermediate': cleanup_intermediate,
+        'cleanup_workdir': cleanup_workdir,
         'source_column_pruning': source_column_pruning,
         'selected_columns': selected_columns,
         'observability': tracker.snapshot(),
     }
-    final_csv.with_name(final_csv.stem + '_summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
+    final_summary_path = final_csv.with_name(final_csv.stem + '_summary.json')
+    final_summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
     job.refresh_from_db(); JobService.enforce_not_cancelled(job)
     with final_csv.open('rb') as fh:
         job.output_file.save(final_csv.name, File(fh), save=False)
+    if cleanup_workdir:
+        _cleanup_temp_file(final_csv, log, tracker)
+        _cleanup_temp_file(final_summary_path, log, tracker)
+        _cleanup_empty_dir(job_root, log, tracker)
     JobService.mark_success(job, message='Market segmenter BigQuery + AI terminé avec succès')
     return str(job.id)
 
@@ -427,6 +452,18 @@ def _cleanup_temp_file(path: Path, log, tracker: JobTracker | None = None) -> No
             log(f'🧹 Fichier intermédiaire supprimé : {path.name} ({size_bytes} bytes libérés)')
     except Exception as exc:
         log(f'⚠️ Impossible de supprimer le fichier intermédiaire {path.name}: {exc}')
+
+
+def _cleanup_empty_dir(path: Path, log, tracker: JobTracker | None = None) -> None:
+    try:
+        if path.exists() and path.is_dir() and not any(path.iterdir()):
+            path.rmdir()
+            if tracker is not None:
+                tracker.incr('cleanup_dirs_deleted', 1)
+            log(f'🧹 Répertoire de travail supprimé : {path.name}')
+    except Exception as exc:
+        log(f'⚠️ Impossible de supprimer le répertoire de travail {path.name}: {exc}')
+
 def _split_segment_path(raw_value: str) -> list[str]:
     text = (raw_value or '').strip()
     if not text:
@@ -434,7 +471,7 @@ def _split_segment_path(raw_value: str) -> list[str]:
     return [part.strip() for part in text.split('>') if part.strip()]
 
 
-def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: Path, output_table_name: str, process_id: str, low_conf_threshold: float, min_conf_threshold: float, progress, log, bq: BigQueryService | None = None, write_batch_size: int | None = None):
+def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: Path, output_table_name: str, process_id: str, low_conf_threshold: float, min_conf_threshold: float, progress, log, bq: BigQueryService | None = None, write_batch_size: int | None = None, progress_log_every: int | None = None, tracker: JobTracker | None = None):
     metrics = {
         'consolidated_rules_confident': 0,
         'consolidated_llm': 0,
@@ -449,7 +486,9 @@ def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: P
     writer_headers = ['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3']
     final_csv_path.parent.mkdir(parents=True, exist_ok=True)
     batch_size = max(1, int(write_batch_size or getattr(settings, 'BIGQUERY_WRITE_BATCH_SIZE', 1000) or 1000))
+    safe_progress_every = max(1, int(progress_log_every or getattr(settings, 'PIPELINE_PROGRESS_LOG_EVERY_ROWS', 5000) or 5000))
     bq_service = bq or BigQueryService()
+    consolidation_started = time.monotonic()
     with ai_csv_path.open('r', encoding='utf-8-sig', newline='') as in_fh, final_csv_path.open('w', encoding='utf-8-sig', newline='') as out_fh:
         reader = csv.DictReader(in_fh, delimiter=';')
         writer = csv.DictWriter(out_fh, fieldnames=writer_headers, delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL, lineterminator='\n')
@@ -499,11 +538,20 @@ def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: P
                 writer.writerow(simple_row)
                 metrics['result_rows'] += 1
                 metrics['bq_write_batches'] = ((metrics['result_rows'] - 1) // batch_size) + 1
-                if idx == 1 or idx % 5000 == 0:
-                    progress(82, f'Consolidation / écriture streaming : {idx} ligne(s)')
+                if idx == 1 or idx % safe_progress_every == 0:
+                    elapsed = max(time.monotonic() - consolidation_started, 0.001)
+                    rate = idx / elapsed * 60.0
+                    progress(82, f'Consolidation / écriture streaming : {idx} ligne(s) | {rate:.1f} rows/min')
+                    if tracker is not None:
+                        tracker.set_metric('consolidation_rows_so_far', idx)
+                        tracker.set_metric('consolidation_rate_rows_per_min', round(rate, 2))
+                        tracker.log(f'[JOB] Step=CONSOLIDATION | rows={idx} | rate={rate:.1f} rows/min | batches={metrics["bq_write_batches"]}')
                 yield BigQueryService.build_segmented_row(google_place_id=google_place_id, segments=final_segments, process_id=process_id)
         metrics['rows_written'] = bq_service.write_segmented_rows_iterable(output_table_name, _iter_bq_rows(), batch_size=batch_size)
-    log(f"🧩 Consolidation finale terminée : {metrics['result_rows']} ligne(s), écrites en {metrics['bq_write_batches']} batch(es) BigQuery, seuil haut={low_conf_threshold}, seuil min={min_conf_threshold}")
+    total_elapsed = max(time.monotonic() - consolidation_started, 0.001)
+    metrics['consolidation_elapsed_ms'] = int(total_elapsed * 1000)
+    metrics['consolidation_rate_rows_per_min'] = round((metrics['result_rows'] / total_elapsed * 60.0), 2) if metrics['result_rows'] else 0.0
+    log(f"🧩 Consolidation finale terminée : {metrics['result_rows']} ligne(s), écrites en {metrics['bq_write_batches']} batch(es) BigQuery, seuil haut={low_conf_threshold}, seuil min={min_conf_threshold}, elapsed={total_elapsed:.1f}s, rate={metrics['consolidation_rate_rows_per_min']:.1f} rows/min")
     return metrics
 
 

@@ -153,11 +153,12 @@ class BigQueryService:
         for row in result:
             yield dict(row.items())
 
-    def export_table_to_csv(self, table_name: str | None, output_path: Path, country_code: str = '', page_size: int | None = None, selected_columns: list[str] | None = None) -> tuple[Path, list[str], int]:
+    def export_table_to_csv(self, table_name: str | None, output_path: Path, country_code: str = '', page_size: int | None = None, selected_columns: list[str] | None = None, progress_every_rows: int | None = None, progress_callback=None, log_callback=None) -> tuple[Path, list[str], int]:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         rows = self.iter_rows(table_name, country_code=country_code, limit=None, page_size=page_size, selected_columns=selected_columns)
         count = 0
         headers: list[str] = []
+        safe_progress_every = max(1, int(progress_every_rows or getattr(settings, 'PIPELINE_EXPORT_PROGRESS_LOG_EVERY_ROWS', 10000) or 10000))
         with output_path.open('w', encoding='utf-8-sig', newline='') as fh:
             writer = None
             for row in rows:
@@ -167,6 +168,11 @@ class BigQueryService:
                     writer.writeheader()
                 writer.writerow({key: self._stringify(row.get(key, '')) for key in headers})
                 count += 1
+                if count % safe_progress_every == 0:
+                    if progress_callback is not None:
+                        progress_callback(count)
+                    if log_callback is not None:
+                        log_callback(count, len(headers))
         if not headers:
             ref = self.table_ref(table_name)
             table = self.client.get_table(ref.full_name)

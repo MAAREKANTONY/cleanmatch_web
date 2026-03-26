@@ -1,5 +1,5 @@
-catalog_version: Iteration 47 - Sprint 5
+catalog_version: Iteration 47 - Sprint 7 (safe regen)
 updated_at: '2026-03-26'
-display_label: Iteration 47 - Sprint 4.1
-summary: Hotfix scope AI exact + dry-run LLM sans hardening + logs AI plus lisibles.
-notes: Sprint 4.1 - correction du seuil haut exact, préfiltrage du scope AI, dry-run sans hardening lourd quand LLM désactivé.
+display_label: Iteration 47 - Sprint 7 (safe regen)
+summary: Nettoyage sûr du workdir BigQuery après attachement du livrable + nettoyage des summaries temporaires.
+notes: Sprint 6 - suppression des fichiers finaux temporaires et du répertoire de travail si vide pour réduire durablement l'empreinte disque.
