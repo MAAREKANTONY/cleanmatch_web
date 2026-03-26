@@ -37,6 +37,20 @@ class BigQueryServiceQueryTests(TestCase):
         self.assertEqual(config.query_parameters[0].value, 'ES')
 
 
+
+    @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
+    @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
+    @patch('django.conf.settings.BIGQUERY_LOCATION', '')
+    @patch('django.conf.settings.BIGQUERY_CREDENTIALS_FILE', '')
+    @patch('django.conf.settings.BIGQUERY_INPUT_TABLE', 'google_map_clean')
+    def test_build_select_query_uses_selected_columns_when_available(self):
+        service = self._make_service()
+        service.client = Mock()
+        service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'google_place_id'})(), type('F', (), {'name': 'name'})(), type('F', (), {'name': 'country_code'})()]})()
+        sql, config = service.build_select_query('google_map_clean', country_code='fr', selected_columns=['name', 'unknown', 'google_place_id'])
+        self.assertEqual(sql, 'SELECT `name`, `google_place_id` FROM `proj.dataset.google_map_clean` WHERE UPPER(country_code) = @country_code')
+        self.assertEqual(len(config.query_parameters), 1)
+
     @patch('django.conf.settings.BIGQUERY_INPUT_TABLE', 'google_map')
     @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
     @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')

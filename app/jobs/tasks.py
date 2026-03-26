@@ -254,6 +254,8 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     read_page_size = int(parameters.get('marketsegmenter_bq_read_page_size') or getattr(settings, 'BIGQUERY_READ_PAGE_SIZE', 1000) or 1000)
     write_batch_size = int(parameters.get('marketsegmenter_bq_write_batch_size') or getattr(settings, 'BIGQUERY_WRITE_BATCH_SIZE', 1000) or 1000)
     cleanup_intermediate = _parse_bool(parameters.get('marketsegmenter_bq_cleanup_intermediate_files', getattr(settings, 'BIGQUERY_CLEANUP_INTERMEDIATE_FILES', True)))
+    source_column_pruning = _parse_bool(parameters.get('marketsegmenter_bq_source_column_pruning', getattr(settings, 'BIGQUERY_SOURCE_COLUMN_PRUNING', True)))
+    selected_columns = _build_bigquery_selected_columns(parameters) if source_column_pruning else []
     job_root = Path(job.output_file.field.storage.path(f'outputs/{job.id}'))
     job_root.mkdir(parents=True, exist_ok=True)
     safe_prefix = table_name.replace('.', '_')
@@ -262,7 +264,11 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     ai_csv = job_root / f'{safe_prefix}_ai_review.csv'
     final_csv = job_root / f'{safe_prefix}_segmented_simple.csv'
     tracker.step('INIT', 'Initialisation du job BigQuery')
-    tracker.log(f"[JOB] Step=INIT | source={table_name} | output={output_table_name} | country_code={country_code or 'ALL'} | read_page_size={read_page_size} | write_batch_size={write_batch_size} | cleanup_intermediate={cleanup_intermediate}")
+    tracker.set_metric('source_column_pruning_enabled', 1 if source_column_pruning else 0)
+    tracker.set_metric('source_selected_columns_count', len(selected_columns))
+    tracker.log(f"[JOB] Step=INIT | source={table_name} | output={output_table_name} | country_code={country_code or 'ALL'} | read_page_size={read_page_size} | write_batch_size={write_batch_size} | cleanup_intermediate={cleanup_intermediate} | source_column_pruning={source_column_pruning} | selected_columns={len(selected_columns) or 'ALL'}")
+    if selected_columns:
+        log(f"🧾 BigQuery column pruning actif: {len(selected_columns)} colonne(s) source sélectionnée(s)")
     progress(5, 'Lecture BigQuery source')
     tracker.step('BQ_READ', 'Lecture BigQuery source')
     log(f'🧾 Source BigQuery: {table_name} | filtre country_code={country_code or "ALL"} | page_size={read_page_size}')
@@ -271,9 +277,11 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         output_path=source_csv,
         country_code=country_code,
         page_size=read_page_size,
+        selected_columns=selected_columns,
     )
     tracker.set_metric('total_rows', row_count)
-    tracker.log(f'[JOB] Step=BQ_READ | rows={row_count} | file={source_path.name}')
+    tracker.set_metric('source_exported_columns_count', len(source_headers))
+    tracker.log(f'[JOB] Step=BQ_READ | rows={row_count} | columns={len(source_headers)} | file={source_path.name}')
     log(f'📥 {row_count} ligne(s) exportées depuis BigQuery dans {source_path.name}')
     progress(20, 'Segmentation règles / keywords')
     tracker.step('RULES', 'Segmentation règles / keywords')
@@ -375,6 +383,8 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         'read_page_size': read_page_size,
         'write_batch_size': write_batch_size,
         'cleanup_intermediate': cleanup_intermediate,
+        'source_column_pruning': source_column_pruning,
+        'selected_columns': selected_columns,
         'observability': tracker.snapshot(),
     }
     final_csv.with_name(final_csv.stem + '_summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -383,6 +393,27 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         job.output_file.save(final_csv.name, File(fh), save=False)
     JobService.mark_success(job, message='Market segmenter BigQuery + AI terminé avec succès')
     return str(job.id)
+
+
+def _build_bigquery_selected_columns(parameters: dict) -> list[str]:
+    selected: list[str] = []
+    seen: set[str] = set()
+
+    def _push(value: object) -> None:
+        cleaned = str(value or '').strip()
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            selected.append(cleaned)
+
+    marketsegmenter_mapping = dict(parameters.get('marketsegmenter_mapping') or {})
+    ai_review_mapping = dict(parameters.get('ai_review_mapping') or {})
+    for source_column in marketsegmenter_mapping.values():
+        _push(source_column)
+    for source_column in ai_review_mapping.values():
+        _push(source_column)
+    for fallback_col in ['google_place_id', 'place_id', 'google_id', 'country_code']:
+        _push(fallback_col)
+    return selected
 
 
 def _cleanup_temp_file(path: Path, log, tracker: JobTracker | None = None) -> None:

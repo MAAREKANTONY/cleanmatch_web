@@ -1,6 +1,6 @@
 from unittest.mock import Mock
 
-from jobs.tasks import _consolidate_marketsegmenter_ai_results
+from jobs.tasks import _build_bigquery_selected_columns, _consolidate_marketsegmenter_ai_results
 
 
 def test_consolidation_forces_out_of_scope_when_below_min(tmp_path):
@@ -30,3 +30,14 @@ def test_consolidation_forces_out_of_scope_when_below_min(tmp_path):
     assert metrics["consolidated_out_of_scope"] == 1
     assert metrics["rows_written"] == 1
     assert "hors cible" in final_csv.read_text(encoding="utf-8-sig")
+
+
+def test_build_bigquery_selected_columns_dedupes_mapping_values():
+    columns = _build_bigquery_selected_columns({
+        "marketsegmenter_mapping": {"name": "name", "address": "address"},
+        "ai_review_mapping": {"name": "name", "website": "website"},
+    })
+
+    assert columns[:3] == ["name", "address", "website"]
+    assert "google_place_id" in columns
+    assert len(columns) == len(set(columns))

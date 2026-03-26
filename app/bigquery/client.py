@@ -4,7 +4,7 @@ import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Iterator, Tuple
+from typing import Iterable, Tuple
 
 from django.conf import settings
 
@@ -77,9 +77,33 @@ class BigQueryService:
             self._get_table_schema(table_name)
         return self._schema_cache[cache_key]
 
-    def build_select_query(self, table_name: str | None, country_code: str = '', limit: int | None = None) -> Tuple[str, bigquery.QueryJobConfig]:
+    def _resolve_selected_columns(self, table_name: str | None, selected_columns: list[str] | None = None) -> list[str]:
+        requested = [str(col).strip() for col in (selected_columns or []) if str(col).strip()]
+        if not requested:
+            return []
+        available_columns = self._get_table_columns(table_name)
+        available_lookup = {col.lower(): col for col in available_columns}
+        resolved: list[str] = []
+        seen: set[str] = set()
+        for candidate in requested:
+            actual = available_lookup.get(candidate.lower())
+            if actual and actual not in seen:
+                seen.add(actual)
+                resolved.append(actual)
+        return resolved
+
+    @staticmethod
+    def _quote_identifier(identifier: str) -> str:
+        return '`' + str(identifier).replace('`', '') + '`'
+
+    def build_select_query(self, table_name: str | None, country_code: str = '', limit: int | None = None, selected_columns: list[str] | None = None) -> Tuple[str, bigquery.QueryJobConfig]:
         ref = self.table_ref(table_name)
-        sql = f"SELECT * FROM `{ref.full_name}`"
+        resolved_columns = self._resolve_selected_columns(ref.table_name, selected_columns)
+        if resolved_columns:
+            select_clause = ', '.join(self._quote_identifier(col) for col in resolved_columns)
+        else:
+            select_clause = '*'
+        sql = f"SELECT {select_clause} FROM `{ref.full_name}`"
         query_parameters: list[bigquery.query.ScalarQueryParameter] = []
         normalized_country = (country_code or '').strip().upper()
         if normalized_country:
@@ -122,16 +146,16 @@ class BigQueryService:
             }],
         }
 
-    def iter_rows(self, table_name: str | None, country_code: str = '', limit: int | None = None, page_size: int | None = None) -> Iterable[dict[str, object]]:
-        sql, job_config = self.build_select_query(table_name=table_name, country_code=country_code, limit=limit)
+    def iter_rows(self, table_name: str | None, country_code: str = '', limit: int | None = None, page_size: int | None = None, selected_columns: list[str] | None = None) -> Iterable[dict[str, object]]:
+        sql, job_config = self.build_select_query(table_name=table_name, country_code=country_code, limit=limit, selected_columns=selected_columns)
         effective_page_size = max(1, int(page_size or getattr(settings, 'BIGQUERY_READ_PAGE_SIZE', 1000) or 1000))
         result = self.client.query(sql, job_config=job_config, location=self.location).result(page_size=effective_page_size)
         for row in result:
             yield dict(row.items())
 
-    def export_table_to_csv(self, table_name: str | None, output_path: Path, country_code: str = '', page_size: int | None = None) -> tuple[Path, list[str], int]:
+    def export_table_to_csv(self, table_name: str | None, output_path: Path, country_code: str = '', page_size: int | None = None, selected_columns: list[str] | None = None) -> tuple[Path, list[str], int]:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        rows = self.iter_rows(table_name, country_code=country_code, limit=None, page_size=page_size)
+        rows = self.iter_rows(table_name, country_code=country_code, limit=None, page_size=page_size, selected_columns=selected_columns)
         count = 0
         headers: list[str] = []
         with output_path.open('w', encoding='utf-8-sig', newline='') as fh:
