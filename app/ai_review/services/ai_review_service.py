@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from core.config_loader import load_yaml_config
+from core.config_loader import load_yaml_config, list_country_config_files
 from matcher.services.matcher_service import inspect_table_file
 
 from .ai_review_models import AIReviewInput, AIReviewResult
@@ -70,6 +70,18 @@ AI_MAX_KEYWORDS = int(_AI_FEATURES.get('max_keywords_in_output', 18))
 SERVICE_MODE_KEYWORDS = _AI_FEATURES.get('service_mode_keywords', {})
 CUISINE_KEYWORDS = _AI_FEATURES.get('cuisine_keywords', {})
 SIGNAL_KEYWORDS = _AI_FEATURES.get('signal_keywords', {})
+COUNTRY_AI_KEYWORDS: dict[str, dict[str, dict[str, list[str]]]] = {}
+for _cfg_path in list_country_config_files('ai_review'):
+    if _cfg_path.name == 'default.yaml':
+        continue
+    _payload = load_yaml_config(f'ai_review/countries/{_cfg_path.name}')
+    _code = str(_payload.get('country_code', '')).upper()
+    if _code:
+        COUNTRY_AI_KEYWORDS[_code] = {
+            'service_mode_keywords': dict(_payload.get('service_mode_keywords') or {}),
+            'cuisine_keywords': dict(_payload.get('cuisine_keywords') or {}),
+            'signal_keywords': dict(_payload.get('signal_keywords') or {}),
+        }
 
 AI_LLM_ENABLED = bool(_AI_LLM_GUARDRAILS.get('enabled', False))
 AI_LLM_PROVIDER = str(_AI_LLM_GUARDRAILS.get('provider', 'openai_compatible_json'))
@@ -435,9 +447,9 @@ class AIReviewService:
             return self._build_non_ai_result(review_input, selected=selected, forced_out_of_scope=forced_out_of_scope)
 
 
-        detected_service_mode = self._scan_keywords(review_input, SERVICE_MODE_KEYWORDS, review_input.enabled_capabilities)
-        detected_cuisine = self._scan_keywords(review_input, CUISINE_KEYWORDS, review_input.enabled_capabilities)
-        detected_signals = self._scan_keywords(review_input, SIGNAL_KEYWORDS, review_input.enabled_capabilities)
+        detected_service_mode = self._scan_keywords(review_input, SERVICE_MODE_KEYWORDS, review_input.enabled_capabilities, 'service_mode_keywords')
+        detected_cuisine = self._scan_keywords(review_input, CUISINE_KEYWORDS, review_input.enabled_capabilities, 'cuisine_keywords')
+        detected_signals = self._scan_keywords(review_input, SIGNAL_KEYWORDS, review_input.enabled_capabilities, 'signal_keywords')
 
         sources_used = []
         source_count = 0
@@ -600,18 +612,30 @@ class AIReviewService:
             ai_llm_raw_excerpt=str(llm_payload.get('raw_content', ''))[:3000],
         )
 
-    def _scan_keywords(self, review_input: AIReviewInput, keyword_map: dict[str, list[str]], enabled_capabilities: list[str]) -> list[str]:
+    def _scan_keywords(self, review_input: AIReviewInput, keyword_map: dict[str, list[str]], enabled_capabilities: list[str], keyword_group: str = '') -> list[str]:
         text_parts = [review_input.main_type, review_input.all_types, review_input.website_title, review_input.website_meta_description, review_input.reviews_tags, review_input.characteristics, review_input.segmentation_reasons]
         text_parts.extend(review_input.descriptions)
         haystack = ' '.join(part for part in text_parts if part)
         haystack_norm = normalized_text(haystack)
+        merged_map = self._merge_country_keyword_map(keyword_map, review_input.country_code, keyword_group)
         detected: list[str] = []
-        for label, keywords in keyword_map.items():
+        for label, keywords in merged_map.items():
             for keyword in keywords:
                 if normalized_text(keyword) and normalized_text(keyword) in haystack_norm:
                     detected.append(label)
                     break
         return detected
+
+    @staticmethod
+    def _merge_country_keyword_map(keyword_map: dict[str, list[str]], country_code: str, keyword_group: str) -> dict[str, list[str]]:
+        merged = {str(label): list(values) for label, values in (keyword_map or {}).items()}
+        overrides = COUNTRY_AI_KEYWORDS.get(str(country_code or '').upper(), {}).get(keyword_group or '', {})
+        for label, extra_values in overrides.items():
+            base = merged.setdefault(str(label), [])
+            for value in extra_values or []:
+                if value not in base:
+                    base.append(value)
+        return merged
 
     def _build_input_pack_summary(self, review_input: AIReviewInput) -> str:
         present = []

@@ -1,0 +1,13 @@
+country_code: NL
+overrides:
+  promote_capabilities: [homepage_fetch, menu_fetch, metadata_review]
+service_mode_keywords:
+  bar: [eetcafe, eetcafé, proeflokaal, bruincafe, bruin café]
+  cafe: [lunchroom, koffiebar, koffie bar]
+  fast_food: [snackbar, frietzaak, patatzaak, afhalen]
+  table_service: [pannenkoekenhuis, steakhouse, visrestaurant]
+cuisine_keywords:
+  dutch: [poffertjes, bitterballen, stamppot, pannenkoeken]
+signal_keywords:
+  takeaway: [afhalen, meenemen]
+  reservation: [reserveer een tafel]

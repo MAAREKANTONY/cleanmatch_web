@@ -3,17 +3,19 @@ languages:
 - fr
 - en
 keyword_rules:
-- segment:
-  - horeca
-  - table_service
-  - creperies
-  - ''
-  family:
-  - horeca
-  - table_service
+- segment: [horeca, table_service, creperies, '']
+  family: [horeca, table_service]
   weight: 12
-  keywords:
-  - galette
-  - galettes
-  - crêperie
-  - creperie
+  keywords: [galette, galettes, crêperie, creperie]
+- segment: [horeca, cafes_bars_discotheques, wine_tapas_bars, '']
+  family: [horeca, cafes_bars_discotheques]
+  weight: 11
+  keywords: [bar a vin, bar à vin, cave a manger, cave à manger, tapas, bistrot a vins, bistrot à vins]
+- segment: [horeca, quick_service, bakeries_sandwich_snacks, '']
+  family: [horeca, quick_service]
+  weight: 10
+  keywords: [boulangerie, sandwicherie, snack, kebab, friterie, restauration rapide]
+- segment: [horeca, table_service, themed_dining_seafood, '']
+  family: [horeca, table_service]
+  weight: 10
+  keywords: [brasserie, fruits de mer, poissonnerie restaurant, rotisserie, rôtisserie]

@@ -1,0 +1,12 @@
+country_code: GB
+overrides:
+  promote_capabilities: [homepage_fetch, metadata_review, menu_fetch]
+service_mode_keywords:
+  bar: [gastropub, ale house, taproom, free house, sports bar]
+  cafe: [coffee shop, tea room, brunch cafe, brunch café]
+  fast_food: [fish and chips, chippy, chicken shop, takeaway only]
+cuisine_keywords:
+  british: [fish and chips, sunday roast, pie and mash, carvery]
+signal_keywords:
+  takeaway: [click and collect, takeaway only]
+  alcohol: [real ale, craft beer, cask ale]

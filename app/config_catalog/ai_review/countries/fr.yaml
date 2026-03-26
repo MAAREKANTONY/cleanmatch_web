@@ -1,0 +1,14 @@
+country_code: FR
+overrides:
+  promote_capabilities: [menu_fetch, metadata_review, homepage_fetch]
+service_mode_keywords:
+  bar: [bar a vin, bar à vin, cave a manger, cave à manger]
+  cafe: [salon de the, salon de thé, coffee shop]
+  fast_food: [sandwicherie, restauration rapide, kebab, snack]
+  table_service: [brasserie, bistro, bistrot, crêperie, creperie]
+cuisine_keywords:
+  french: [brasserie, bistrot, terroir, cuisine maison]
+  bakery: [boulangerie, viennoiserie, patisserie, pâtisserie]
+signal_keywords:
+  takeaway: [à emporter, click and collect]
+  reservation: [reserver une table, réserver une table]

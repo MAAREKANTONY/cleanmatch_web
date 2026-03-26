@@ -1,5 +1,5 @@
-catalog_version: Iteration 47 - Sprint 7
-display_label: Iteration 47 - Sprint 7
+catalog_version: Iteration 47 - Sprint 8
+display_label: Iteration 47 - Sprint 8
 updated_at: '2026-03-26'
-summary: Mode production throughput avec pipeline BigQuery chunk-based streaming, traitement rules/AI par chunk et écriture BigQuery continue.
-notes: Sprint 7 - réduction forte des artefacts intermédiaires massifs, scope AI traité par mini-lots, logs de débit par chunk et écriture BigQuery au fil de l’eau.
+summary: Checkpoint/reprise du pipeline BigQuery chunk-based + enrichissement des modèles mots-clés/AI pour ES, IT, GB, FR et NL.
+notes: Sprint 8 - reprise après interruption, chunks idempotents côté BigQuery, trims du CSV final sur checkpoint, nouveaux lexiques pays prioritaires.

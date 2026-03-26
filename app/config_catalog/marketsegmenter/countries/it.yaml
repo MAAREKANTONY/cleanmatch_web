@@ -3,20 +3,15 @@ languages:
 - it
 - en
 keyword_rules:
-- segment:
-  - horeca
-  - table_service
-  - themed_dining_italian_pizzerias
-  - ''
-  family:
-  - horeca
-  - table_service
+- segment: [horeca, table_service, themed_dining_italian_pizzerias, '']
+  family: [horeca, table_service]
   weight: 12
-  keywords:
-  - ristorante
-  - trattoria
-  - osteria
-  - pizzeria
-  - pizza al taglio
-  - forno a legna
-  - apericena
+  keywords: [ristorante, trattoria, osteria, pizzeria, pizza al taglio, forno a legna, apericena, tavola calda]
+- segment: [horeca, cafes_bars_discotheques, coffee_tea_snacking, '']
+  family: [horeca, cafes_bars_discotheques]
+  weight: 11
+  keywords: [caffetteria, caffè, caffe, bar tabacchi, enoteca, birreria, spritzeria]
+- segment: [horeca, quick_service, bakeries_sandwich_snacks, '']
+  family: [horeca, quick_service]
+  weight: 10
+  keywords: [paninoteca, focacceria, rosticceria, tavola fredda, gastronomia, gelateria]

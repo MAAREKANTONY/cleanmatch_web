@@ -2,4 +2,16 @@ country_code: NL
 languages:
 - nl
 - en
-keyword_rules: []
+keyword_rules:
+- segment: [horeca, cafes_bars_discotheques, beer_bars_beer_temples_pubs, '']
+  family: [horeca, cafes_bars_discotheques]
+  weight: 12
+  keywords: [eetcafe, eetcafé, proeflokaal, bruincafe, bruin café, grand cafe, grand café]
+- segment: [horeca, quick_service, bakeries_sandwich_snacks, '']
+  family: [horeca, quick_service]
+  weight: 11
+  keywords: [broodjeszaak, snackbar, frietzaak, patatzaak, lunchroom]
+- segment: [horeca, table_service, themed_dining_international, '']
+  family: [horeca, table_service]
+  weight: 10
+  keywords: [bistro, steakhouse, wokrestaurant, pannenkoekenhuis, visrestaurant]

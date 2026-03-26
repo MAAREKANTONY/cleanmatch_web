@@ -1,20 +1,18 @@
 country_code: ES
 languages:
 - es
+- ca
 - en
 keyword_rules:
-- segment:
-  - horeca
-  - cafes_bars_discotheques
-  - wine_tapas_bars
-  - ''
-  family:
-  - horeca
-  - cafes_bars_discotheques
+- segment: [horeca, cafes_bars_discotheques, wine_tapas_bars, '']
+  family: [horeca, cafes_bars_discotheques]
   weight: 12
-  keywords:
-  - tapas
-  - pinchos
-  - cerveceria
-  - cervecería
-  - taberna
+  keywords: [tapas, pinchos, cerveceria, cervecería, taberna, vinoteca, taperia, tapería]
+- segment: [horeca, table_service, themed_dining_spanish, '']
+  family: [horeca, table_service]
+  weight: 11
+  keywords: [arroceria, arrocería, marisqueria, marisquería, asador, sidreria, sidrería, braseria, brasería]
+- segment: [horeca, quick_service, bakeries_sandwich_snacks, '']
+  family: [horeca, quick_service]
+  weight: 10
+  keywords: [bocadillo, bocateria, bocatería, panaderia, panadería, cafeteria, cafetería, churreria, churrería]

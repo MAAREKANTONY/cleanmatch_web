@@ -1,0 +1,14 @@
+country_code: ES
+overrides:
+  promote_capabilities: [menu_fetch, homepage_fetch, metadata_review]
+service_mode_keywords:
+  bar: [cerveceria, cervecería, taberna, vinoteca, taperia, tapería]
+  cafe: [cafeteria, cafetería, churreria, churrería]
+  table_service: [arroceria, arrocería, marisqueria, marisquería, asador, sidreria, sidrería]
+  fast_food: [bocadillo, bocateria, bocatería, comida rapida, comida rápida]
+cuisine_keywords:
+  spanish: [tapas, pinchos, paella, arroceria, arrocería, iberico, ibérico]
+  seafood: [marisqueria, marisquería, pulperia, pulpería]
+signal_keywords:
+  takeaway: [para llevar, recoger en tienda]
+  reservation: [reserva online, reservar mesa]

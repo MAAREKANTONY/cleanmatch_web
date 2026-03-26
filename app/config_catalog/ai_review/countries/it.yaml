@@ -1,0 +1,14 @@
+country_code: IT
+overrides:
+  promote_capabilities: [menu_fetch, metadata_review, homepage_fetch]
+service_mode_keywords:
+  bar: [caffetteria, caffè, caffe, enoteca, birreria, spritz]
+  table_service: [ristorante, trattoria, osteria, agriturismo]
+  fast_food: [paninoteca, tavola calda, rosticceria, tavola fredda]
+  cafe: [gelateria, pasticceria]
+cuisine_keywords:
+  italian: [pasta fresca, carbonara, antipasti, focaccia, risotto]
+  pizza: [pizza al taglio, napoletana, forno a legna]
+signal_keywords:
+  takeaway: [asporto, da portar via]
+  reservation: [prenota un tavolo, prenotazione]

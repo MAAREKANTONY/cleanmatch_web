@@ -217,6 +217,21 @@ class BigQueryService:
     def write_segmented_rows(self, table_name: str | None, rows: list[dict[str, object]], batch_size: int = 1000) -> int:
         return self.write_segmented_rows_iterable(table_name, rows, batch_size=batch_size)
 
+    def delete_segmented_rows_for_process(self, table_name: str | None, process_id: str, google_place_ids: list[str] | None = None) -> int:
+        ref = self.table_ref(table_name or settings.BIGQUERY_OUTPUT_TABLE)
+        sql = f"DELETE FROM `{ref.full_name}` WHERE process_id = @process_id"
+        params: list[bigquery.query.ScalarQueryParameter | bigquery.query.ArrayQueryParameter] = [
+            bigquery.ScalarQueryParameter('process_id', 'STRING', str(process_id)),
+        ]
+        ids = [str(v).strip() for v in (google_place_ids or []) if str(v).strip()]
+        if ids:
+            sql += " AND google_place_id IN UNNEST(@google_place_ids)"
+            params.append(bigquery.ArrayQueryParameter('google_place_ids', 'STRING', ids))
+        job = self.client.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params), location=self.location)
+        result = job.result()
+        return int(getattr(result, 'num_dml_affected_rows', 0) or 0)
+
+
     @staticmethod
     def build_segmented_row(*, google_place_id: str, segments: list[str], process_id: str) -> dict[str, object]:
         parts = (segments + ['', '', '', ''])[:4]

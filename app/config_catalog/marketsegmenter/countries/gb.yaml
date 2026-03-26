@@ -2,16 +2,15 @@ country_code: GB
 languages:
 - en
 keyword_rules:
-- segment:
-  - horeca
-  - cafes_bars_discotheques
-  - beer_bars_beer_temples_pubs
-  - ''
-  family:
-  - horeca
-  - cafes_bars_discotheques
+- segment: [horeca, cafes_bars_discotheques, beer_bars_beer_temples_pubs, '']
+  family: [horeca, cafes_bars_discotheques]
   weight: 12
-  keywords:
-  - gastropub
-  - public house
-  - pub grub
+  keywords: [gastropub, public house, pub grub, ale house, taproom, free house, sports bar]
+- segment: [horeca, quick_service, fish_and_chips_kebab_burger, '']
+  family: [horeca, quick_service]
+  weight: 11
+  keywords: [fish and chips, chippy, chicken shop, kebab house, burger joint, takeaway only]
+- segment: [horeca, cafes_bars_discotheques, coffee_tea_snacking, '']
+  family: [horeca, cafes_bars_discotheques]
+  weight: 10
+  keywords: [coffee shop, tea room, brunch cafe, sandwich shop, bakery cafe]
