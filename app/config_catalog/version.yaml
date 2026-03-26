@@ -1,5 +1,5 @@
-catalog_version: Iteration 47 - Sprint 7 (safe regen)
+catalog_version: Iteration 47 - Sprint 7
+display_label: Iteration 47 - Sprint 7
 updated_at: '2026-03-26'
-display_label: Iteration 47 - Sprint 7 (safe regen)
-summary: Nettoyage sûr du workdir BigQuery après attachement du livrable + nettoyage des summaries temporaires.
-notes: Sprint 6 - suppression des fichiers finaux temporaires et du répertoire de travail si vide pour réduire durablement l'empreinte disque.
+summary: Mode production throughput avec pipeline BigQuery chunk-based streaming, traitement rules/AI par chunk et écriture BigQuery continue.
+notes: Sprint 7 - réduction forte des artefacts intermédiaires massifs, scope AI traité par mini-lots, logs de débit par chunk et écriture BigQuery au fil de l’eau.

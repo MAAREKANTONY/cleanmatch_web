@@ -256,71 +256,39 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     cleanup_intermediate = _parse_bool(parameters.get('marketsegmenter_bq_cleanup_intermediate_files', getattr(settings, 'BIGQUERY_CLEANUP_INTERMEDIATE_FILES', True)))
     cleanup_workdir = _parse_bool(parameters.get('marketsegmenter_bq_cleanup_workdir_files', getattr(settings, 'BIGQUERY_CLEANUP_WORKDIR_FILES', True)))
     source_column_pruning = _parse_bool(parameters.get('marketsegmenter_bq_source_column_pruning', getattr(settings, 'BIGQUERY_SOURCE_COLUMN_PRUNING', True)))
+    chunk_size = max(1, int(parameters.get('pipeline_chunk_size') or getattr(settings, 'PIPELINE_CHUNK_SIZE', read_page_size) or read_page_size))
+    ai_chunk_size = max(1, int(parameters.get('pipeline_ai_chunk_size') or getattr(settings, 'PIPELINE_AI_CHUNK_SIZE', 500) or 500))
+    max_in_memory_rows = max(1, int(parameters.get('pipeline_max_in_memory_rows') or getattr(settings, 'PIPELINE_MAX_IN_MEMORY_ROWS', max(chunk_size, ai_chunk_size)) or max(chunk_size, ai_chunk_size)))
+    chunk_size = min(chunk_size, max_in_memory_rows)
     selected_columns = _build_bigquery_selected_columns(parameters) if source_column_pruning else []
     job_root = Path(job.output_file.field.storage.path(f'outputs/{job.id}'))
     job_root.mkdir(parents=True, exist_ok=True)
     safe_prefix = table_name.replace('.', '_')
-    source_csv = job_root / f'{safe_prefix}_source.csv'
-    first_csv = job_root / f'{safe_prefix}_marketsegmenter.csv'
-    ai_csv = job_root / f'{safe_prefix}_ai_review.csv'
     final_csv = job_root / f'{safe_prefix}_segmented_simple.csv'
-    tracker.step('INIT', 'Initialisation du job BigQuery')
+    final_summary_path = final_csv.with_name(final_csv.stem + '_summary.json')
+
+    tracker.step('INIT', 'Initialisation du job BigQuery streaming')
     tracker.set_metric('source_column_pruning_enabled', 1 if source_column_pruning else 0)
     tracker.set_metric('source_selected_columns_count', len(selected_columns))
-    tracker.log(f"[JOB] Step=INIT | source={table_name} | output={output_table_name} | country_code={country_code or 'ALL'} | read_page_size={read_page_size} | write_batch_size={write_batch_size} | cleanup_intermediate={cleanup_intermediate} | cleanup_workdir={cleanup_workdir} | source_column_pruning={source_column_pruning} | selected_columns={len(selected_columns) or 'ALL'}")
+    tracker.set_metric('pipeline_chunk_size', chunk_size)
+    tracker.set_metric('pipeline_ai_chunk_size', ai_chunk_size)
+    tracker.set_metric('pipeline_max_in_memory_rows', max_in_memory_rows)
+    tracker.log(
+        f"[JOB] Step=INIT | source={table_name} | output={output_table_name} | country_code={country_code or 'ALL'} | "
+        f"read_page_size={read_page_size} | write_batch_size={write_batch_size} | chunk_size={chunk_size} | ai_chunk_size={ai_chunk_size} | "
+        f"cleanup_intermediate={cleanup_intermediate} | cleanup_workdir={cleanup_workdir} | source_column_pruning={source_column_pruning} | selected_columns={len(selected_columns) or 'ALL'}"
+    )
     if selected_columns:
         log(f"🧾 BigQuery column pruning actif: {len(selected_columns)} colonne(s) source sélectionnée(s)")
-    progress(5, 'Lecture BigQuery source')
-    tracker.step('BQ_READ', 'Lecture BigQuery source')
-    export_started = time.monotonic()
-    export_log_every = max(1, int(getattr(settings, 'PIPELINE_EXPORT_PROGRESS_LOG_EVERY_ROWS', 10000) or 10000))
-    log(f'🧾 Source BigQuery: {table_name} | filtre country_code={country_code or "ALL"} | page_size={read_page_size} | progress_every={export_log_every}')
-    def _on_export_progress(exported_rows: int) -> None:
-        elapsed = max(time.monotonic() - export_started, 0.001)
-        rate = exported_rows / elapsed * 60.0
-        tracker.set_metric('bq_read_rows_so_far', exported_rows)
-        tracker.set_metric('bq_read_rate_rows_per_min', round(rate, 2))
-        tracker.log(f'[JOB] Step=BQ_READ | exported={exported_rows} | rate={rate:.1f} rows/min')
-    source_path, source_headers, row_count = bq.export_table_to_csv(
-        table_name=table_name,
-        output_path=source_csv,
-        country_code=country_code,
-        page_size=read_page_size,
-        selected_columns=selected_columns,
-        progress_every_rows=export_log_every,
-        progress_callback=_on_export_progress,
-    )
-    export_elapsed = max(time.monotonic() - export_started, 0.001)
-    export_rate = row_count / export_elapsed * 60.0 if row_count else 0.0
-    tracker.set_metric('total_rows', row_count)
-    tracker.set_metric('source_exported_columns_count', len(source_headers))
-    tracker.set_metric('bq_read_elapsed_ms', int(export_elapsed * 1000))
-    tracker.set_metric('bq_read_rate_rows_per_min', round(export_rate, 2))
-    tracker.log(f'[JOB] Step=BQ_READ | rows={row_count} | columns={len(source_headers)} | elapsed_ms={int(export_elapsed * 1000)} | rate={export_rate:.1f} rows/min | file={source_path.name}')
-    log(f'📥 {row_count} ligne(s) exportées depuis BigQuery dans {source_path.name} en {export_elapsed:.1f}s ({export_rate:.1f} rows/min)')
-    progress(20, 'Segmentation règles / keywords')
-    tracker.step('RULES', 'Segmentation règles / keywords')
-    ms_service = MarketSegmenterService(progress_callback=progress, log_callback=log)
+
+    progress(5, 'Lecture BigQuery streaming')
+    tracker.step('BQ_READ', 'Lecture BigQuery streaming par chunks')
+
     ms_options = MarketSegmenterOptions(
         marketsegmenter_sheet_name=None,
         marketsegmenter_mapping=parameters.get('marketsegmenter_mapping') or {},
         country_default=parameters.get('marketsegmenter_country_default') or country_code,
     )
-    ms_service.run(input_path=source_path, output_path=first_csv, options=ms_options)
-    if cleanup_intermediate:
-        _cleanup_temp_file(source_csv, log, tracker)
-    rules_metrics = _compute_rules_gating_metrics(first_csv, low_conf_threshold, min_conf_threshold)
-    for key, value in rules_metrics.items():
-        tracker.set_metric(key, value)
-    tracker.log('[JOB] Step=RULES | total={total} | high={high} | ai={mid} | out={low}'.format(
-        total=rules_metrics.get('total_rows', 0),
-        high=rules_metrics.get('rules_high_confidence', 0),
-        mid=rules_metrics.get('rules_low_confidence_ai', 0),
-        low=rules_metrics.get('rules_very_low_out_of_scope', 0),
-    ))
-    progress(55, 'AI Review ciblée sur lignes à faible confiance')
-    tracker.step('AI_REVIEW', 'AI Review ciblée sur lignes à faible confiance')
-    ai_service = AIReviewService(progress_callback=progress, log_callback=log)
     ai_review_mapping = dict(parameters.get('ai_review_mapping') or {})
     ai_review_mapping.pop('segmentation_confidence', None)
     ai_options = AIReviewOptions(
@@ -337,77 +305,147 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         llm_max_cost_per_row_eur=float(parameters.get('ai_review_llm_max_cost_per_row_eur') or 0.0),
         llm_max_calls_per_row=int(parameters.get('ai_review_llm_max_calls_per_row') or 1),
     )
-    ai_service.run(input_path=first_csv, output_path=ai_csv, options=ai_options)
-    if cleanup_intermediate:
-        _cleanup_temp_file(first_csv, log, tracker)
-    ai_metrics = _compute_ai_review_metrics(ai_csv, low_conf_threshold, min_conf_threshold)
-    ai_summary_path = ai_csv.with_name(ai_csv.stem + '_summary.json')
-    ai_summary = _read_json_if_exists(ai_summary_path)
-    if ai_summary:
-        ai_metrics['ai_candidate_rows'] = int(ai_summary.get('ai_candidate_rows', ai_metrics.get('ai_selected_yes', 0)) or 0)
-        ai_metrics['ai_hardened_rows'] = int(ai_summary.get('ai_hardened_rows', ai_metrics.get('ai_selected_yes', 0)) or 0)
-        ai_metrics['ai_hardening_elapsed_ms'] = int(ai_summary.get('ai_hardening_elapsed_ms', 0) or 0)
-    else:
-        ai_metrics['ai_candidate_rows'] = int(ai_metrics.get('ai_selected_yes', 0) or 0)
-        ai_metrics['ai_hardened_rows'] = int(ai_metrics.get('ai_selected_yes', 0) or 0)
-        ai_metrics['ai_hardening_elapsed_ms'] = 0
-    for key, value in ai_metrics.items():
-        tracker.set_metric(key, value)
-    tracker.log('[JOB] Step=AI_REVIEW | selected={selected} | hardened={hardened} | hardening_ms={hardening_ms} | llm_calls={llm_calls} | llm_success={llm_success} | llm_failed={llm_failed}'.format(
-        selected=ai_metrics.get('ai_candidate_rows', 0),
-        hardened=ai_metrics.get('ai_hardened_rows', 0),
-        hardening_ms=ai_metrics.get('ai_hardening_elapsed_ms', 0),
-        llm_calls=ai_metrics.get('llm_calls', 0),
-        llm_success=ai_metrics.get('llm_success', 0),
-        llm_failed=ai_metrics.get('llm_failed', 0),
-    ))
-    progress(82, 'Consolidation résultat simple + écriture BigQuery')
-    tracker.step('CONSOLIDATION', 'Consolidation résultat simple + écriture BigQuery')
-    consolidation_metrics = _consolidate_marketsegmenter_ai_results(
-        ai_csv_path=ai_csv,
-        final_csv_path=final_csv,
-        output_table_name=output_table_name,
-        process_id=str(job.id),
-        low_conf_threshold=low_conf_threshold,
-        min_conf_threshold=min_conf_threshold,
-        progress=progress,
-        log=log,
-        bq=bq,
-        write_batch_size=write_batch_size,
-        progress_log_every=max(1, int(getattr(settings, 'PIPELINE_PROGRESS_LOG_EVERY_ROWS', 5000) or 5000)),
-        tracker=tracker,
-    )
-    if cleanup_intermediate:
-        _cleanup_temp_file(ai_csv, log, tracker)
-        _cleanup_temp_file(ai_summary_path, log, tracker)
-    for key, value in consolidation_metrics.items():
-        tracker.set_metric(key, value)
-    tracker.step('BQ_WRITE', 'Écriture BigQuery du résultat final')
-    tracker.log(f"[JOB] Step=BQ_WRITE | written={consolidation_metrics.get('rows_written', 0)} | batches={consolidation_metrics.get('bq_write_batches', 0)} | table={output_table_name}")
-    log(f"📤 {consolidation_metrics.get('rows_written', 0)} ligne(s) écrites dans BigQuery table {output_table_name} en streaming batché")
+
+    aggregate = {
+        'total_rows': 0,
+        'rules_high_confidence': 0,
+        'rules_low_confidence_ai': 0,
+        'rules_very_low_out_of_scope': 0,
+        'rules_unclassified': 0,
+        'ai_selected_yes': 0,
+        'ai_candidate_rows': 0,
+        'ai_hardened_rows': 0,
+        'ai_hardening_elapsed_ms': 0,
+        'llm_calls': 0,
+        'llm_success': 0,
+        'llm_failed': 0,
+        'consolidated_rules_confident': 0,
+        'consolidated_llm': 0,
+        'consolidated_out_of_scope': 0,
+        'consolidated_rules_fallback': 0,
+        'consolidated_ai_fallback': 0,
+        'consolidated_none': 0,
+        'result_rows': 0,
+        'rows_written': 0,
+        'bq_write_batches': 0,
+        'chunk_count': 0,
+        'peak_chunk_rows': 0,
+        'peak_ai_chunk_rows': 0,
+    }
+
+    writer_headers = ['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3']
+    started_at = time.perf_counter()
+    chunk_rows: list[dict[str, object]] = []
+
+    def _persist_chunk(rows: list[dict[str, object]], chunk_index: int, final_writer) -> None:
+        if not rows:
+            return
+        JobService.enforce_not_cancelled(job)
+        tracker.incr('chunk_count', 1)
+        tracker.set_metric('peak_chunk_rows', max(int(tracker.snapshot().get('metrics', {}).get('peak_chunk_rows') or 0), len(rows)))
+        aggregate['chunk_count'] += 1
+        aggregate['peak_chunk_rows'] = max(aggregate['peak_chunk_rows'], len(rows))
+        chunk_prefix = f'{safe_prefix}_chunk_{chunk_index:05d}'
+        source_chunk_csv = job_root / f'{chunk_prefix}_source.csv'
+        rules_chunk_csv = job_root / f'{chunk_prefix}_marketsegmenter.csv'
+        ai_chunk_csv = job_root / f'{chunk_prefix}_ai_review.csv'
+        _write_rows_to_csv(source_chunk_csv, rows)
+
+        ms_service = MarketSegmenterService(progress_callback=lambda *_args, **_kwargs: None, log_callback=lambda msg: log(f'[chunk {chunk_index}] {msg}'))
+        ms_service.run(input_path=source_chunk_csv, output_path=rules_chunk_csv, options=ms_options)
+        if cleanup_intermediate:
+            _cleanup_temp_file(source_chunk_csv, log, tracker)
+
+        rules_metrics = _compute_rules_gating_metrics(rules_chunk_csv, low_conf_threshold, min_conf_threshold)
+        _merge_metric_dict(aggregate, rules_metrics)
+
+        ai_service = AIReviewService(progress_callback=lambda *_args, **_kwargs: None, log_callback=lambda msg: log(f'[chunk {chunk_index}] {msg}'))
+        ai_service.run(input_path=rules_chunk_csv, output_path=ai_chunk_csv, options=ai_options)
+        if cleanup_intermediate:
+            _cleanup_temp_file(rules_chunk_csv, log, tracker)
+
+        ai_metrics = _compute_ai_review_metrics(ai_chunk_csv, low_conf_threshold, min_conf_threshold)
+        ai_summary_path = ai_chunk_csv.with_name(ai_chunk_csv.stem + '_summary.json')
+        ai_summary = _read_json_if_exists(ai_summary_path)
+        if ai_summary:
+            ai_metrics['ai_candidate_rows'] = int(ai_summary.get('ai_candidate_rows', ai_metrics.get('ai_selected_yes', 0)) or 0)
+            ai_metrics['ai_hardened_rows'] = int(ai_summary.get('ai_hardened_rows', ai_metrics.get('ai_selected_yes', 0)) or 0)
+            ai_metrics['ai_hardening_elapsed_ms'] = int(ai_summary.get('ai_hardening_elapsed_ms', 0) or 0)
+        else:
+            ai_metrics['ai_candidate_rows'] = int(ai_metrics.get('ai_selected_yes', 0) or 0)
+            ai_metrics['ai_hardened_rows'] = int(ai_metrics.get('ai_selected_yes', 0) or 0)
+            ai_metrics['ai_hardening_elapsed_ms'] = 0
+        _merge_metric_dict(aggregate, ai_metrics)
+        aggregate['peak_ai_chunk_rows'] = max(aggregate['peak_ai_chunk_rows'], int(ai_metrics.get('ai_candidate_rows', 0) or 0))
+
+        consolidation_metrics = _consolidate_marketsegmenter_ai_chunk(
+            ai_csv_path=ai_chunk_csv,
+            final_writer=final_writer,
+            output_table_name=output_table_name,
+            process_id=str(job.id),
+            low_conf_threshold=low_conf_threshold,
+            min_conf_threshold=min_conf_threshold,
+            bq=bq,
+            write_batch_size=write_batch_size,
+        )
+        _merge_metric_dict(aggregate, consolidation_metrics)
+        if cleanup_intermediate:
+            _cleanup_temp_file(ai_chunk_csv, log, tracker)
+            _cleanup_temp_file(ai_summary_path, log, tracker)
+
+        processed_rows = aggregate['result_rows']
+        elapsed = max(time.perf_counter() - started_at, 0.001)
+        rate = round((processed_rows / elapsed) * 60, 2)
+        tracker.set_metric('total_rows', aggregate['total_rows'])
+        tracker.set_metric('rows_written', aggregate['rows_written'])
+        tracker.set_metric('result_rows', aggregate['result_rows'])
+        tracker.set_metric('llm_calls', aggregate['llm_calls'])
+        tracker.set_metric('peak_chunk_rows', aggregate['peak_chunk_rows'])
+        tracker.set_metric('peak_ai_chunk_rows', aggregate['peak_ai_chunk_rows'])
+        tracker.log(
+            f"[JOB] Chunk {chunk_index} | processed={processed_rows} | rate={rate} rows/min | ai={ai_metrics.get('ai_candidate_rows', 0)} | write_batch={write_batch_size}"
+        )
+        progress(10 + min(80, chunk_index % 80), f'Chunk {chunk_index} traité | lignes={processed_rows} | débit={rate} rows/min')
+
+    with final_csv.open('w', encoding='utf-8-sig', newline='') as out_fh:
+        final_writer = csv.DictWriter(out_fh, fieldnames=writer_headers, delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL, lineterminator='\n')
+        final_writer.writeheader()
+        for row in bq.iter_rows(table_name, country_code=country_code, limit=None, page_size=read_page_size, selected_columns=selected_columns):
+            chunk_rows.append(row)
+            if len(chunk_rows) >= chunk_size:
+                _persist_chunk(chunk_rows, aggregate['chunk_count'] + 1, final_writer)
+                chunk_rows = []
+        if chunk_rows:
+            _persist_chunk(chunk_rows, aggregate['chunk_count'] + 1, final_writer)
+
     tracker.step('DONE', 'Résumé et finalisation du job')
     summary = {
         'job_id': str(job.id),
-        'source_mode': 'bigquery',
+        'source_mode': 'bigquery_chunk_streaming',
         'source_table': table_name,
         'source_country_code': country_code,
         'output_table': output_table_name,
-        'source_rows': row_count,
-        'result_rows': consolidation_metrics.get('result_rows', 0),
-        'rows_written': consolidation_metrics.get('rows_written', 0),
-        'write_batches': consolidation_metrics.get('bq_write_batches', 0),
+        'source_rows': aggregate['total_rows'],
+        'result_rows': aggregate['result_rows'],
+        'rows_written': aggregate['rows_written'],
+        'write_batches': aggregate['bq_write_batches'],
+        'chunk_count': aggregate['chunk_count'],
+        'peak_chunk_rows': aggregate['peak_chunk_rows'],
+        'peak_ai_chunk_rows': aggregate['peak_ai_chunk_rows'],
         'output_csv': final_csv.name,
         'low_confidence_threshold': low_conf_threshold,
         'min_confidence_threshold': min_conf_threshold,
         'read_page_size': read_page_size,
         'write_batch_size': write_batch_size,
+        'chunk_size': chunk_size,
+        'ai_chunk_size': ai_chunk_size,
+        'max_in_memory_rows': max_in_memory_rows,
         'cleanup_intermediate': cleanup_intermediate,
         'cleanup_workdir': cleanup_workdir,
         'source_column_pruning': source_column_pruning,
         'selected_columns': selected_columns,
         'observability': tracker.snapshot(),
     }
-    final_summary_path = final_csv.with_name(final_csv.stem + '_summary.json')
     final_summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
     job.refresh_from_db(); JobService.enforce_not_cancelled(job)
     with final_csv.open('rb') as fh:
@@ -416,8 +454,26 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         _cleanup_temp_file(final_csv, log, tracker)
         _cleanup_temp_file(final_summary_path, log, tracker)
         _cleanup_empty_dir(job_root, log, tracker)
-    JobService.mark_success(job, message='Market segmenter BigQuery + AI terminé avec succès')
+    JobService.mark_success(job, message='Market segmenter BigQuery streaming + AI terminé avec succès')
     return str(job.id)
+
+
+def _write_rows_to_csv(output_path: Path, rows: list[dict[str, object]]) -> tuple[Path, list[str], int]:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    headers = list(rows[0].keys()) if rows else []
+    with output_path.open('w', encoding='utf-8-sig', newline='') as fh:
+        writer = csv.DictWriter(fh, fieldnames=headers, delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL, lineterminator='\n')
+        if headers:
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({key: BigQueryService._stringify(row.get(key, '')) for key in headers})
+    return output_path, headers, len(rows)
+
+
+def _merge_metric_dict(target: dict, incoming: dict) -> None:
+    for key, value in incoming.items():
+        if isinstance(value, (int, float)):
+            target[key] = int(target.get(key) or 0) + int(value)
 
 
 def _build_bigquery_selected_columns(parameters: dict) -> list[str]:
@@ -471,7 +527,7 @@ def _split_segment_path(raw_value: str) -> list[str]:
     return [part.strip() for part in text.split('>') if part.strip()]
 
 
-def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: Path, output_table_name: str, process_id: str, low_conf_threshold: float, min_conf_threshold: float, progress, log, bq: BigQueryService | None = None, write_batch_size: int | None = None, progress_log_every: int | None = None, tracker: JobTracker | None = None):
+def _consolidate_marketsegmenter_ai_chunk(ai_csv_path: Path, final_writer, output_table_name: str, process_id: str, low_conf_threshold: float, min_conf_threshold: float, bq: BigQueryService | None = None, write_batch_size: int | None = None):
     metrics = {
         'consolidated_rules_confident': 0,
         'consolidated_llm': 0,
@@ -483,75 +539,61 @@ def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: P
         'rows_written': 0,
         'bq_write_batches': 0,
     }
-    writer_headers = ['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3']
-    final_csv_path.parent.mkdir(parents=True, exist_ok=True)
     batch_size = max(1, int(write_batch_size or getattr(settings, 'BIGQUERY_WRITE_BATCH_SIZE', 1000) or 1000))
-    safe_progress_every = max(1, int(progress_log_every or getattr(settings, 'PIPELINE_PROGRESS_LOG_EVERY_ROWS', 5000) or 5000))
     bq_service = bq or BigQueryService()
-    consolidation_started = time.monotonic()
-    with ai_csv_path.open('r', encoding='utf-8-sig', newline='') as in_fh, final_csv_path.open('w', encoding='utf-8-sig', newline='') as out_fh:
+    buffered_bq_rows: list[dict[str, object]] = []
+    with ai_csv_path.open('r', encoding='utf-8-sig', newline='') as in_fh:
         reader = csv.DictReader(in_fh, delimiter=';')
-        writer = csv.DictWriter(out_fh, fieldnames=writer_headers, delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL, lineterminator='\n')
-        writer.writeheader()
-        def _iter_bq_rows():
-            for idx, row in enumerate(reader, start=1):
-                google_place_id = (row.get('google_place_id') or row.get('place_id') or row.get('google_id') or '').strip()
-                ai_source = (row.get('ai_segment_source') or '').strip()
-                ai_selected = (row.get('ai_selected_for_review') or '').strip().lower() == 'yes'
-                ai_segments = _split_segment_path(row.get('ai_segment_suggested', ''))
-                rules_segments = [
-                    (row.get('fyre_market_segment_type0') or '').strip(),
-                    (row.get('fyre_market_segment_type1') or '').strip(),
-                    (row.get('fyre_market_segment_type2') or '').strip(),
-                    (row.get('fyre_market_segment_type3') or '').strip(),
-                ]
-                try:
-                    rules_conf = float(str(row.get('segmentation_confidence') or '').replace(',', '.'))
-                except Exception:
-                    rules_conf = 0.0
-                rules_has_segments = any(rules_segments)
-                if rules_conf <= min_conf_threshold:
-                    final_segments = ['hors cible', '', '', '']
-                    metrics['consolidated_out_of_scope'] += 1
-                elif ai_selected and ai_segments and ai_source.startswith('llm_'):
-                    final_segments = (ai_segments + ['', '', '', ''])[:4]
-                    metrics['consolidated_llm'] += 1
-                elif not ai_selected and rules_conf >= low_conf_threshold and rules_has_segments:
-                    final_segments = rules_segments
-                    metrics['consolidated_rules_confident'] += 1
-                elif ai_segments and ai_source != 'rules_initial':
-                    final_segments = (ai_segments + ['', '', '', ''])[:4]
-                    metrics['consolidated_ai_fallback'] += 1
-                elif rules_has_segments:
-                    final_segments = rules_segments
-                    metrics['consolidated_rules_fallback'] += 1
-                else:
-                    final_segments = ['', '', '', '']
-                    metrics['consolidated_none'] += 1
-                simple_row = {
-                    'google_place_id': google_place_id,
-                    'market_segment_type0': final_segments[0],
-                    'market_segment_type1': final_segments[1],
-                    'market_segment_type2': final_segments[2],
-                    'market_segment_type3': final_segments[3],
-                }
-                writer.writerow(simple_row)
-                metrics['result_rows'] += 1
-                metrics['bq_write_batches'] = ((metrics['result_rows'] - 1) // batch_size) + 1
-                if idx == 1 or idx % safe_progress_every == 0:
-                    elapsed = max(time.monotonic() - consolidation_started, 0.001)
-                    rate = idx / elapsed * 60.0
-                    progress(82, f'Consolidation / écriture streaming : {idx} ligne(s) | {rate:.1f} rows/min')
-                    if tracker is not None:
-                        tracker.set_metric('consolidation_rows_so_far', idx)
-                        tracker.set_metric('consolidation_rate_rows_per_min', round(rate, 2))
-                        tracker.log(f'[JOB] Step=CONSOLIDATION | rows={idx} | rate={rate:.1f} rows/min | batches={metrics["bq_write_batches"]}')
-                yield BigQueryService.build_segmented_row(google_place_id=google_place_id, segments=final_segments, process_id=process_id)
-        metrics['rows_written'] = bq_service.write_segmented_rows_iterable(output_table_name, _iter_bq_rows(), batch_size=batch_size)
-    total_elapsed = max(time.monotonic() - consolidation_started, 0.001)
-    metrics['consolidation_elapsed_ms'] = int(total_elapsed * 1000)
-    metrics['consolidation_rate_rows_per_min'] = round((metrics['result_rows'] / total_elapsed * 60.0), 2) if metrics['result_rows'] else 0.0
-    log(f"🧩 Consolidation finale terminée : {metrics['result_rows']} ligne(s), écrites en {metrics['bq_write_batches']} batch(es) BigQuery, seuil haut={low_conf_threshold}, seuil min={min_conf_threshold}, elapsed={total_elapsed:.1f}s, rate={metrics['consolidation_rate_rows_per_min']:.1f} rows/min")
+        for row in reader:
+            google_place_id = (row.get('google_place_id') or row.get('place_id') or row.get('google_id') or '').strip()
+            ai_source = (row.get('ai_segment_source') or '').strip()
+            ai_selected = (row.get('ai_selected_for_review') or '').strip().lower() == 'yes'
+            ai_segments = _split_segment_path(row.get('ai_segment_suggested', ''))
+            rules_segments = [
+                (row.get('fyre_market_segment_type0') or '').strip(),
+                (row.get('fyre_market_segment_type1') or '').strip(),
+                (row.get('fyre_market_segment_type2') or '').strip(),
+                (row.get('fyre_market_segment_type3') or '').strip(),
+            ]
+            try:
+                rules_conf = float(str(row.get('segmentation_confidence') or '').replace(',', '.'))
+            except Exception:
+                rules_conf = 0.0
+            rules_has_segments = any(rules_segments)
+            if rules_conf <= min_conf_threshold:
+                final_segments = ['hors cible', '', '', '']
+                metrics['consolidated_out_of_scope'] += 1
+            elif ai_selected and ai_segments and ai_source.startswith('llm_'):
+                final_segments = (ai_segments + ['', '', '', ''])[:4]
+                metrics['consolidated_llm'] += 1
+            elif (not ai_selected) and rules_conf >= low_conf_threshold and rules_has_segments:
+                final_segments = rules_segments
+                metrics['consolidated_rules_confident'] += 1
+            elif ai_segments and ai_source != 'rules_initial':
+                final_segments = (ai_segments + ['', '', '', ''])[:4]
+                metrics['consolidated_ai_fallback'] += 1
+            elif rules_has_segments:
+                final_segments = rules_segments
+                metrics['consolidated_rules_fallback'] += 1
+            else:
+                final_segments = ['', '', '', '']
+                metrics['consolidated_none'] += 1
+            final_writer.writerow({
+                'google_place_id': google_place_id,
+                'market_segment_type0': final_segments[0],
+                'market_segment_type1': final_segments[1],
+                'market_segment_type2': final_segments[2],
+                'market_segment_type3': final_segments[3],
+            })
+            metrics['result_rows'] += 1
+            buffered_bq_rows.append(BigQueryService.build_segmented_row(google_place_id=google_place_id, segments=final_segments, process_id=process_id))
+            if len(buffered_bq_rows) >= batch_size:
+                metrics['rows_written'] += bq_service.write_segmented_rows(output_table_name, buffered_bq_rows, batch_size=batch_size)
+                metrics['bq_write_batches'] += 1
+                buffered_bq_rows = []
+    if buffered_bq_rows:
+        metrics['rows_written'] += bq_service.write_segmented_rows(output_table_name, buffered_bq_rows, batch_size=batch_size)
+        metrics['bq_write_batches'] += 1
     return metrics
 
 
