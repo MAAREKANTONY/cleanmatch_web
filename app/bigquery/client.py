@@ -4,7 +4,7 @@ import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Tuple
+from typing import Iterable, Iterator, Tuple
 
 from django.conf import settings
 
@@ -122,15 +122,16 @@ class BigQueryService:
             }],
         }
 
-    def iter_rows(self, table_name: str | None, country_code: str = '', limit: int | None = None) -> Iterable[dict[str, object]]:
+    def iter_rows(self, table_name: str | None, country_code: str = '', limit: int | None = None, page_size: int | None = None) -> Iterable[dict[str, object]]:
         sql, job_config = self.build_select_query(table_name=table_name, country_code=country_code, limit=limit)
-        result = self.client.query(sql, job_config=job_config, location=self.location).result(page_size=1000)
+        effective_page_size = max(1, int(page_size or getattr(settings, 'BIGQUERY_READ_PAGE_SIZE', 1000) or 1000))
+        result = self.client.query(sql, job_config=job_config, location=self.location).result(page_size=effective_page_size)
         for row in result:
             yield dict(row.items())
 
-    def export_table_to_csv(self, table_name: str | None, output_path: Path, country_code: str = '') -> tuple[Path, list[str], int]:
+    def export_table_to_csv(self, table_name: str | None, output_path: Path, country_code: str = '', page_size: int | None = None) -> tuple[Path, list[str], int]:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        rows = self.iter_rows(table_name, country_code=country_code, limit=None)
+        rows = self.iter_rows(table_name, country_code=country_code, limit=None, page_size=page_size)
         count = 0
         headers: list[str] = []
         with output_path.open('w', encoding='utf-8-sig', newline='') as fh:
@@ -151,7 +152,7 @@ class BigQueryService:
                 writer.writeheader()
         return output_path, headers, count
 
-    def write_segmented_rows(self, table_name: str | None, rows: list[dict[str, object]], batch_size: int = 1000) -> int:
+    def _prepare_segmented_table(self, table_name: str | None) -> tuple[str, str]:
         ref = self.table_ref(table_name or settings.BIGQUERY_OUTPUT_TABLE)
         table_id = ref.full_name
         schema = [
@@ -167,16 +168,30 @@ class BigQueryService:
         self.client.create_table(table, exists_ok=True)
         actual_schema = self._get_table_schema(ref.table_name)
         created_at_type = next((field.field_type.upper() for field in actual_schema if field.name == 'created_at'), 'TIMESTAMP')
+        return table_id, created_at_type
+
+    def write_segmented_rows_iterable(self, table_name: str | None, rows: Iterable[dict[str, object]], batch_size: int | None = None) -> int:
+        table_id, created_at_type = self._prepare_segmented_table(table_name)
+        safe_batch_size = max(1, int(batch_size or getattr(settings, 'BIGQUERY_WRITE_BATCH_SIZE', 1000) or 1000))
         total_inserted = 0
-        safe_batch_size = max(1, int(batch_size or 1000))
-        for start in range(0, len(rows), safe_batch_size):
-            batch = rows[start:start + safe_batch_size]
-            normalized_batch = [self._normalize_segmented_row(row, created_at_type=created_at_type) for row in batch]
-            errors = self.client.insert_rows_json(table_id, normalized_batch)
+        batch: list[dict[str, object]] = []
+        for row in rows:
+            batch.append(self._normalize_segmented_row(row, created_at_type=created_at_type))
+            if len(batch) >= safe_batch_size:
+                errors = self.client.insert_rows_json(table_id, batch)
+                if errors:
+                    raise RuntimeError(f'Échec écriture BigQuery vers {table_id}: {errors[:3]}')
+                total_inserted += len(batch)
+                batch = []
+        if batch:
+            errors = self.client.insert_rows_json(table_id, batch)
             if errors:
                 raise RuntimeError(f'Échec écriture BigQuery vers {table_id}: {errors[:3]}')
-            total_inserted += len(normalized_batch)
+            total_inserted += len(batch)
         return total_inserted
+
+    def write_segmented_rows(self, table_name: str | None, rows: list[dict[str, object]], batch_size: int = 1000) -> int:
+        return self.write_segmented_rows_iterable(table_name, rows, batch_size=batch_size)
 
     @staticmethod
     def build_segmented_row(*, google_place_id: str, segments: list[str], process_id: str) -> dict[str, object]:

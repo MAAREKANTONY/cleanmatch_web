@@ -3,12 +3,10 @@ import json
 import os
 import time
 from pathlib import Path
-
 from celery import shared_task
 from django.core.files import File
 from django.core.files.base import ContentFile
 from django.conf import settings
-
 from jobs.models import Job
 from jobs.services import JobCancelledError, JobService, JobTracker
 from normalizer.services.normalizer_service import NormalizerOptions, NormalizerService
@@ -18,8 +16,6 @@ from geoclass.services.geoclass_service import GeoclassOptions, GeoclassService
 from marketsegmenter.services.marketsegmenter_service import MarketSegmenterOptions, MarketSegmenterService
 from ai_review.services.ai_review_service import AIReviewOptions, AIReviewService
 from bigquery.client import BigQueryService
-
-
 def _read_text_preview(path: str, limit: int = 4000) -> str:
     if not path or not os.path.exists(path):
         return 'Aperçu indisponible : fichier introuvable.'
@@ -29,12 +25,8 @@ def _read_text_preview(path: str, limit: int = 4000) -> str:
         return raw.decode('utf-8', errors='replace')
     except Exception as exc:
         return f'Aperçu indisponible : {exc}'
-
-
 def _job_storage_root() -> str:
     return str(Path(settings.MEDIA_ROOT))
-
-
 def _parse_bool(value) -> bool:
     if isinstance(value, bool):
         return value
@@ -49,14 +41,11 @@ def _parse_bool(value) -> bool:
         if normalized in {"0", "false", "no", "n", "off", ""}:
             return False
     return bool(value)
-
-
 @shared_task(bind=True)
 def run_uploaded_job(self, job_id: str):
     job = Job.objects.get(id=job_id)
     input_path = job.input_file_1.path if job.input_file_1 else ''
     second_input_path = job.input_file_2.path if job.input_file_2 else ''
-
     try:
         JobService.ensure_disk_space(_job_storage_root())
         JobService.mark_running(job, 'Initialisation du traitement')
@@ -82,30 +71,23 @@ def run_uploaded_job(self, job_id: str):
         job.refresh_from_db()
         JobService.mark_failed(job, str(exc))
         raise
-
-
 @shared_task
 def monitor_stale_jobs():
     return JobService.fail_stale_jobs()
-
-
 def _run_normalizer_job(job: Job):
     parameters = job.parameters_json or {}
     input_path = Path(job.input_file_1.path)
     output_name = _build_normalizer_output_name(input_path, parameters)
     output_path = Path(job.output_file.field.storage.path(f'outputs/{output_name}'))
-
     def progress(percent: int, message: str) -> None:
         job.refresh_from_db()
         JobService.enforce_not_cancelled(job)
         JobService.ensure_disk_space(_job_storage_root())
         JobService.update_progress(job, percent, message)
-
     def log(message: str) -> None:
         job.refresh_from_db()
         JobService.enforce_not_cancelled(job)
         JobService.append_runtime_log(job, message)
-
     service = NormalizerService(progress_callback=progress, log_callback=log)
     options = NormalizerOptions(
         do_clean=bool(parameters.get('do_clean', True)),
@@ -114,20 +96,16 @@ def _run_normalizer_job(job: Job):
         column_mapping=parameters.get('column_mapping') or {},
         country_code=(parameters.get('country_code') or 'FR'),
     )
-
     log('🚀 Lancement du normalizer web V16 Matcher Multi-country')
     log(f'📂 Fichier source : {input_path.name}')
     log('💾 Format de sortie : CSV UTF-8 (compatible gros volumes)')
     result_path = service.run(input_path=input_path, output_path=output_path, options=options)
-
     job.refresh_from_db()
     JobService.enforce_not_cancelled(job)
     with result_path.open('rb') as fh:
         job.output_file.save(result_path.name, File(fh), save=False)
     JobService.mark_success(job, message='Normalizer terminé avec succès')
     return str(job.id)
-
-
 def _build_normalizer_output_name(input_path: Path, parameters: dict) -> str:
     stem = input_path.stem
     for suffix in ['_enriched', '_cleaned', '_matchcoded', '_normalized']:
@@ -143,27 +121,21 @@ def _build_normalizer_output_name(input_path: Path, parameters: dict) -> str:
     else:
         suffix = '_matchcoded.csv'
     return f'{stem}{suffix}'
-
-
-
 def _run_matcher_job(job: Job):
     parameters = job.parameters_json or {}
     master_path = Path(job.input_file_1.path)
     slave_path = Path(job.input_file_2.path)
     output_name = f"{master_path.stem}__vs__{slave_path.stem}_matcher_v2.zip"
     output_path = Path(job.output_file.field.storage.path(f'outputs/{output_name}'))
-
     def progress(percent: int, message: str) -> None:
         job.refresh_from_db()
         JobService.enforce_not_cancelled(job)
         JobService.ensure_disk_space(_job_storage_root())
         JobService.update_progress(job, percent, message)
-
     def log(message: str) -> None:
         job.refresh_from_db()
         JobService.enforce_not_cancelled(job)
         JobService.append_runtime_log(job, message)
-
     service = MatcherService(progress_callback=progress, log_callback=log)
     options = MatcherOptions(
         threshold_name=int(parameters.get('threshold_name') or 85),
@@ -174,39 +146,31 @@ def _run_matcher_job(job: Job):
         master_mapping=parameters.get('master_mapping') or {},
         slave_mapping=parameters.get('slave_mapping') or {},
     )
-
     log('🚀 Lancement du matcher web V4 Multi-country')
     log(f'📂 Master : {master_path.name}')
     log(f'📂 Slave : {slave_path.name}')
     log('💾 Format de sortie : ZIP contenant all_matches.csv, automatch.csv, review.csv, unmatched.csv, diagnostics.csv et summary.json')
     result_path = service.run(master_path=master_path, slave_path=slave_path, output_path=output_path, options=options)
-
     job.refresh_from_db()
     JobService.enforce_not_cancelled(job)
     with result_path.open('rb') as fh:
         job.output_file.save(result_path.name, File(fh), save=False)
     JobService.mark_success(job, message='Matcher V4 terminé avec succès')
     return str(job.id)
-
-
-
 def _run_geocoder_job(job: Job):
     parameters = job.parameters_json or {}
     input_path = Path(job.input_file_1.path)
     output_name = f"{input_path.stem}_geocoded.csv"
     output_path = Path(job.output_file.field.storage.path(f'outputs/{output_name}'))
-
     def progress(percent: int, message: str) -> None:
         job.refresh_from_db()
         JobService.enforce_not_cancelled(job)
         JobService.ensure_disk_space(_job_storage_root())
         JobService.update_progress(job, percent, message)
-
     def log(message: str) -> None:
         job.refresh_from_db()
         JobService.enforce_not_cancelled(job)
         JobService.append_runtime_log(job, message)
-
     service = GeocoderService(progress_callback=progress, log_callback=log)
     options = GeocoderOptions(
         provider=(parameters.get('geocoder_provider') or 'existing_or_nominatim'),
@@ -215,70 +179,55 @@ def _run_geocoder_job(job: Job):
         country_hint=parameters.get('country_hint') or '',
         cache_db_path=Path(settings.MEDIA_ROOT) / 'cache' / 'geocode_cache_web.sqlite3',
     )
-
     log('🚀 Lancement du geocoder web V2 checkpoint')
     log(f'📂 Fichier source : {input_path.name}')
     log(f"🧭 Provider : {options.provider}")
     log('💾 Format de sortie : CSV UTF-8 avec lat/lng, geocoder_status, geocoder_source et geocoder_label')
     result_path = service.run(input_path=input_path, output_path=output_path, options=options)
-
     job.refresh_from_db()
     JobService.enforce_not_cancelled(job)
     with result_path.open('rb') as fh:
         job.output_file.save(result_path.name, File(fh), save=False)
     JobService.mark_success(job, message='Geocoder V2 checkpoint terminé avec succès')
     return str(job.id)
-
-
 def _run_geoclass_job(job: Job):
     parameters = job.parameters_json or {}
     input_path = Path(job.input_file_1.path)
     output_name = f"{input_path.stem}_geoclass.csv"
     output_path = Path(job.output_file.field.storage.path(f'outputs/{output_name}'))
-
     def progress(percent: int, message: str) -> None:
         job.refresh_from_db()
         JobService.enforce_not_cancelled(job)
         JobService.ensure_disk_space(_job_storage_root())
         JobService.update_progress(job, percent, message)
-
     def log(message: str) -> None:
         job.refresh_from_db()
         JobService.enforce_not_cancelled(job)
         JobService.append_runtime_log(job, message)
-
     service = GeoclassService(progress_callback=progress, log_callback=log)
     options = GeoclassOptions(
         geoclass_sheet_name=parameters.get('geoclass_sheet_name') or None,
         geoclass_mapping=parameters.get('geoclass_mapping') or {},
     )
-
     log('🚀 Lancement du geoclass web V1 heuristique')
     log(f'📂 Fichier source : {input_path.name}')
     log('💾 Format de sortie : CSV UTF-8 avec geoclass_code, geoclass_category, geoclass_subcategory et score')
     result_path = service.run(input_path=input_path, output_path=output_path, options=options)
-
     job.refresh_from_db()
     JobService.enforce_not_cancelled(job)
     with result_path.open('rb') as fh:
         job.output_file.save(result_path.name, File(fh), save=False)
     JobService.mark_success(job, message='Geoclass V1 terminé avec succès')
     return str(job.id)
-
-
 def _run_marketsegmenter_job(job: Job):
     parameters = job.parameters_json or {}
     source_mode = str(parameters.get('marketsegmenter_source_mode') or parameters.get('mode') or 'uploaded')
-
     def progress(percent: int, message: str) -> None:
         job.refresh_from_db(); JobService.enforce_not_cancelled(job); JobService.ensure_disk_space(_job_storage_root()); JobService.update_progress(job, percent, message)
-
     def log(message: str) -> None:
         job.refresh_from_db(); JobService.enforce_not_cancelled(job); JobService.append_runtime_log(job, message)
-
     if source_mode == 'bigquery':
         return _run_marketsegmenter_bigquery_job(job, parameters, progress, log)
-
     input_path = Path(job.input_file_1.path)
     output_name = f"{input_path.stem}_market_segmented.csv"
     output_path = Path(job.output_file.field.storage.path(f'outputs/{output_name}'))
@@ -294,8 +243,6 @@ def _run_marketsegmenter_job(job: Job):
         job.output_file.save(result_path.name, File(fh), save=False)
     JobService.mark_success(job, message='Market segmenter FYRE terminé avec succès')
     return str(job.id)
-
-
 def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log):
     tracker = JobTracker(job)
     bq = BigQueryService()
@@ -304,23 +251,30 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     country_code = str(parameters.get('marketsegmenter_bq_country_code') or '').strip()
     low_conf_threshold = float(parameters.get('ai_review_low_confidence_threshold') or settings.AI_REVIEW_LOW_CONFIDENCE_THRESHOLD)
     min_conf_threshold = float(parameters.get('ai_review_min_confidence_threshold') or settings.AI_REVIEW_MIN_CONFIDENCE_THRESHOLD)
+    read_page_size = int(parameters.get('marketsegmenter_bq_read_page_size') or getattr(settings, 'BIGQUERY_READ_PAGE_SIZE', 1000) or 1000)
+    write_batch_size = int(parameters.get('marketsegmenter_bq_write_batch_size') or getattr(settings, 'BIGQUERY_WRITE_BATCH_SIZE', 1000) or 1000)
+    cleanup_intermediate = _parse_bool(parameters.get('marketsegmenter_bq_cleanup_intermediate_files', getattr(settings, 'BIGQUERY_CLEANUP_INTERMEDIATE_FILES', True)))
     job_root = Path(job.output_file.field.storage.path(f'outputs/{job.id}'))
     job_root.mkdir(parents=True, exist_ok=True)
-    source_csv = job_root / f'{table_name}_source.csv'
-    first_csv = job_root / f'{table_name}_marketsegmenter.csv'
-    ai_csv = job_root / f'{table_name}_ai_review.csv'
-    final_csv = job_root / f'{table_name}_segmented_simple.csv'
-
+    safe_prefix = table_name.replace('.', '_')
+    source_csv = job_root / f'{safe_prefix}_source.csv'
+    first_csv = job_root / f'{safe_prefix}_marketsegmenter.csv'
+    ai_csv = job_root / f'{safe_prefix}_ai_review.csv'
+    final_csv = job_root / f'{safe_prefix}_segmented_simple.csv'
     tracker.step('INIT', 'Initialisation du job BigQuery')
-    tracker.log(f'[JOB] Step=INIT | source={table_name} | output={output_table_name} | country_code={country_code or 'ALL'}')
+    tracker.log(f"[JOB] Step=INIT | source={table_name} | output={output_table_name} | country_code={country_code or 'ALL'} | read_page_size={read_page_size} | write_batch_size={write_batch_size} | cleanup_intermediate={cleanup_intermediate}")
     progress(5, 'Lecture BigQuery source')
     tracker.step('BQ_READ', 'Lecture BigQuery source')
-    log(f'🧾 Source BigQuery: {table_name} | filtre country_code={country_code or "ALL"}')
-    source_path, source_headers, row_count = bq.export_table_to_csv(table_name=table_name, output_path=source_csv, country_code=country_code)
+    log(f'🧾 Source BigQuery: {table_name} | filtre country_code={country_code or "ALL"} | page_size={read_page_size}')
+    source_path, source_headers, row_count = bq.export_table_to_csv(
+        table_name=table_name,
+        output_path=source_csv,
+        country_code=country_code,
+        page_size=read_page_size,
+    )
     tracker.set_metric('total_rows', row_count)
     tracker.log(f'[JOB] Step=BQ_READ | rows={row_count} | file={source_path.name}')
     log(f'📥 {row_count} ligne(s) exportées depuis BigQuery dans {source_path.name}')
-
     progress(20, 'Segmentation règles / keywords')
     tracker.step('RULES', 'Segmentation règles / keywords')
     ms_service = MarketSegmenterService(progress_callback=progress, log_callback=log)
@@ -330,6 +284,8 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         country_default=parameters.get('marketsegmenter_country_default') or country_code,
     )
     ms_service.run(input_path=source_path, output_path=first_csv, options=ms_options)
+    if cleanup_intermediate:
+        _cleanup_temp_file(source_csv, log, tracker)
     rules_metrics = _compute_rules_gating_metrics(first_csv, low_conf_threshold, min_conf_threshold)
     for key, value in rules_metrics.items():
         tracker.set_metric(key, value)
@@ -339,7 +295,6 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         mid=rules_metrics.get('rules_low_confidence_ai', 0),
         low=rules_metrics.get('rules_very_low_out_of_scope', 0),
     ))
-
     progress(55, 'AI Review ciblée sur lignes à faible confiance')
     tracker.step('AI_REVIEW', 'AI Review ciblée sur lignes à faible confiance')
     ai_service = AIReviewService(progress_callback=progress, log_callback=log)
@@ -360,6 +315,8 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         llm_max_calls_per_row=int(parameters.get('ai_review_llm_max_calls_per_row') or 1),
     )
     ai_service.run(input_path=first_csv, output_path=ai_csv, options=ai_options)
+    if cleanup_intermediate:
+        _cleanup_temp_file(first_csv, log, tracker)
     ai_metrics = _compute_ai_review_metrics(ai_csv, low_conf_threshold, min_conf_threshold)
     for key, value in ai_metrics.items():
         tracker.set_metric(key, value)
@@ -369,18 +326,27 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         llm_success=ai_metrics.get('llm_success', 0),
         llm_failed=ai_metrics.get('llm_failed', 0),
     ))
-
     progress(82, 'Consolidation résultat simple + écriture BigQuery')
     tracker.step('CONSOLIDATION', 'Consolidation résultat simple + écriture BigQuery')
-    simple_rows, bq_rows, consolidation_metrics = _consolidate_marketsegmenter_ai_results(ai_csv, final_csv, str(job.id), low_conf_threshold, min_conf_threshold, progress, log)
+    consolidation_metrics = _consolidate_marketsegmenter_ai_results(
+        ai_csv_path=ai_csv,
+        final_csv_path=final_csv,
+        output_table_name=output_table_name,
+        process_id=str(job.id),
+        low_conf_threshold=low_conf_threshold,
+        min_conf_threshold=min_conf_threshold,
+        progress=progress,
+        log=log,
+        bq=bq,
+        write_batch_size=write_batch_size,
+    )
+    if cleanup_intermediate:
+        _cleanup_temp_file(ai_csv, log, tracker)
     for key, value in consolidation_metrics.items():
         tracker.set_metric(key, value)
     tracker.step('BQ_WRITE', 'Écriture BigQuery du résultat final')
-    inserted = bq.write_segmented_rows(output_table_name, bq_rows)
-    tracker.set_metric('rows_written', inserted)
-    tracker.log(f'[JOB] Step=BQ_WRITE | written={inserted} | table={output_table_name}')
-    log(f'📤 {inserted} ligne(s) écrites dans BigQuery table {output_table_name}')
-
+    tracker.log(f"[JOB] Step=BQ_WRITE | written={consolidation_metrics.get('rows_written', 0)} | batches={consolidation_metrics.get('bq_write_batches', 0)} | table={output_table_name}")
+    log(f"📤 {consolidation_metrics.get('rows_written', 0)} ligne(s) écrites dans BigQuery table {output_table_name} en streaming batché")
     tracker.step('DONE', 'Résumé et finalisation du job')
     summary = {
         'job_id': str(job.id),
@@ -389,14 +355,18 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         'source_country_code': country_code,
         'output_table': output_table_name,
         'source_rows': row_count,
-        'result_rows': len(simple_rows),
+        'result_rows': consolidation_metrics.get('result_rows', 0),
+        'rows_written': consolidation_metrics.get('rows_written', 0),
+        'write_batches': consolidation_metrics.get('bq_write_batches', 0),
         'output_csv': final_csv.name,
         'low_confidence_threshold': low_conf_threshold,
         'min_confidence_threshold': min_conf_threshold,
+        'read_page_size': read_page_size,
+        'write_batch_size': write_batch_size,
+        'cleanup_intermediate': cleanup_intermediate,
         'observability': tracker.snapshot(),
     }
     final_csv.with_name(final_csv.stem + '_summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
-
     job.refresh_from_db(); JobService.enforce_not_cancelled(job)
     with final_csv.open('rb') as fh:
         job.output_file.save(final_csv.name, File(fh), save=False)
@@ -404,6 +374,17 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     return str(job.id)
 
 
+def _cleanup_temp_file(path: Path, log, tracker: JobTracker | None = None) -> None:
+    try:
+        if path.exists():
+            size_bytes = path.stat().st_size
+            path.unlink()
+            if tracker is not None:
+                tracker.incr('cleanup_files_deleted', 1)
+                tracker.incr('cleanup_bytes_freed', size_bytes)
+            log(f'🧹 Fichier intermédiaire supprimé : {path.name} ({size_bytes} bytes libérés)')
+    except Exception as exc:
+        log(f'⚠️ Impossible de supprimer le fichier intermédiaire {path.name}: {exc}')
 def _split_segment_path(raw_value: str) -> list[str]:
     text = (raw_value or '').strip()
     if not text:
@@ -411,9 +392,7 @@ def _split_segment_path(raw_value: str) -> list[str]:
     return [part.strip() for part in text.split('>') if part.strip()]
 
 
-def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: Path, process_id: str, low_conf_threshold: float, min_conf_threshold: float, progress, log):
-    simple_rows: list[dict[str, str]] = []
-    bq_rows: list[dict[str, object]] = []
+def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: Path, output_table_name: str, process_id: str, low_conf_threshold: float, min_conf_threshold: float, progress, log, bq: BigQueryService | None = None, write_batch_size: int | None = None):
     metrics = {
         'consolidated_rules_confident': 0,
         'consolidated_llm': 0,
@@ -421,71 +400,69 @@ def _consolidate_marketsegmenter_ai_results(ai_csv_path: Path, final_csv_path: P
         'consolidated_rules_fallback': 0,
         'consolidated_ai_fallback': 0,
         'consolidated_none': 0,
+        'result_rows': 0,
+        'rows_written': 0,
+        'bq_write_batches': 0,
     }
-    with ai_csv_path.open('r', encoding='utf-8-sig', newline='') as fh:
-        reader = csv.DictReader(fh, delimiter=';')
-        for idx, row in enumerate(reader, start=1):
-            google_place_id = (row.get('google_place_id') or row.get('place_id') or row.get('google_id') or '').strip()
-            ai_source = (row.get('ai_segment_source') or '').strip()
-            ai_selected = (row.get('ai_selected_for_review') or '').strip().lower() == 'yes'
-            ai_segments = _split_segment_path(row.get('ai_segment_suggested', ''))
-            rules_segments = [
-                (row.get('fyre_market_segment_type0') or '').strip(),
-                (row.get('fyre_market_segment_type1') or '').strip(),
-                (row.get('fyre_market_segment_type2') or '').strip(),
-                (row.get('fyre_market_segment_type3') or '').strip(),
-            ]
-            try:
-                rules_conf = float(str(row.get('segmentation_confidence') or '').replace(',', '.'))
-            except Exception:
-                rules_conf = 0.0
-
-            rules_has_segments = any(rules_segments)
-            if rules_conf <= min_conf_threshold:
-                final_segments = ['hors cible', '', '', '']
-                final_source = 'rules_below_min_threshold'
-                metrics['consolidated_out_of_scope'] += 1
-            elif ai_selected and ai_segments and ai_source.startswith('llm_'):
-                final_segments = (ai_segments + ['', '', '', ''])[:4]
-                final_source = ai_source
-                metrics['consolidated_llm'] += 1
-            elif not ai_selected and rules_conf >= low_conf_threshold and rules_has_segments:
-                final_segments = rules_segments
-                final_source = 'rules_confident'
-                metrics['consolidated_rules_confident'] += 1
-            elif ai_segments and ai_source != 'rules_initial':
-                final_segments = (ai_segments + ['', '', '', ''])[:4]
-                final_source = ai_source or 'ai_fallback'
-                metrics['consolidated_ai_fallback'] += 1
-            elif rules_has_segments:
-                final_segments = rules_segments
-                final_source = 'rules_fallback'
-                metrics['consolidated_rules_fallback'] += 1
-            else:
-                final_segments = ['', '', '', '']
-                final_source = 'none'
-                metrics['consolidated_none'] += 1
-
-            simple_row = {
-                'google_place_id': google_place_id,
-                'market_segment_type0': final_segments[0],
-                'market_segment_type1': final_segments[1],
-                'market_segment_type2': final_segments[2],
-                'market_segment_type3': final_segments[3],
-            }
-            simple_rows.append(simple_row)
-            bq_rows.append(BigQueryService.build_segmented_row(google_place_id=google_place_id, segments=final_segments, process_id=process_id))
-            if idx == 1 or idx % 5000 == 0:
-                progress(82, f'Consolidation des résultats : {idx} ligne(s)')
+    writer_headers = ['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3']
     final_csv_path.parent.mkdir(parents=True, exist_ok=True)
-    with final_csv_path.open('w', encoding='utf-8-sig', newline='') as fh:
-        writer = csv.DictWriter(fh, fieldnames=['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3'], delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL, lineterminator='\n')
+    batch_size = max(1, int(write_batch_size or getattr(settings, 'BIGQUERY_WRITE_BATCH_SIZE', 1000) or 1000))
+    bq_service = bq or BigQueryService()
+    with ai_csv_path.open('r', encoding='utf-8-sig', newline='') as in_fh, final_csv_path.open('w', encoding='utf-8-sig', newline='') as out_fh:
+        reader = csv.DictReader(in_fh, delimiter=';')
+        writer = csv.DictWriter(out_fh, fieldnames=writer_headers, delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL, lineterminator='\n')
         writer.writeheader()
-        writer.writerows(simple_rows)
-    metrics['result_rows'] = len(simple_rows)
-    log(f'🧩 Consolidation finale terminée : {len(simple_rows)} ligne(s), seuil haut={low_conf_threshold}, seuil min={min_conf_threshold}')
-    return simple_rows, bq_rows, metrics
-
+        def _iter_bq_rows():
+            for idx, row in enumerate(reader, start=1):
+                google_place_id = (row.get('google_place_id') or row.get('place_id') or row.get('google_id') or '').strip()
+                ai_source = (row.get('ai_segment_source') or '').strip()
+                ai_selected = (row.get('ai_selected_for_review') or '').strip().lower() == 'yes'
+                ai_segments = _split_segment_path(row.get('ai_segment_suggested', ''))
+                rules_segments = [
+                    (row.get('fyre_market_segment_type0') or '').strip(),
+                    (row.get('fyre_market_segment_type1') or '').strip(),
+                    (row.get('fyre_market_segment_type2') or '').strip(),
+                    (row.get('fyre_market_segment_type3') or '').strip(),
+                ]
+                try:
+                    rules_conf = float(str(row.get('segmentation_confidence') or '').replace(',', '.'))
+                except Exception:
+                    rules_conf = 0.0
+                rules_has_segments = any(rules_segments)
+                if rules_conf <= min_conf_threshold:
+                    final_segments = ['hors cible', '', '', '']
+                    metrics['consolidated_out_of_scope'] += 1
+                elif ai_selected and ai_segments and ai_source.startswith('llm_'):
+                    final_segments = (ai_segments + ['', '', '', ''])[:4]
+                    metrics['consolidated_llm'] += 1
+                elif not ai_selected and rules_conf >= low_conf_threshold and rules_has_segments:
+                    final_segments = rules_segments
+                    metrics['consolidated_rules_confident'] += 1
+                elif ai_segments and ai_source != 'rules_initial':
+                    final_segments = (ai_segments + ['', '', '', ''])[:4]
+                    metrics['consolidated_ai_fallback'] += 1
+                elif rules_has_segments:
+                    final_segments = rules_segments
+                    metrics['consolidated_rules_fallback'] += 1
+                else:
+                    final_segments = ['', '', '', '']
+                    metrics['consolidated_none'] += 1
+                simple_row = {
+                    'google_place_id': google_place_id,
+                    'market_segment_type0': final_segments[0],
+                    'market_segment_type1': final_segments[1],
+                    'market_segment_type2': final_segments[2],
+                    'market_segment_type3': final_segments[3],
+                }
+                writer.writerow(simple_row)
+                metrics['result_rows'] += 1
+                metrics['bq_write_batches'] = ((metrics['result_rows'] - 1) // batch_size) + 1
+                if idx == 1 or idx % 5000 == 0:
+                    progress(82, f'Consolidation / écriture streaming : {idx} ligne(s)')
+                yield BigQueryService.build_segmented_row(google_place_id=google_place_id, segments=final_segments, process_id=process_id)
+        metrics['rows_written'] = bq_service.write_segmented_rows_iterable(output_table_name, _iter_bq_rows(), batch_size=batch_size)
+    log(f"🧩 Consolidation finale terminée : {metrics['result_rows']} ligne(s), écrites en {metrics['bq_write_batches']} batch(es) BigQuery, seuil haut={low_conf_threshold}, seuil min={min_conf_threshold}")
+    return metrics
 
 
 def _compute_rules_gating_metrics(csv_path: Path, low_conf_threshold: float, min_conf_threshold: float) -> dict[str, int]:
@@ -514,8 +491,6 @@ def _compute_rules_gating_metrics(csv_path: Path, low_conf_threshold: float, min
         metrics['rules_high_confidence'] + metrics['rules_low_confidence_ai'] + metrics['rules_very_low_out_of_scope']
     )
     return metrics
-
-
 def _compute_ai_review_metrics(csv_path: Path, low_conf_threshold: float, min_conf_threshold: float) -> dict[str, int]:
     metrics = {
         'llm_calls': 0,
@@ -544,18 +519,15 @@ def _run_ai_review_job(job: Job):
     input_path = Path(job.input_file_1.path)
     output_name = f"{input_path.stem}_ai_review.csv"
     output_path = Path(job.output_file.field.storage.path(f'outputs/{output_name}'))
-
     def progress(percent: int, message: str) -> None:
         job.refresh_from_db()
         JobService.enforce_not_cancelled(job)
         JobService.ensure_disk_space(_job_storage_root())
         JobService.update_progress(job, percent, message)
-
     def log(message: str) -> None:
         job.refresh_from_db()
         JobService.enforce_not_cancelled(job)
         JobService.append_runtime_log(job, message)
-
     service = AIReviewService(progress_callback=progress, log_callback=log)
     options = AIReviewOptions(
         ai_review_sheet_name=parameters.get('ai_review_sheet_name') or None,
@@ -571,7 +543,6 @@ def _run_ai_review_job(job: Job):
         llm_max_cost_per_row_eur=float(parameters.get('ai_review_llm_max_cost_per_row_eur') or 0.0),
         llm_max_calls_per_row=int(parameters.get('ai_review_llm_max_calls_per_row') or 1),
     )
-
     log('🚀 Lancement du process AI Review hardened multi-provider LLM')
     log(f'📂 Fichier source : {input_path.name}')
     log(f"🎯 Gating AI : seuil haut={options.low_confidence_threshold} | seuil min={options.min_confidence_threshold}")
@@ -579,21 +550,17 @@ def _run_ai_review_job(job: Job):
     log(f"🤖 LLM enabled={options.llm_enabled} provider={options.llm_provider} model={options.llm_model} budget={options.llm_max_budget_eur}€ row_max={options.llm_max_cost_per_row_eur}€ calls/row={options.llm_max_calls_per_row}")
     log('💾 Format de sortie : CSV UTF-8 avec colonnes AI review additives + summary JSON + guardrails LLM + JSON provider output')
     result_path = service.run(input_path=input_path, output_path=output_path, options=options)
-
     job.refresh_from_db()
     JobService.enforce_not_cancelled(job)
     with result_path.open('rb') as fh:
         job.output_file.save(result_path.name, File(fh), save=False)
     JobService.mark_success(job, message='AI Review hardening terminé avec succès')
     return str(job.id)
-
 def _run_stub_job(job: Job, input_path: str, second_input_path: str):
     JobService.update_progress(job, 5, 'Vérification des fichiers uploadés')
     time.sleep(1)
-
     if input_path and not os.path.exists(input_path):
         raise FileNotFoundError(f'Fichier principal introuvable : {input_path}')
-
     primary_size = os.path.getsize(input_path) if input_path and os.path.exists(input_path) else 0
     secondary_size = os.path.getsize(second_input_path) if second_input_path and os.path.exists(second_input_path) else 0
     JobService.append_runtime_log(
@@ -605,7 +572,6 @@ def _run_stub_job(job: Job, input_path: str, second_input_path: str):
             job,
             f"Fichier secondaire : {Path(second_input_path).name} ({secondary_size} bytes)",
         )
-
     for percent, message in [
         (20, 'Lecture des métadonnées du fichier'),
         (40, 'Simulation du pré-traitement'),
@@ -617,7 +583,6 @@ def _run_stub_job(job: Job, input_path: str, second_input_path: str):
         JobService.enforce_not_cancelled(job)
         JobService.ensure_disk_space(_job_storage_root())
         JobService.update_progress(job, percent, message)
-
     preview = _read_text_preview(input_path)
     output_lines = [
         'CleanMatch Web - Iteration 5',
@@ -635,7 +600,6 @@ def _run_stub_job(job: Job, input_path: str, second_input_path: str):
     ]
     output_name = f'result_{job.id}.txt'
     output_content = '\n'.join(output_lines)
-
     job.refresh_from_db()
     JobService.enforce_not_cancelled(job)
     job.output_file.save(output_name, ContentFile(output_content.encode('utf-8')), save=False)

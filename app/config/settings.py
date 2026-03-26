@@ -95,6 +95,9 @@ BIGQUERY_CREDENTIALS_FILE = os.getenv('BIGQUERY_CREDENTIALS_FILE', os.getenv('GO
 BIGQUERY_INPUT_TABLE = os.getenv('BIGQUERY_INPUT_TABLE', 'google_map_clean').strip() or 'google_map_clean'
 BIGQUERY_OUTPUT_TABLE = os.getenv('BIGQUERY_OUTPUT_TABLE', 'google_map_clean_segmented').strip() or 'google_map_clean_segmented'
 
+BIGQUERY_READ_PAGE_SIZE = int(os.getenv('BIGQUERY_READ_PAGE_SIZE', '1000'))
+BIGQUERY_WRITE_BATCH_SIZE = int(os.getenv('BIGQUERY_WRITE_BATCH_SIZE', '1000'))
+BIGQUERY_CLEANUP_INTERMEDIATE_FILES = os.getenv('BIGQUERY_CLEANUP_INTERMEDIATE_FILES', '1').strip().lower() not in {'0', 'false', 'no', 'off'}
 
 AI_REVIEW_LOW_CONFIDENCE_THRESHOLD = float(os.getenv('AI_REVIEW_LOW_CONFIDENCE_THRESHOLD', '0.65'))
 AI_REVIEW_MIN_CONFIDENCE_THRESHOLD = float(os.getenv('AI_REVIEW_MIN_CONFIDENCE_THRESHOLD', '0.20'))

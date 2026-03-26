@@ -124,3 +124,21 @@ class BigQueryServiceQueryTests(TestCase):
         service.write_segmented_rows('google_map_clean', rows, batch_size=100)
         inserted = service.client.insert_rows_json.call_args.args[1]
         self.assertEqual(inserted[0]['created_at'], '2026-03-25 23:35:36.069360')
+
+
+    @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
+    @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
+    @patch('django.conf.settings.BIGQUERY_LOCATION', '')
+    @patch('django.conf.settings.BIGQUERY_CREDENTIALS_FILE', '')
+    @patch('django.conf.settings.BIGQUERY_INPUT_TABLE', 'google_map_clean')
+    def test_write_segmented_rows_iterable_streams_batches(self):
+        service = self._make_service()
+        service.client = Mock()
+        service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'created_at', 'field_type': 'TIMESTAMP'})()]})()
+        rows = (
+            {'google_place_id': f'g{i}', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'created_at': '2026-03-26T10:11:12+00:00', 'process_id': 'p1'}
+            for i in range(3)
+        )
+        inserted = service.write_segmented_rows_iterable('google_map_clean', rows, batch_size=2)
+        self.assertEqual(inserted, 3)
+        self.assertEqual(service.client.insert_rows_json.call_count, 2)
