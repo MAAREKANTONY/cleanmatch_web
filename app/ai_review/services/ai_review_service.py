@@ -176,8 +176,12 @@ class AIReviewService:
         self.log(f'[AI_REVIEW] LLM runtime diagnostics: {runtime_diag_json}')
         logger.warning('[AI_REVIEW] LLM runtime diagnostics: %s', runtime_diag_json)
 
-        with output_path.open('w', newline='', encoding='utf-8-sig') as fh:
+        selected_tmp_path = output_path.with_name(output_path.stem + '_selected_scope.csv')
+        selected_tmp_written = 0
+        with output_path.open('w', newline='', encoding='utf-8-sig') as fh, selected_tmp_path.open('w', newline='', encoding='utf-8-sig') as selected_fh:
             writer = None
+            selected_writer = None
+            self.progress(8, 'Filtrage du scope AI')
             for raw_headers, raw_row in iter_rows(input_path, options.ai_review_sheet_name):
                 if source_headers is None:
                     source_headers = list(raw_headers)
@@ -185,28 +189,65 @@ class AIReviewService:
                     output_columns = list(canonical_headers) + [field for field in AI_REVIEW_OUTPUT_FIELDS if field not in canonical_headers]
                     writer = csv.DictWriter(fh, fieldnames=output_columns, delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL, lineterminator='\n')
                     writer.writeheader()
+                    selected_writer = csv.DictWriter(selected_fh, fieldnames=list(canonical_headers), delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL, lineterminator='\n')
+                    selected_writer.writeheader()
 
                 mapped = self._map_row(raw_row, source_headers or [], canonical_headers or [])
                 if not any(str(v).strip() for v in mapped.values()):
                     continue
                 review_input = self._build_review_input(mapped, options.action_profile)
-                row_started_at = time.perf_counter()
-                result = self._build_feature_extraction_result(review_input, threshold, min_threshold, options.only_low_confidence)
-                row_elapsed_ms = int((time.perf_counter() - row_started_at) * 1000)
-                out = {col: csv_safe(mapped.get(col, '')) for col in (canonical_headers or [])}
-                out.update({field: csv_safe(getattr(result, field, '')) for field in AI_REVIEW_OUTPUT_FIELDS})
-                writer.writerow(out)
+                row_selected, forced_out_of_scope = self._evaluate_review_selection(review_input, threshold, min_threshold, options.only_low_confidence)
                 processed += 1
-                row_selected = result.ai_selected_for_review == 'yes'
-                selected += 1 if row_selected else 0
-                skipped += 1 if not row_selected else 0
                 if row_selected:
+                    selected += 1
                     ai_candidate_rows += 1
-                    ai_hardened_rows += 1
-                    ai_hardening_elapsed_ms += row_elapsed_ms
-                extracted += 1 if result.ai_detected_service_mode or result.ai_detected_cuisine or result.ai_detected_keywords else 0
-                if processed == 1 or processed % 500 == 0 or (total and processed == total):
-                    self.progress(min(96, 12 + int((processed / max(total, processed)) * 84)), f'AI review hardening en cours : {processed}/{total or "?"}')
+                    selected_writer.writerow({col: csv_safe(mapped.get(col, '')) for col in (canonical_headers or [])})
+                    selected_tmp_written += 1
+                else:
+                    skipped += 1
+                    result = self._build_non_ai_result(review_input, selected=False, forced_out_of_scope=forced_out_of_scope)
+                    out = {col: csv_safe(mapped.get(col, '')) for col in (canonical_headers or [])}
+                    out.update({field: csv_safe(getattr(result, field, '')) for field in AI_REVIEW_OUTPUT_FIELDS})
+                    writer.writerow(out)
+                if processed == 1 or processed % 5000 == 0 or (total and processed == total):
+                    self.progress(min(40, 8 + int((processed / max(total, processed)) * 32)), f'Filtrage du scope AI : {processed}/{total or "?"} | candidates={selected}')
+
+            self.log(f'[AI_REVIEW] Filtrage terminé: {selected} candidate(s) AI sur {processed} ligne(s), {skipped} hors scope AI.')
+
+            if runtime_llm_enabled and selected_tmp_written:
+                self.progress(42, f'Hardening AI sur {selected_tmp_written} ligne(s) candidate(s)')
+                with selected_tmp_path.open('r', newline='', encoding='utf-8-sig') as selected_read_fh:
+                    selected_reader = csv.DictReader(selected_read_fh, delimiter=';')
+                    for idx, selected_row in enumerate(selected_reader, start=1):
+                        review_input = self._build_review_input(selected_row, options.action_profile)
+                        row_started_at = time.perf_counter()
+                        result = self._build_feature_extraction_result(review_input, threshold, min_threshold, options.only_low_confidence)
+                        row_elapsed_ms = int((time.perf_counter() - row_started_at) * 1000)
+                        out = {col: csv_safe(selected_row.get(col, '')) for col in (canonical_headers or [])}
+                        out.update({field: csv_safe(getattr(result, field, '')) for field in AI_REVIEW_OUTPUT_FIELDS})
+                        writer.writerow(out)
+                        ai_hardened_rows += 1
+                        ai_hardening_elapsed_ms += row_elapsed_ms
+                        extracted += 1 if result.ai_detected_service_mode or result.ai_detected_cuisine or result.ai_detected_keywords else 0
+                        if idx == 1 or idx % 500 == 0 or idx == selected_tmp_written:
+                            self.progress(min(96, 42 + int((idx / max(selected_tmp_written, idx)) * 54)), f'AI hardening sur scope sélectionné : {idx}/{selected_tmp_written}')
+            elif selected_tmp_written:
+                self.log(f'[AI_REVIEW] LLM désactivé: scope AI de {selected_tmp_written} ligne(s) traité en dry-run sans hardening lourd.')
+                self.progress(42, f'Dry-run AI sur {selected_tmp_written} ligne(s) candidate(s)')
+                with selected_tmp_path.open('r', newline='', encoding='utf-8-sig') as selected_read_fh:
+                    selected_reader = csv.DictReader(selected_read_fh, delimiter=';')
+                    for idx, selected_row in enumerate(selected_reader, start=1):
+                        review_input = self._build_review_input(selected_row, options.action_profile)
+                        result = self._build_selected_dry_run_result(review_input)
+                        out = {col: csv_safe(selected_row.get(col, '')) for col in (canonical_headers or [])}
+                        out.update({field: csv_safe(getattr(result, field, '')) for field in AI_REVIEW_OUTPUT_FIELDS})
+                        writer.writerow(out)
+                        if idx == 1 or idx % 500 == 0 or idx == selected_tmp_written:
+                            self.progress(min(96, 42 + int((idx / max(selected_tmp_written, idx)) * 54)), f'AI dry-run sur scope sélectionné : {idx}/{selected_tmp_written}')
+            try:
+                selected_tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
 
         summary = {
             'rows': int(processed),
@@ -223,6 +264,7 @@ class AIReviewService:
             'feature_extraction_enabled': True,
             'web_fetch_enabled': AI_WEB_FETCH_ENABLED,
             'llm_enabled': bool(getattr(self.llm_client, 'enabled', AI_LLM_ENABLED)),
+            'llm_dry_run_mode': bool(not runtime_llm_enabled),
             'llm_provider': str(getattr(self.llm_client, 'provider', AI_LLM_PROVIDER)),
             'llm_model': str(getattr(self.llm_client, 'model', AI_LLM_MODEL)),
             'llm_guardrails': {
@@ -240,7 +282,7 @@ class AIReviewService:
             'canonical_mapping_fields': AI_REVIEW_MAPPING_FIELDS,
         }
         output_path.with_name(output_path.stem + '_summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
-        self.log(f"[AI_REVIEW] {selected} / {processed} lignes envoyées en review, hardening appliqué sur {ai_hardened_rows} ligne(s) en {ai_hardening_elapsed_ms} ms, extraction locale sur {extracted} ligne(s), web_fetch_ok={self._web_fetch_stats['pages_ok']}, llm_calls={self._llm_stats['calls_executed']}, llm_spend={self.budget_manager.current_spend_eur if self.budget_manager else 0.0:.4f}€")
+        self.log(f"[AI_REVIEW] {selected} / {processed} lignes dans le scope AI, hardening appliqué sur {ai_hardened_rows} ligne(s) en {ai_hardening_elapsed_ms} ms, extraction locale sur {extracted} ligne(s), web_fetch_ok={self._web_fetch_stats['pages_ok']}, llm_calls={self._llm_stats['calls_executed']}, llm_spend={self.budget_manager.current_spend_eur if self.budget_manager else 0.0:.4f}€")
         self.progress(100, 'AI review hardening terminé')
         return output_path
 
@@ -315,7 +357,7 @@ class AIReviewService:
             if raw_conf <= min_threshold:
                 selected = False
                 forced_out_of_scope = True
-            elif raw_conf >= max(threshold, AI_SKIP_IF_CONFIDENCE_ABOVE):
+            elif raw_conf >= threshold:
                 selected = False
         return selected, forced_out_of_scope
 
@@ -376,6 +418,15 @@ class AIReviewService:
             ai_llm_result_json='{}',
             ai_llm_raw_excerpt='',
         )
+
+    def _build_selected_dry_run_result(self, review_input: AIReviewInput) -> AIReviewResult:
+        result = self._build_non_ai_result(review_input, selected=True, forced_out_of_scope=False)
+        result.ai_review_status = 'selected_dry_run'
+        result.ai_evidence_summary = 'Prétraitement AI désactivé : ligne retenue pour revue mais hardening/LLM non exécutés.'
+        result.ai_llm_status = 'disabled'
+        result.ai_llm_reason = 'llm_disabled_dry_run'
+        result.ai_requires_human_review = 'yes'
+        return result
 
     def _build_feature_extraction_result(self, review_input: AIReviewInput, threshold: float, min_threshold: float, only_low_confidence: bool) -> AIReviewResult:
         raw_conf = review_input.segmentation_confidence
