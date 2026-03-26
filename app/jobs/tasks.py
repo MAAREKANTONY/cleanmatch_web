@@ -318,10 +318,21 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
     if cleanup_intermediate:
         _cleanup_temp_file(first_csv, log, tracker)
     ai_metrics = _compute_ai_review_metrics(ai_csv, low_conf_threshold, min_conf_threshold)
+    ai_summary = _read_json_if_exists(ai_csv.with_name(ai_csv.stem + '_summary.json'))
+    if ai_summary:
+        ai_metrics['ai_candidate_rows'] = int(ai_summary.get('ai_candidate_rows', ai_metrics.get('ai_selected_yes', 0)) or 0)
+        ai_metrics['ai_hardened_rows'] = int(ai_summary.get('ai_hardened_rows', ai_metrics.get('ai_selected_yes', 0)) or 0)
+        ai_metrics['ai_hardening_elapsed_ms'] = int(ai_summary.get('ai_hardening_elapsed_ms', 0) or 0)
+    else:
+        ai_metrics['ai_candidate_rows'] = int(ai_metrics.get('ai_selected_yes', 0) or 0)
+        ai_metrics['ai_hardened_rows'] = int(ai_metrics.get('ai_selected_yes', 0) or 0)
+        ai_metrics['ai_hardening_elapsed_ms'] = 0
     for key, value in ai_metrics.items():
         tracker.set_metric(key, value)
-    tracker.log('[JOB] Step=AI_REVIEW | selected={selected} | llm_calls={llm_calls} | llm_success={llm_success} | llm_failed={llm_failed}'.format(
-        selected=ai_metrics.get('rules_low_confidence_ai', 0),
+    tracker.log('[JOB] Step=AI_REVIEW | selected={selected} | hardened={hardened} | hardening_ms={hardening_ms} | llm_calls={llm_calls} | llm_success={llm_success} | llm_failed={llm_failed}'.format(
+        selected=ai_metrics.get('ai_candidate_rows', 0),
+        hardened=ai_metrics.get('ai_hardened_rows', 0),
+        hardening_ms=ai_metrics.get('ai_hardening_elapsed_ms', 0),
         llm_calls=ai_metrics.get('llm_calls', 0),
         llm_success=ai_metrics.get('llm_success', 0),
         llm_failed=ai_metrics.get('llm_failed', 0),
@@ -512,6 +523,14 @@ def _compute_ai_review_metrics(csv_path: Path, low_conf_threshold: float, min_co
                 else:
                     metrics['llm_success'] += 1
     return metrics
+
+def _read_json_if_exists(path: Path) -> dict:
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+    return {}
 
 
 def _run_ai_review_job(job: Job):

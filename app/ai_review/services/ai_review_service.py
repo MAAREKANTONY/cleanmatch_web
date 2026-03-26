@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -162,6 +163,8 @@ class AIReviewService:
         self.mapping_service = CanonicalMappingService(options.ai_review_mapping)
         total = estimate_total_rows(input_path, options.ai_review_sheet_name) or 0
         processed = selected = skipped = extracted = 0
+        ai_candidate_rows = ai_hardened_rows = 0
+        ai_hardening_elapsed_ms = 0
         source_headers: list[str] | None = None
         canonical_headers: list[str] | None = None
 
@@ -187,13 +190,20 @@ class AIReviewService:
                 if not any(str(v).strip() for v in mapped.values()):
                     continue
                 review_input = self._build_review_input(mapped, options.action_profile)
+                row_started_at = time.perf_counter()
                 result = self._build_feature_extraction_result(review_input, threshold, min_threshold, options.only_low_confidence)
+                row_elapsed_ms = int((time.perf_counter() - row_started_at) * 1000)
                 out = {col: csv_safe(mapped.get(col, '')) for col in (canonical_headers or [])}
                 out.update({field: csv_safe(getattr(result, field, '')) for field in AI_REVIEW_OUTPUT_FIELDS})
                 writer.writerow(out)
                 processed += 1
-                selected += 1 if result.ai_selected_for_review == 'yes' else 0
-                skipped += 1 if result.ai_selected_for_review != 'yes' else 0
+                row_selected = result.ai_selected_for_review == 'yes'
+                selected += 1 if row_selected else 0
+                skipped += 1 if not row_selected else 0
+                if row_selected:
+                    ai_candidate_rows += 1
+                    ai_hardened_rows += 1
+                    ai_hardening_elapsed_ms += row_elapsed_ms
                 extracted += 1 if result.ai_detected_service_mode or result.ai_detected_cuisine or result.ai_detected_keywords else 0
                 if processed == 1 or processed % 500 == 0 or (total and processed == total):
                     self.progress(min(96, 12 + int((processed / max(total, processed)) * 84)), f'AI review hardening en cours : {processed}/{total or "?"}')
@@ -203,6 +213,9 @@ class AIReviewService:
             'selected_for_ai_review': int(selected),
             'skipped_high_confidence': int(skipped),
             'feature_extraction_rows': int(extracted),
+            'ai_candidate_rows': int(ai_candidate_rows),
+            'ai_hardened_rows': int(ai_hardened_rows),
+            'ai_hardening_elapsed_ms': int(ai_hardening_elapsed_ms),
             'low_confidence_threshold': threshold,
             'min_confidence_threshold': min_threshold,
             'only_low_confidence': bool(options.only_low_confidence),
@@ -227,7 +240,7 @@ class AIReviewService:
             'canonical_mapping_fields': AI_REVIEW_MAPPING_FIELDS,
         }
         output_path.with_name(output_path.stem + '_summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
-        self.log(f"[AI_REVIEW] {selected} / {processed} lignes envoyées en review, extraction locale sur {extracted} ligne(s), web_fetch_ok={self._web_fetch_stats['pages_ok']}, llm_calls={self._llm_stats['calls_executed']}, llm_spend={self.budget_manager.current_spend_eur if self.budget_manager else 0.0:.4f}€")
+        self.log(f"[AI_REVIEW] {selected} / {processed} lignes envoyées en review, hardening appliqué sur {ai_hardened_rows} ligne(s) en {ai_hardening_elapsed_ms} ms, extraction locale sur {extracted} ligne(s), web_fetch_ok={self._web_fetch_stats['pages_ok']}, llm_calls={self._llm_stats['calls_executed']}, llm_spend={self.budget_manager.current_spend_eur if self.budget_manager else 0.0:.4f}€")
         self.progress(100, 'AI review hardening terminé')
         return output_path
 
@@ -294,7 +307,7 @@ class AIReviewService:
             segmentation_reasons=str(context.get('segmentation_reasons', '')),
         )
 
-    def _build_feature_extraction_result(self, review_input: AIReviewInput, threshold: float, min_threshold: float, only_low_confidence: bool) -> AIReviewResult:
+    def _evaluate_review_selection(self, review_input: AIReviewInput, threshold: float, min_threshold: float, only_low_confidence: bool) -> tuple[bool, bool]:
         raw_conf = review_input.segmentation_confidence
         selected = True
         forced_out_of_scope = False
@@ -304,6 +317,72 @@ class AIReviewService:
                 forced_out_of_scope = True
             elif raw_conf >= max(threshold, AI_SKIP_IF_CONFIDENCE_ABOVE):
                 selected = False
+        return selected, forced_out_of_scope
+
+    def _build_non_ai_result(self, review_input: AIReviewInput, selected: bool, forced_out_of_scope: bool) -> AIReviewResult:
+        if forced_out_of_scope:
+            ai_segment_suggested = 'hors cible'
+            ai_segment_source = 'rules_below_min_threshold'
+            ai_review_status = 'forced_out_of_scope'
+            ai_requires_human_review = 'yes'
+            llm_reason = 'below_min_confidence_threshold'
+        else:
+            ai_segment_suggested = ' > '.join([segment for segment in review_input.initial_segments if segment])
+            ai_segment_source = 'rules_initial'
+            ai_review_status = 'selected' if selected else 'skipped'
+            ai_requires_human_review = 'yes' if selected else 'no'
+            llm_reason = 'selected_for_ai_review' if selected else 'not_selected'
+
+        return AIReviewResult(
+            ai_review_status=ai_review_status,
+            ai_confidence='' if forced_out_of_scope else (f'{float(review_input.segmentation_confidence):.3f}' if review_input.segmentation_confidence not in (None, '') else ''),
+            ai_segment_suggested=ai_segment_suggested,
+            ai_segment_source=ai_segment_source,
+            ai_sources_used='',
+            ai_evidence_summary='Prétraitement AI non exécuté : ligne hors scope AI.' if not selected else '',
+            ai_requires_human_review=ai_requires_human_review,
+            ai_input_pack_summary=self._build_input_pack_summary(review_input),
+            ai_selected_for_review='yes' if selected else 'no',
+            ai_detected_service_mode='',
+            ai_detected_cuisine='',
+            ai_detected_keywords='',
+            ai_detected_signals_json='{}',
+            ai_keyword_service_mode_candidates='',
+            ai_keyword_cuisine_candidates='',
+            ai_keyword_signals_json='{}',
+            ai_source_count='0',
+            ai_web_fetch_status='skipped_before_hardening',
+            ai_sources_fetched='',
+            ai_web_text_content='',
+            ai_menu_text_excerpt='',
+            ai_homepage_title=review_input.website_title,
+            ai_homepage_meta_description=review_input.website_meta_description,
+            ai_action_profile=review_input.profile_name,
+            ai_enabled_capabilities=' | '.join(review_input.enabled_capabilities),
+            ai_capability_field_usage='{}',
+            ai_llm_status='skipped',
+            ai_llm_reason=llm_reason,
+            ai_llm_configured='no',
+            ai_llm_live_ready='no',
+            ai_llm_attempted='no',
+            ai_llm_result_source='',
+            ai_llm_cost_estimated_eur='',
+            ai_llm_cost_actual_eur='',
+            ai_llm_budget_remaining_eur='',
+            ai_llm_cache_hit='no',
+            ai_llm_calls_used='0',
+            ai_llm_provider='',
+            ai_llm_model='',
+            ai_llm_result_json='{}',
+            ai_llm_raw_excerpt='',
+        )
+
+    def _build_feature_extraction_result(self, review_input: AIReviewInput, threshold: float, min_threshold: float, only_low_confidence: bool) -> AIReviewResult:
+        raw_conf = review_input.segmentation_confidence
+        selected, forced_out_of_scope = self._evaluate_review_selection(review_input, threshold, min_threshold, only_low_confidence)
+        if not selected:
+            return self._build_non_ai_result(review_input, selected=selected, forced_out_of_scope=forced_out_of_scope)
+
 
         detected_service_mode = self._scan_keywords(review_input, SERVICE_MODE_KEYWORDS, review_input.enabled_capabilities)
         detected_cuisine = self._scan_keywords(review_input, CUISINE_KEYWORDS, review_input.enabled_capabilities)

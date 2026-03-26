@@ -71,3 +71,30 @@ def test_above_high_threshold_does_not_call_llm(monkeypatch):
     result = service._build_feature_extraction_result(_make_input(0.90), 0.65, 0.20, True)
     assert result.ai_selected_for_review == 'no'
     assert result.ai_review_status == 'skipped'
+
+
+def test_high_confidence_row_skips_hardening(monkeypatch):
+    service = AIReviewService()
+    review_input = AIReviewInput(
+        name='Safe Cafe',
+        segmentation_confidence=0.95,
+        initial_segments=['restaurant'],
+        enabled_capabilities=['homepage_fetch'],
+        website='https://example.com',
+        website_title='Safe Cafe',
+        website_meta_description='Meta',
+        profile_name='standard',
+    )
+
+    def _boom(*args, **kwargs):
+        raise AssertionError('hardening should not run for high confidence skipped rows')
+
+    monkeypatch.setattr(service, '_scan_keywords', _boom)
+    monkeypatch.setattr(service, '_fetch_web_evidence', _boom)
+    monkeypatch.setattr(service, '_run_llm_guardrails', _boom)
+
+    result = service._build_feature_extraction_result(review_input, threshold=0.65, min_threshold=0.20, only_low_confidence=True)
+    assert result.ai_selected_for_review == 'no'
+    assert result.ai_review_status == 'skipped'
+    assert result.ai_web_fetch_status == 'skipped_before_hardening'
+    assert result.ai_segment_source == 'rules_initial'
