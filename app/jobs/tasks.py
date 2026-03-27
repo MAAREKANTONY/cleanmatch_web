@@ -415,7 +415,7 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
             min_conf_threshold=min_conf_threshold,
             bq=bq,
             write_batch_size=write_batch_size,
-            replace_existing_chunk=True,
+            replace_existing_chunk=False,
         )
         _merge_metric_dict(aggregate, consolidation_metrics)
         if cleanup_intermediate:

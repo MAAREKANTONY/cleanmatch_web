@@ -1,5 +1,5 @@
-catalog_version: Iteration 47 - Sprint 8
-display_label: Iteration 47 - Sprint 8
-updated_at: '2026-03-26'
-summary: Checkpoint/reprise du pipeline BigQuery chunk-based + enrichissement des modèles mots-clés/AI pour ES, IT, GB, FR et NL.
-notes: Sprint 8 - reprise après interruption, chunks idempotents côté BigQuery, trims du CSV final sur checkpoint, nouveaux lexiques pays prioritaires.
+catalog_version: Iteration 47 - Sprint 8.1
+display_label: Iteration 47 - Sprint 8.1
+updated_at: '2026-03-27'
+summary: Hotfix reprise BigQuery streaming sans DELETE live sur la table cible + reprise stricte après dernier chunk validé.
+notes: Sprint 8.1 - suppression du DELETE BigQuery sur lignes potentiellement en streaming buffer, reprise via checkpoint strict, append correct du CSV final et skip des lignes source déjà traitées.
