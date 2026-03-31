@@ -16,6 +16,48 @@ from geoclass.services.geoclass_service import GeoclassOptions, GeoclassService
 from marketsegmenter.services.marketsegmenter_service import MarketSegmenterOptions, MarketSegmenterService
 from ai_review.services.ai_review_service import AIReviewOptions, AIReviewService
 from bigquery.client import BigQueryService
+
+
+def _load_taxonomy_prefixes() -> set[tuple[str, ...]]:
+    mapping_path = Path(__file__).resolve().parents[1] / 'config_catalog' / 'marketsegmenter' / 'type_mapping.csv'
+    prefixes: set[tuple[str, ...]] = set()
+    if not mapping_path.exists():
+        return prefixes
+    with mapping_path.open('r', encoding='utf-8-sig', newline='') as fh:
+        reader = csv.DictReader(fh)
+        for row in reader:
+            parts = [
+                str(row.get('marketsegment0', '') or '').strip(),
+                str(row.get('marketsegment1', '') or '').strip(),
+                str(row.get('marketsegment2', '') or '').strip(),
+                str(row.get('marketsegment3', '') or '').strip(),
+            ]
+            prefix: list[str] = []
+            for part in parts:
+                if not part:
+                    break
+                prefix.append(part)
+                prefixes.add(tuple(prefix))
+    return prefixes
+
+
+TAXONOMY_PREFIXES = _load_taxonomy_prefixes()
+
+
+def _segments_are_taxonomy_valid(segments: list[str]) -> bool:
+    cleaned = [str(part or '').strip() for part in (segments or [])[:4]]
+    seen_empty = False
+    prefix: list[str] = []
+    for part in cleaned:
+        if not part:
+            seen_empty = True
+            continue
+        if seen_empty:
+            return False
+        prefix.append(part)
+        if tuple(prefix) not in TAXONOMY_PREFIXES:
+            return False
+    return True
 def _read_text_preview(path: str, limit: int = 4000) -> str:
     if not path or not os.path.exists(path):
         return 'Aperçu indisponible : fichier introuvable.'
@@ -328,6 +370,7 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         'consolidated_rules_fallback': 0,
         'consolidated_ai_fallback': 0,
         'consolidated_none': 0,
+        'consolidated_taxonomy_rejected': 0,
         'result_rows': 0,
         'rows_written': 0,
         'bq_write_batches': 0,
@@ -336,7 +379,7 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         'peak_ai_chunk_rows': 0,
     }
 
-    writer_headers = ['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3']
+    writer_headers = ['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3', 'confidence_level', 'has_llm']
     started_at = time.perf_counter()
     chunk_rows: list[dict[str, object]] = []
     resume_source_rows = 0
@@ -613,6 +656,7 @@ def _consolidate_marketsegmenter_ai_chunk(ai_csv_path: Path, final_writer, outpu
         'consolidated_rules_fallback': 0,
         'consolidated_ai_fallback': 0,
         'consolidated_none': 0,
+        'consolidated_taxonomy_rejected': 0,
         'result_rows': 0,
         'rows_written': 0,
         'bq_write_batches': 0,
@@ -640,35 +684,41 @@ def _consolidate_marketsegmenter_ai_chunk(ai_csv_path: Path, final_writer, outpu
             except Exception:
                 rules_conf = 0.0
             rules_has_segments = any(rules_segments)
+            has_llm = (row.get('ai_llm_attempted') or '').strip().lower() == 'yes' or ai_source.startswith('llm_')
             if rules_conf <= min_conf_threshold:
                 final_segments = ['hors cible', '', '', '']
                 metrics['consolidated_out_of_scope'] += 1
-            elif ai_selected and ai_segments and ai_source.startswith('llm_'):
+            elif ai_selected and ai_segments and ai_source.startswith('llm_') and _segments_are_taxonomy_valid(ai_segments):
                 final_segments = (ai_segments + ['', '', '', ''])[:4]
                 metrics['consolidated_llm'] += 1
-            elif (not ai_selected) and rules_conf >= low_conf_threshold and rules_has_segments:
+            elif (not ai_selected) and rules_conf >= low_conf_threshold and rules_has_segments and _segments_are_taxonomy_valid(rules_segments):
                 final_segments = rules_segments
                 metrics['consolidated_rules_confident'] += 1
-            elif ai_segments and ai_source != 'rules_initial':
+            elif ai_segments and ai_source != 'rules_initial' and _segments_are_taxonomy_valid(ai_segments):
                 final_segments = (ai_segments + ['', '', '', ''])[:4]
                 metrics['consolidated_ai_fallback'] += 1
-            elif rules_has_segments:
+            elif rules_has_segments and _segments_are_taxonomy_valid(rules_segments):
                 final_segments = rules_segments
                 metrics['consolidated_rules_fallback'] += 1
             else:
-                final_segments = ['', '', '', '']
-                metrics['consolidated_none'] += 1
+                final_segments = ['hors cible', '', '', ''] if (ai_selected or ai_segments or rules_has_segments) else ['', '', '', '']
+                if final_segments[0] == 'hors cible':
+                    metrics['consolidated_taxonomy_rejected'] += 1
+                else:
+                    metrics['consolidated_none'] += 1
             buffered_final_rows.append({
                 'google_place_id': google_place_id,
                 'market_segment_type0': final_segments[0],
                 'market_segment_type1': final_segments[1],
                 'market_segment_type2': final_segments[2],
                 'market_segment_type3': final_segments[3],
+                'confidence_level': f'{rules_conf:.6f}',
+                'has_llm': 'true' if has_llm else 'false',
             })
             if google_place_id:
                 chunk_place_ids.append(google_place_id)
             metrics['result_rows'] += 1
-            buffered_bq_rows.append(BigQueryService.build_segmented_row(google_place_id=google_place_id, segments=final_segments, process_id=process_id))
+            buffered_bq_rows.append(BigQueryService.build_segmented_row(google_place_id=google_place_id, segments=final_segments, process_id=process_id, confidence_level=rules_conf, has_llm=has_llm))
     if replace_existing_chunk and chunk_place_ids:
         bq_service.delete_segmented_rows_for_process(output_table_name, process_id, google_place_ids=chunk_place_ids)
     if buffered_bq_rows:

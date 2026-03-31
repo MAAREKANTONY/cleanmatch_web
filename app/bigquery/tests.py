@@ -100,9 +100,11 @@ class BigQueryServiceQueryTests(TestCase):
     @patch('django.conf.settings.BIGQUERY_CREDENTIALS_FILE', '')
     @patch('django.conf.settings.BIGQUERY_INPUT_TABLE', 'google_map_clean')
     def test_build_segmented_row_uses_rfc3339_zulu_timestamp(self):
-        row = BigQueryService.build_segmented_row(google_place_id='g1', segments=['restaurant', '', '', ''], process_id='pid1')
+        row = BigQueryService.build_segmented_row(google_place_id='g1', segments=['restaurant', '', '', ''], process_id='pid1', confidence_level=0.42, has_llm=True)
         self.assertTrue(str(row['created_at']).endswith('Z'))
         self.assertIn('T', str(row['created_at']))
+        self.assertEqual(row['confidence_level'], 0.42)
+        self.assertTrue(row['has_llm'])
 
     @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
     @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
@@ -114,13 +116,15 @@ class BigQueryServiceQueryTests(TestCase):
         service.client = Mock()
         service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'created_at', 'field_type': 'TIMESTAMP'})()]})()
         rows = [
-            {'google_place_id': 'g1', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'created_at': '2026-03-26T10:11:12+00:00', 'process_id': 'p1'},
-            {'google_place_id': 'g2', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'created_at': '', 'process_id': 'p1'},
+            {'google_place_id': 'g1', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'confidence_level': 0.55, 'has_llm': True, 'created_at': '2026-03-26T10:11:12+00:00', 'process_id': 'p1'},
+            {'google_place_id': 'g2', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'confidence_level': '', 'has_llm': 'false', 'created_at': '', 'process_id': 'p1'},
         ]
         service.write_segmented_rows('google_map_clean', rows, batch_size=1)
         self.assertEqual(service.client.insert_rows_json.call_count, 2)
         first_batch = service.client.insert_rows_json.call_args_list[0].args[1]
         self.assertTrue(first_batch[0]['created_at'].endswith('Z'))
+        self.assertEqual(first_batch[0]['confidence_level'], 0.55)
+        self.assertTrue(first_batch[0]['has_llm'])
 
 
     @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
@@ -133,11 +137,13 @@ class BigQueryServiceQueryTests(TestCase):
         service.client = Mock()
         service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'created_at', 'field_type': 'DATETIME'})()]})()
         rows = [
-            {'google_place_id': 'g1', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'created_at': '2026-03-25T23:35:36.069360Z', 'process_id': 'p1'},
+            {'google_place_id': 'g1', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'confidence_level': '0.33', 'has_llm': 'yes', 'created_at': '2026-03-25T23:35:36.069360Z', 'process_id': 'p1'},
         ]
         service.write_segmented_rows('google_map_clean', rows, batch_size=100)
         inserted = service.client.insert_rows_json.call_args.args[1]
         self.assertEqual(inserted[0]['created_at'], '2026-03-25 23:35:36.069360')
+        self.assertEqual(inserted[0]['confidence_level'], 0.33)
+        self.assertTrue(inserted[0]['has_llm'])
 
 
     @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
@@ -150,9 +156,24 @@ class BigQueryServiceQueryTests(TestCase):
         service.client = Mock()
         service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'created_at', 'field_type': 'TIMESTAMP'})()]})()
         rows = (
-            {'google_place_id': f'g{i}', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'created_at': '2026-03-26T10:11:12+00:00', 'process_id': 'p1'}
+            {'google_place_id': f'g{i}', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'confidence_level': 0.12, 'has_llm': False, 'created_at': '2026-03-26T10:11:12+00:00', 'process_id': 'p1'}
             for i in range(3)
         )
         inserted = service.write_segmented_rows_iterable('google_map_clean', rows, batch_size=2)
         self.assertEqual(inserted, 3)
         self.assertEqual(service.client.insert_rows_json.call_count, 2)
+
+
+    @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
+    @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
+    @patch('django.conf.settings.BIGQUERY_LOCATION', '')
+    @patch('django.conf.settings.BIGQUERY_CREDENTIALS_FILE', '')
+    @patch('django.conf.settings.BIGQUERY_INPUT_TABLE', 'google_map_clean')
+    def test_prepare_segmented_table_adds_missing_nullable_columns(self):
+        service = self._make_service()
+        service.client = Mock()
+        service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'google_place_id', 'field_type': 'STRING'})(), type('F', (), {'name': 'created_at', 'field_type': 'TIMESTAMP'})(), type('F', (), {'name': 'process_id', 'field_type': 'STRING'})()]})()
+        updated_table = type('T', (), {'schema': [type('F', (), {'name': 'google_place_id', 'field_type': 'STRING'})(), type('F', (), {'name': 'created_at', 'field_type': 'TIMESTAMP'})(), type('F', (), {'name': 'process_id', 'field_type': 'STRING'})(), type('F', (), {'name': 'confidence_level', 'field_type': 'FLOAT'})(), type('F', (), {'name': 'has_llm', 'field_type': 'BOOL'})()]})()
+        service.client.update_table.return_value = updated_table
+        service._prepare_segmented_table('google_map_clean')
+        self.assertTrue(service.client.update_table.called)

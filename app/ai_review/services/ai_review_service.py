@@ -83,6 +83,41 @@ for _cfg_path in list_country_config_files('ai_review'):
             'signal_keywords': dict(_payload.get('signal_keywords') or {}),
         }
 
+
+def _load_taxonomy_constraints() -> tuple[dict[str, list[str]], set[tuple[str, ...]]]:
+    mapping_path = Path(__file__).resolve().parents[2] / 'config_catalog' / 'marketsegmenter' / 'type_mapping.csv'
+    allowed_by_level = {
+        'segment_type0': set(),
+        'segment_type1': set(),
+        'segment_type2': set(),
+        'segment_type3': set(),
+    }
+    allowed_prefixes: set[tuple[str, ...]] = set()
+    if not mapping_path.exists():
+        return {key: [] for key in allowed_by_level}, allowed_prefixes
+    with mapping_path.open('r', encoding='utf-8-sig', newline='') as fh:
+        reader = csv.DictReader(fh)
+        for row in reader:
+            parts = [
+                str(row.get('marketsegment0', '') or '').strip(),
+                str(row.get('marketsegment1', '') or '').strip(),
+                str(row.get('marketsegment2', '') or '').strip(),
+                str(row.get('marketsegment3', '') or '').strip(),
+            ]
+            for idx, field in enumerate(['segment_type0', 'segment_type1', 'segment_type2', 'segment_type3']):
+                if parts[idx]:
+                    allowed_by_level[field].add(parts[idx])
+            prefix: list[str] = []
+            for part in parts:
+                if not part:
+                    break
+                prefix.append(part)
+                allowed_prefixes.add(tuple(prefix))
+    return ({key: sorted(values) for key, values in allowed_by_level.items()}, allowed_prefixes)
+
+
+TAXONOMY_ALLOWED_BY_LEVEL, TAXONOMY_ALLOWED_PREFIXES = _load_taxonomy_constraints()
+
 AI_LLM_ENABLED = bool(_AI_LLM_GUARDRAILS.get('enabled', False))
 AI_LLM_PROVIDER = str(_AI_LLM_GUARDRAILS.get('provider', 'openai_compatible_json'))
 AI_LLM_PROVIDER_CHOICES = get_provider_choices()
@@ -524,6 +559,17 @@ class AIReviewService:
         llm_result = llm_payload.get('result_json', {}) or {}
         llm_result_source = str(llm_payload.get('result_source', '') or '')
         llm_structured_available = bool(llm_result) and llm_result_source in {'live', 'cache'}
+        taxonomy_validation_reason = ''
+        if llm_structured_available:
+            llm_result, taxonomy_ok, taxonomy_validation_reason = self._validate_llm_taxonomy_result(llm_result)
+            if not taxonomy_ok:
+                llm_structured_available = False
+                llm_payload['status'] = 'rejected_taxonomy'
+                llm_payload['reason'] = taxonomy_validation_reason or 'taxonomy_validation_failed'
+                llm_payload['result_source'] = 'rejected_taxonomy'
+                llm_payload['result_json'] = llm_result
+                llm_result_source = 'rejected_taxonomy'
+                self.log(f'[AI_REVIEW] LLM rejeté hors taxonomie pour outlet={review_input.outlet_id or review_input.name}: {taxonomy_validation_reason}')
 
         final_segment_parts = [str(llm_result.get(f'segment_type{i}', '')).strip() for i in range(4)] if llm_structured_available else []
         final_segment_parts = [part for part in final_segment_parts if part]
@@ -566,7 +612,10 @@ class AIReviewService:
             evidence_parts = [part for part in [llm_evidence_text, reasoning_short] if part]
             ai_evidence_summary = ' || '.join(evidence_parts) if evidence_parts else ' || '.join(evidence)
         else:
-            ai_evidence_summary = ' || '.join(evidence)
+            fallback_evidence = list(evidence)
+            if taxonomy_validation_reason:
+                fallback_evidence.append(f'llm_rejected_taxonomy={taxonomy_validation_reason}')
+            ai_evidence_summary = ' || '.join(fallback_evidence)
 
         return AIReviewResult(
             ai_review_status='forced_out_of_scope' if forced_out_of_scope else ('selected' if selected else 'skipped'),
@@ -689,10 +738,44 @@ class AIReviewService:
         return payload
 
     @staticmethod
+    def _sanitize_taxonomy_segment(value: object) -> str:
+        return str(value or '').strip()
+
+    @classmethod
+    def _validate_llm_taxonomy_result(cls, llm_result: dict[str, object]) -> tuple[dict[str, object], bool, str]:
+        sanitized = dict(llm_result or {})
+        segments = [cls._sanitize_taxonomy_segment(sanitized.get(f'segment_type{i}')) for i in range(4)]
+        seen_empty = False
+        prefix: list[str] = []
+        for idx, segment in enumerate(segments):
+            if not segment:
+                seen_empty = True
+                continue
+            if seen_empty:
+                return sanitized, False, f'gap_after_empty_segment_type{idx}'
+            allowed_values = TAXONOMY_ALLOWED_BY_LEVEL.get(f'segment_type{idx}', [])
+            if segment not in allowed_values:
+                return sanitized, False, f'invalid_segment_type{idx}:{segment}'
+            prefix.append(segment)
+            if tuple(prefix) not in TAXONOMY_ALLOWED_PREFIXES:
+                return sanitized, False, f'invalid_taxonomy_path:{" > ".join(prefix)}'
+        return sanitized, True, ''
+
+    @staticmethod
     def _build_llm_prompt(review_input: AIReviewInput, capability: str, homepage_title: str = '', homepage_meta: str = '', menu_excerpt: str = '', web_text: str = '') -> str:
         descriptions = ' | '.join([d for d in review_input.descriptions if d])
         initial_segments = ' > '.join([seg for seg in review_input.initial_segments if seg])
         menu_urls = ';'.join(review_input.menu_urls[:2])
+        taxonomy_constraints = [
+            'Allowed taxonomy values only. Never invent labels outside this list.',
+            f"segment_type0_allowed={', '.join(TAXONOMY_ALLOWED_BY_LEVEL.get('segment_type0', []))}",
+            f"segment_type1_allowed={', '.join(TAXONOMY_ALLOWED_BY_LEVEL.get('segment_type1', []))}",
+            f"segment_type2_allowed={', '.join(TAXONOMY_ALLOWED_BY_LEVEL.get('segment_type2', []))}",
+            f"segment_type3_allowed={', '.join(TAXONOMY_ALLOWED_BY_LEVEL.get('segment_type3', []))}",
+            'Use only valid hierarchical prefixes from the taxonomy. Do not mix incompatible levels.',
+            'If the evidence does not fit the taxonomy, return empty segment_type0..segment_type3 and set requires_human_review=true.',
+            'Never guess a taxonomy label from weak evidence. Prefer empty segments over hallucination.',
+        ]
         blocks = [
             f'capability={capability}',
             f'name={review_input.name}',
@@ -713,6 +796,7 @@ class AIReviewService:
             f'fetched_homepage_meta_description={homepage_meta}',
             f'fetched_menu_excerpt={menu_excerpt[:2000]}',
             f'fetched_web_text={web_text[:3000]}',
+            *taxonomy_constraints,
             'Return JSON only.',
             'Do not wrap the JSON in markdown fences.',
             'Keep evidence as a short string or short list (max 160 chars total).',

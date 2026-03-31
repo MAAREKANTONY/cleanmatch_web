@@ -1,5 +1,5 @@
-catalog_version: Iteration 47 - Sprint 8.1
-display_label: Iteration 47 - Sprint 8.1
-updated_at: '2026-03-27'
-summary: Hotfix reprise BigQuery streaming sans DELETE live sur la table cible + reprise stricte après dernier chunk validé.
-notes: Sprint 8.1 - suppression du DELETE BigQuery sur lignes potentiellement en streaming buffer, reprise via checkpoint strict, append correct du CSV final et skip des lignes source déjà traitées.
+catalog_version: Iteration 47 - Sprint 8.2
+display_label: Iteration 47 - Sprint 8.2
+updated_at: '2026-03-31'
+summary: Hardening anti-hallucination du LLM avec validation stricte de taxonomie + enrichissement du schéma BigQuery de sortie.
+notes: Sprint 8.2 - prompt LLM renforcé, rejet automatique des segments hors taxonomie, fallback rules/hors cible, ajout confidence_level et has_llm dans la table de sortie BigQuery.

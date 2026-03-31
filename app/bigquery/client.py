@@ -185,12 +185,26 @@ class BigQueryService:
             bigquery.SchemaField('market_segment_type1', 'STRING'),
             bigquery.SchemaField('market_segment_type2', 'STRING'),
             bigquery.SchemaField('market_segment_type3', 'STRING'),
+            bigquery.SchemaField('confidence_level', 'FLOAT'),
+            bigquery.SchemaField('has_llm', 'BOOL'),
             bigquery.SchemaField('created_at', 'TIMESTAMP', mode='REQUIRED'),
             bigquery.SchemaField('process_id', 'STRING', mode='REQUIRED'),
         ]
         table = bigquery.Table(table_id, schema=schema)
         self.client.create_table(table, exists_ok=True)
-        actual_schema = self._get_table_schema(ref.table_name)
+        actual_table = self.client.get_table(table_id)
+        actual_schema = list(actual_table.schema)
+        actual_by_name = {field.name: field for field in actual_schema}
+        missing_fields = [field for field in schema if field.name not in actual_by_name]
+        if missing_fields:
+            actual_table.schema = actual_schema + missing_fields
+            actual_table = self.client.update_table(actual_table, ['schema'])
+            actual_schema = list(actual_table.schema)
+            self._table_schema_cache[ref.full_name] = actual_schema
+            self._schema_cache[ref.full_name] = [field.name for field in actual_schema]
+        else:
+            self._table_schema_cache[ref.full_name] = actual_schema
+            self._schema_cache[ref.full_name] = [field.name for field in actual_schema]
         created_at_type = next((field.field_type.upper() for field in actual_schema if field.name == 'created_at'), 'TIMESTAMP')
         return table_id, created_at_type
 
@@ -233,7 +247,7 @@ class BigQueryService:
 
 
     @staticmethod
-    def build_segmented_row(*, google_place_id: str, segments: list[str], process_id: str) -> dict[str, object]:
+    def build_segmented_row(*, google_place_id: str, segments: list[str], process_id: str, confidence_level: float | None = None, has_llm: bool = False) -> dict[str, object]:
         parts = (segments + ['', '', '', ''])[:4]
         return {
             'google_place_id': str(google_place_id),
@@ -241,6 +255,8 @@ class BigQueryService:
             'market_segment_type1': parts[1],
             'market_segment_type2': parts[2],
             'market_segment_type3': parts[3],
+            'confidence_level': None if confidence_level in (None, '') else float(confidence_level),
+            'has_llm': bool(has_llm),
             'created_at': BigQueryService._utc_rfc3339_now(),
             'process_id': str(process_id),
         }
@@ -284,6 +300,16 @@ class BigQueryService:
         normalized['created_at'] = created_at
         normalized['google_place_id'] = str(normalized.get('google_place_id') or '').strip()
         normalized['process_id'] = str(normalized.get('process_id') or '').strip()
+        try:
+            conf_raw = normalized.get('confidence_level')
+            normalized['confidence_level'] = None if conf_raw in (None, '') else float(conf_raw)
+        except Exception:
+            normalized['confidence_level'] = None
+        has_llm_raw = normalized.get('has_llm')
+        if isinstance(has_llm_raw, str):
+            normalized['has_llm'] = has_llm_raw.strip().lower() in {'1', 'true', 'yes', 'y'}
+        else:
+            normalized['has_llm'] = bool(has_llm_raw)
         return normalized
 
     @staticmethod
