@@ -22,3 +22,40 @@ negative_keywords:
   - chef table
   - dining room
   - white tablecloth
+- family:
+  - horeca
+  - fast_food
+  weight: -5.5
+  keywords:
+  - reservar mesa
+  - reserva online
+  - menu del dia
+  - menú del día
+  - servicio en mesa
+  - terrace dining
+  - terraza
+  - comedor
+- family:
+  - horeca
+  - table_service
+  weight: -5.0
+  keywords:
+  - coffee to go
+  - café para llevar
+  - cafe para llevar
+  - takeaway coffee
+  - kiosk
+  - kiosco
+  - grab and go
+  - para llevar
+- family:
+  - horeca
+  - cafes_bars_discotheques
+  weight: -4.5
+  keywords:
+  - menu degustation
+  - tasting menu
+  - chef tasting
+  - white tablecloth
+  - reservation recommended
+

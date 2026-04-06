@@ -8,11 +8,12 @@ service_mode_keywords:
   - drive-through
   - quick bite
   - counter service
+  - grab and go
+  - kiosk
   - hamburger
   - burger
   - pizza delivery
   - pizza takeaway
-  - snack
   table_service:
   - restaurant
   - brasserie
@@ -21,6 +22,10 @@ service_mode_keywords:
   - book a table
   - table service
   - dining room
+  - menu
+  - menu del dia
+  - menu du jour
+  - terrace
   - parrilla
   - grill
   - trattoria
@@ -34,13 +39,13 @@ service_mode_keywords:
   - cerveceria
   - tapas
   cafe:
-  - coffee
-  - cafe
-  - café
+  - coffee shop
+  - cafe bar
+  - café-bar
   - espresso
   - latte
   - tea room
-  - ice cream
+  - brunch cafe
   hotel:
   - hotel
   - lodging
@@ -110,6 +115,8 @@ signal_keywords:
   - takeout
   - para llevar
   - à emporter
+  - grab and go
+  - coffee to go
   counter_service:
   - counter service
   - self-service

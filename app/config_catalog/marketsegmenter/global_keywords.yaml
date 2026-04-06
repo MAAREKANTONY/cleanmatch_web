@@ -121,15 +121,12 @@ keyword_rules:
   family:
   - horeca
   - fast_food
-  weight: 12
+  weight: 9
   keywords:
-  - coffee
-  - cafe
-  - café
-  - espresso
-  - latte
-  - cappuccino
-  - barista
+  - coffee shop
+  - espresso bar
+  - coffee to go
+  - takeaway coffee
   - tea room
   - ice cream
   - gelato
@@ -379,15 +376,15 @@ keyword_rules:
   family:
   - horeca
   - table_service
-  weight: 9
+  weight: 6
   keywords:
-  - restaurant
-  - restaurante
-  - ristorante
-  - resto
   - family meals
   - dining room
   - plat du jour
+  - menu del dia
+  - menú del día
+  - full menu
+  - service en salle
   - menu du jour
   - sit down meal
   - reservation
@@ -477,14 +474,15 @@ keyword_rules:
   family:
   - horeca
   - cafes_bars_discotheques
-  weight: 10
+  weight: 9
   keywords:
-  - bar
   - bar tabac
   - tabac
   - café-bar
   - local bar
   - bar lounge
+  - neighborhood bar
+  - bar de copas
 - segment:
   - horeca
   - hotel_lodging

@@ -2,13 +2,16 @@ country_code: ES
 overrides:
   promote_capabilities: [menu_fetch, homepage_fetch, metadata_review]
 service_mode_keywords:
-  bar: [cerveceria, cervecería, taberna, vinoteca, taperia, tapería]
-  cafe: [cafeteria, cafetería, churreria, churrería]
-  table_service: [arroceria, arrocería, marisqueria, marisquería, asador, sidreria, sidrería]
-  fast_food: [bocadillo, bocateria, bocatería, comida rapida, comida rápida]
+  bar: [cerveceria, cervecería, taberna, vinoteca, taperia, tapería, vermuteria, vermutería, gastrobar, bar de vinos, bar de copas]
+  cafe: [cafeteria, cafetería, cafe bar, café bar, desayuno, desayunos, brunch, meriendas, tostadas, salon de te, salón de té]
+  table_service: [restaurante, reservar mesa, reserva online, servicio en mesa, carta, menu del dia, menú del día, comedor, terraza, arroceria, arrocería, marisqueria, marisquería, asador, meson, mesón]
+  fast_food: [bocadillo, bocateria, bocatería, comida para llevar, take away, grab and go, coffee to go, cafe para llevar, café para llevar, heladeria, heladería, kiosco]
 cuisine_keywords:
-  spanish: [tapas, pinchos, paella, arroceria, arrocería, iberico, ibérico]
+  spanish: [tapas, pinchos, paella, arroceria, arrocería, iberico, ibérico, cocina mediterranea, cocina mediterránea, cocina casera]
   seafood: [marisqueria, marisquería, pulperia, pulpería]
+  bakery: [panaderia, panadería, bolleria, bollería, empanadas]
 signal_keywords:
-  takeaway: [para llevar, recoger en tienda]
+  takeaway: [para llevar, recoger en tienda, coffee to go, cafe para llevar, café para llevar]
   reservation: [reserva online, reservar mesa]
+  dine_in: [servicio en mesa, terraza, comedor, carta]
+  alcohol: [cervezas, vinos, vermut, cocteles, cócteles]

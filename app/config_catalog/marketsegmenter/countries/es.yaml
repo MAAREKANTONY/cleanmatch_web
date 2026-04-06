@@ -6,13 +6,25 @@ languages:
 keyword_rules:
 - segment: [horeca, cafes_bars_discotheques, wine_tapas_bars, '']
   family: [horeca, cafes_bars_discotheques]
+  weight: 14
+  keywords: [tapas, pinchos, vinoteca, vermuteria, vermutería, taperia, tapería, taberna, taberna moderna, gastrobar, bar de vinos, wine bar, cerveceria, cervecería, cañas y tapas]
+- segment: [horeca, cafes_bars_discotheques, traditional_bars, '']
+  family: [horeca, cafes_bars_discotheques]
   weight: 12
-  keywords: [tapas, pinchos, cerveceria, cervecería, taberna, vinoteca, taperia, tapería]
+  keywords: [cafeteria, cafetería, cafe bar, café bar, desayuno, desayunos, merienda, meriendas, tostadas, bocadillos y cafe, bocadillos y café, bar de barrio, bar de copas, copa y cafe, copa y café]
+- segment: [horeca, table_service, traditional_dining, '']
+  family: [horeca, table_service]
+  weight: 13
+  keywords: [restaurante, menu del dia, menú del día, carta, comedor, cocina mediterranea, cocina mediterránea, cocina casera, reservar mesa, reserva online, terraza, salon comedor, salón comedor, servicio en mesa]
 - segment: [horeca, table_service, themed_dining_spanish, '']
   family: [horeca, table_service]
-  weight: 11
-  keywords: [arroceria, arrocería, marisqueria, marisquería, asador, sidreria, sidrería, braseria, brasería]
+  weight: 14
+  keywords: [arroceria, arrocería, paella, paellas, marisqueria, marisquería, asador, braseria, brasería, sidreria, sidrería, meson, mesón, pulperia, pulpería, cocina de mercado]
 - segment: [horeca, quick_service, bakeries_sandwich_snacks, '']
   family: [horeca, quick_service]
-  weight: 10
-  keywords: [bocadillo, bocateria, bocatería, panaderia, panadería, cafeteria, cafetería, churreria, churrería]
+  weight: 11
+  keywords: [bocadillo, bocateria, bocatería, panaderia, panadería, panaderia cafe, panadería café, empanadas, sandwich para llevar, sándwich para llevar, comida para llevar, take away, grab and go]
+- segment: [horeca, quick_service, coffee_shops_ice_cream_parlors_kiosks, '']
+  family: [horeca, quick_service]
+  weight: 12
+  keywords: [heladeria, heladería, helado artesanal, yogurteria, yogurtería, frozen yogurt, smoothie bar, juice bar, coffee to go, cafe para llevar, café para llevar, kiosco, kiosk]

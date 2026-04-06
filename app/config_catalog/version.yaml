@@ -1,5 +1,5 @@
-catalog_version: Iteration 47 - Sprint 8.2
-display_label: Iteration 47 - Sprint 8.2
-updated_at: '2026-03-31'
-summary: Hardening anti-hallucination du LLM avec validation stricte de taxonomie + enrichissement du schéma BigQuery de sortie.
-notes: Sprint 8.2 - prompt LLM renforcé, rejet automatique des segments hors taxonomie, fallback rules/hors cible, ajout confidence_level et has_llm dans la table de sortie BigQuery.
+catalog_version: Iteration 47 - Sprint 9
+display_label: Iteration 47 - Sprint 9
+updated_at: '2026-04-06'
+summary: Enrichissement Espagne des keywords marketsegmenter + cohérence AI review pour réduire les catégories fourre-tout et les confusions fast_food / table_service / bars.
+notes: Sprint 9 - ajustements ciblés ES, tuning des règles globales de refuge, anti-signaux supplémentaires, alignement AI review sur les nouveaux signaux service/café/bar/table service/quick service.
