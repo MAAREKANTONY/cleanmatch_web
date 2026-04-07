@@ -187,6 +187,9 @@ class BigQueryService:
             bigquery.SchemaField('market_segment_type3', 'STRING'),
             bigquery.SchemaField('confidence_level', 'FLOAT'),
             bigquery.SchemaField('has_llm', 'BOOL'),
+            bigquery.SchemaField('llm_confidence', 'FLOAT'),
+            bigquery.SchemaField('keyword_thinking', 'STRING'),
+            bigquery.SchemaField('llm_thinking', 'STRING'),
             bigquery.SchemaField('created_at', 'TIMESTAMP', mode='REQUIRED'),
             bigquery.SchemaField('process_id', 'STRING', mode='REQUIRED'),
         ]
@@ -247,7 +250,7 @@ class BigQueryService:
 
 
     @staticmethod
-    def build_segmented_row(*, google_place_id: str, segments: list[str], process_id: str, confidence_level: float | None = None, has_llm: bool = False) -> dict[str, object]:
+    def build_segmented_row(*, google_place_id: str, segments: list[str], process_id: str, confidence_level: float | None = None, has_llm: bool = False, llm_confidence: float | str | None = None, keyword_thinking: str = '', llm_thinking: str = '') -> dict[str, object]:
         parts = (segments + ['', '', '', ''])[:4]
         return {
             'google_place_id': str(google_place_id),
@@ -257,6 +260,9 @@ class BigQueryService:
             'market_segment_type3': parts[3],
             'confidence_level': None if confidence_level in (None, '') else float(confidence_level),
             'has_llm': bool(has_llm),
+            'llm_confidence': None if llm_confidence in (None, '') else float(llm_confidence),
+            'keyword_thinking': str(keyword_thinking or '')[:5000],
+            'llm_thinking': str(llm_thinking or '')[:5000],
             'created_at': BigQueryService._utc_rfc3339_now(),
             'process_id': str(process_id),
         }
@@ -310,6 +316,13 @@ class BigQueryService:
             normalized['has_llm'] = has_llm_raw.strip().lower() in {'1', 'true', 'yes', 'y'}
         else:
             normalized['has_llm'] = bool(has_llm_raw)
+        try:
+            llm_conf_raw = normalized.get('llm_confidence')
+            normalized['llm_confidence'] = None if llm_conf_raw in (None, '') else float(llm_conf_raw)
+        except Exception:
+            normalized['llm_confidence'] = None
+        normalized['keyword_thinking'] = str(normalized.get('keyword_thinking') or '')[:5000]
+        normalized['llm_thinking'] = str(normalized.get('llm_thinking') or '')[:5000]
         return normalized
 
     @staticmethod

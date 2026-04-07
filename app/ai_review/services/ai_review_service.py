@@ -53,7 +53,8 @@ AI_REVIEW_OUTPUT_FIELDS = [
     'ai_capability_field_usage', 'ai_llm_status', 'ai_llm_reason', 'ai_llm_configured',
     'ai_llm_live_ready', 'ai_llm_attempted', 'ai_llm_result_source', 'ai_llm_cost_estimated_eur',
     'ai_llm_cost_actual_eur', 'ai_llm_budget_remaining_eur', 'ai_llm_cache_hit', 'ai_llm_calls_used',
-    'ai_llm_provider', 'ai_llm_model', 'ai_llm_result_json', 'ai_llm_raw_excerpt',
+    'ai_llm_provider', 'ai_llm_model', 'ai_llm_confidence', 'ai_keyword_thinking', 'ai_llm_thinking',
+    'ai_llm_result_json', 'ai_llm_raw_excerpt',
 ]
 AI_THRESHOLD_LOW_CONFIDENCE = float(_AI_THRESHOLDS.get('low_confidence_threshold', 0.65))
 AI_SKIP_IF_CONFIDENCE_ABOVE = float(_AI_THRESHOLDS.get('skip_if_confidence_above', 0.80))
@@ -462,6 +463,9 @@ class AIReviewService:
             ai_llm_calls_used='0',
             ai_llm_provider='',
             ai_llm_model='',
+            ai_llm_confidence='',
+            ai_keyword_thinking=str(review_input.segmentation_reasons or '')[:5000],
+            ai_llm_thinking='',
             ai_llm_result_json='{}',
             ai_llm_raw_excerpt='',
         )
@@ -617,6 +621,34 @@ class AIReviewService:
                 fallback_evidence.append(f'llm_rejected_taxonomy={taxonomy_validation_reason}')
             ai_evidence_summary = ' || '.join(fallback_evidence)
 
+        llm_confidence_raw = llm_result.get('confidence', '') if isinstance(llm_result, dict) else ''
+        if llm_confidence_raw in (None, ''):
+            ai_llm_confidence = ''
+        else:
+            try:
+                ai_llm_confidence = f'{float(llm_confidence_raw):.3f}'
+            except Exception:
+                ai_llm_confidence = str(llm_confidence_raw)
+        ai_keyword_thinking = str(review_input.segmentation_reasons or '')[:5000]
+        llm_thinking_parts: list[str] = []
+        llm_reason = str(llm_payload.get('reason', '') or '').strip()
+        if llm_reason:
+            llm_thinking_parts.append(f'status_reason={llm_reason}')
+        if taxonomy_validation_reason:
+            llm_thinking_parts.append(f'taxonomy_validation={taxonomy_validation_reason}')
+        if isinstance(llm_result, dict):
+            reasoning_short = str(llm_result.get('reasoning_short', '') or '').strip()
+            if reasoning_short:
+                llm_thinking_parts.append(f'reasoning={reasoning_short}')
+            llm_evidence = llm_result.get('evidence', '')
+            if isinstance(llm_evidence, list):
+                llm_evidence_text = ' | '.join(str(x) for x in llm_evidence if str(x).strip())
+            else:
+                llm_evidence_text = str(llm_evidence or '').strip()
+            if llm_evidence_text:
+                llm_thinking_parts.append(f'evidence={llm_evidence_text}')
+        ai_llm_thinking = ' || '.join(part for part in llm_thinking_parts if part)[:5000]
+
         return AIReviewResult(
             ai_review_status='forced_out_of_scope' if forced_out_of_scope else ('selected' if selected else 'skipped'),
             ai_confidence=ai_confidence,
@@ -657,6 +689,9 @@ class AIReviewService:
             ai_llm_calls_used=str(llm_payload.get('row_calls_used', '')),
             ai_llm_provider=str(llm_payload.get('provider', '')),
             ai_llm_model=str(llm_payload.get('model', '')),
+            ai_llm_confidence=ai_llm_confidence,
+            ai_keyword_thinking=ai_keyword_thinking,
+            ai_llm_thinking=ai_llm_thinking,
             ai_llm_result_json=json.dumps(llm_result, ensure_ascii=False, sort_keys=True),
             ai_llm_raw_excerpt=str(llm_payload.get('raw_content', ''))[:3000],
         )

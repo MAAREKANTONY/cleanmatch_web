@@ -379,7 +379,7 @@ def _run_marketsegmenter_bigquery_job(job: Job, parameters: dict, progress, log)
         'peak_ai_chunk_rows': 0,
     }
 
-    writer_headers = ['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3', 'confidence_level', 'has_llm']
+    writer_headers = ['google_place_id', 'market_segment_type0', 'market_segment_type1', 'market_segment_type2', 'market_segment_type3', 'confidence_level', 'has_llm', 'llm_confidence', 'keyword_thinking', 'llm_thinking']
     started_at = time.perf_counter()
     chunk_rows: list[dict[str, object]] = []
     resume_source_rows = 0
@@ -685,6 +685,9 @@ def _consolidate_marketsegmenter_ai_chunk(ai_csv_path: Path, final_writer, outpu
                 rules_conf = 0.0
             rules_has_segments = any(rules_segments)
             has_llm = (row.get('ai_llm_attempted') or '').strip().lower() == 'yes' or ai_source.startswith('llm_')
+            llm_confidence = (row.get('ai_llm_confidence') or '').strip()
+            keyword_thinking = (row.get('segmentation_reasons') or row.get('ai_keyword_thinking') or '').strip()
+            llm_thinking = (row.get('ai_llm_thinking') or '').strip()
             if rules_conf <= min_conf_threshold:
                 final_segments = ['hors cible', '', '', '']
                 metrics['consolidated_out_of_scope'] += 1
@@ -714,11 +717,14 @@ def _consolidate_marketsegmenter_ai_chunk(ai_csv_path: Path, final_writer, outpu
                 'market_segment_type3': final_segments[3],
                 'confidence_level': f'{rules_conf:.6f}',
                 'has_llm': 'true' if has_llm else 'false',
+                'llm_confidence': llm_confidence,
+                'keyword_thinking': keyword_thinking,
+                'llm_thinking': llm_thinking,
             })
             if google_place_id:
                 chunk_place_ids.append(google_place_id)
             metrics['result_rows'] += 1
-            buffered_bq_rows.append(BigQueryService.build_segmented_row(google_place_id=google_place_id, segments=final_segments, process_id=process_id, confidence_level=rules_conf, has_llm=has_llm))
+            buffered_bq_rows.append(BigQueryService.build_segmented_row(google_place_id=google_place_id, segments=final_segments, process_id=process_id, confidence_level=rules_conf, has_llm=has_llm, llm_confidence=llm_confidence, keyword_thinking=keyword_thinking, llm_thinking=llm_thinking))
     if replace_existing_chunk and chunk_place_ids:
         bq_service.delete_segmented_rows_for_process(output_table_name, process_id, google_place_ids=chunk_place_ids)
     if buffered_bq_rows:

@@ -79,5 +79,8 @@ class AIReviewResult:
     ai_llm_calls_used: str = ''
     ai_llm_provider: str = ''
     ai_llm_model: str = ''
+    ai_llm_confidence: str = ''
+    ai_keyword_thinking: str = ''
+    ai_llm_thinking: str = ''
     ai_llm_result_json: str = ''
     ai_llm_raw_excerpt: str = ''

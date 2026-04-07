@@ -100,11 +100,14 @@ class BigQueryServiceQueryTests(TestCase):
     @patch('django.conf.settings.BIGQUERY_CREDENTIALS_FILE', '')
     @patch('django.conf.settings.BIGQUERY_INPUT_TABLE', 'google_map_clean')
     def test_build_segmented_row_uses_rfc3339_zulu_timestamp(self):
-        row = BigQueryService.build_segmented_row(google_place_id='g1', segments=['restaurant', '', '', ''], process_id='pid1', confidence_level=0.42, has_llm=True)
+        row = BigQueryService.build_segmented_row(google_place_id='g1', segments=['restaurant', '', '', ''], process_id='pid1', confidence_level=0.42, has_llm=True, llm_confidence=0.18, keyword_thinking='kw', llm_thinking='llm')
         self.assertTrue(str(row['created_at']).endswith('Z'))
         self.assertIn('T', str(row['created_at']))
         self.assertEqual(row['confidence_level'], 0.42)
         self.assertTrue(row['has_llm'])
+        self.assertEqual(row['llm_confidence'], 0.18)
+        self.assertEqual(row['keyword_thinking'], 'kw')
+        self.assertEqual(row['llm_thinking'], 'llm')
 
     @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
     @patch('django.conf.settings.BIGQUERY_DATASET', 'dataset')
@@ -116,8 +119,8 @@ class BigQueryServiceQueryTests(TestCase):
         service.client = Mock()
         service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'created_at', 'field_type': 'TIMESTAMP'})()]})()
         rows = [
-            {'google_place_id': 'g1', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'confidence_level': 0.55, 'has_llm': True, 'created_at': '2026-03-26T10:11:12+00:00', 'process_id': 'p1'},
-            {'google_place_id': 'g2', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'confidence_level': '', 'has_llm': 'false', 'created_at': '', 'process_id': 'p1'},
+            {'google_place_id': 'g1', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'confidence_level': 0.55, 'has_llm': True, 'llm_confidence': 0.12, 'keyword_thinking': 'kw1', 'llm_thinking': 'lt1', 'created_at': '2026-03-26T10:11:12+00:00', 'process_id': 'p1'},
+            {'google_place_id': 'g2', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'confidence_level': '', 'has_llm': 'false', 'llm_confidence': '', 'keyword_thinking': '', 'llm_thinking': '', 'created_at': '', 'process_id': 'p1'},
         ]
         service.write_segmented_rows('google_map_clean', rows, batch_size=1)
         self.assertEqual(service.client.insert_rows_json.call_count, 2)
@@ -125,6 +128,9 @@ class BigQueryServiceQueryTests(TestCase):
         self.assertTrue(first_batch[0]['created_at'].endswith('Z'))
         self.assertEqual(first_batch[0]['confidence_level'], 0.55)
         self.assertTrue(first_batch[0]['has_llm'])
+        self.assertEqual(first_batch[0]['llm_confidence'], 0.12)
+        self.assertEqual(first_batch[0]['keyword_thinking'], 'kw1')
+        self.assertEqual(first_batch[0]['llm_thinking'], 'lt1')
 
 
     @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
@@ -137,13 +143,16 @@ class BigQueryServiceQueryTests(TestCase):
         service.client = Mock()
         service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'created_at', 'field_type': 'DATETIME'})()]})()
         rows = [
-            {'google_place_id': 'g1', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'confidence_level': '0.33', 'has_llm': 'yes', 'created_at': '2026-03-25T23:35:36.069360Z', 'process_id': 'p1'},
+            {'google_place_id': 'g1', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'confidence_level': '0.33', 'has_llm': 'yes', 'llm_confidence': '0.11', 'keyword_thinking': 'kw', 'llm_thinking': 'lt', 'created_at': '2026-03-25T23:35:36.069360Z', 'process_id': 'p1'},
         ]
         service.write_segmented_rows('google_map_clean', rows, batch_size=100)
         inserted = service.client.insert_rows_json.call_args.args[1]
         self.assertEqual(inserted[0]['created_at'], '2026-03-25 23:35:36.069360')
         self.assertEqual(inserted[0]['confidence_level'], 0.33)
         self.assertTrue(inserted[0]['has_llm'])
+        self.assertEqual(inserted[0]['llm_confidence'], 0.11)
+        self.assertEqual(inserted[0]['keyword_thinking'], 'kw')
+        self.assertEqual(inserted[0]['llm_thinking'], 'lt')
 
 
     @patch('django.conf.settings.BIGQUERY_PROJECT_ID', 'proj')
@@ -156,7 +165,7 @@ class BigQueryServiceQueryTests(TestCase):
         service.client = Mock()
         service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'created_at', 'field_type': 'TIMESTAMP'})()]})()
         rows = (
-            {'google_place_id': f'g{i}', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'confidence_level': 0.12, 'has_llm': False, 'created_at': '2026-03-26T10:11:12+00:00', 'process_id': 'p1'}
+            {'google_place_id': f'g{i}', 'market_segment_type0': 'restaurant', 'market_segment_type1': '', 'market_segment_type2': '', 'market_segment_type3': '', 'confidence_level': 0.12, 'has_llm': False, 'llm_confidence': '', 'keyword_thinking': '', 'llm_thinking': '', 'created_at': '2026-03-26T10:11:12+00:00', 'process_id': 'p1'}
             for i in range(3)
         )
         inserted = service.write_segmented_rows_iterable('google_map_clean', rows, batch_size=2)
@@ -173,7 +182,7 @@ class BigQueryServiceQueryTests(TestCase):
         service = self._make_service()
         service.client = Mock()
         service.client.get_table.return_value = type('T', (), {'schema': [type('F', (), {'name': 'google_place_id', 'field_type': 'STRING'})(), type('F', (), {'name': 'created_at', 'field_type': 'TIMESTAMP'})(), type('F', (), {'name': 'process_id', 'field_type': 'STRING'})()]})()
-        updated_table = type('T', (), {'schema': [type('F', (), {'name': 'google_place_id', 'field_type': 'STRING'})(), type('F', (), {'name': 'created_at', 'field_type': 'TIMESTAMP'})(), type('F', (), {'name': 'process_id', 'field_type': 'STRING'})(), type('F', (), {'name': 'confidence_level', 'field_type': 'FLOAT'})(), type('F', (), {'name': 'has_llm', 'field_type': 'BOOL'})()]})()
+        updated_table = type('T', (), {'schema': [type('F', (), {'name': 'google_place_id', 'field_type': 'STRING'})(), type('F', (), {'name': 'created_at', 'field_type': 'TIMESTAMP'})(), type('F', (), {'name': 'process_id', 'field_type': 'STRING'})(), type('F', (), {'name': 'confidence_level', 'field_type': 'FLOAT'})(), type('F', (), {'name': 'has_llm', 'field_type': 'BOOL'})(), type('F', (), {'name': 'llm_confidence', 'field_type': 'FLOAT'})(), type('F', (), {'name': 'keyword_thinking', 'field_type': 'STRING'})(), type('F', (), {'name': 'llm_thinking', 'field_type': 'STRING'})()]})()
         service.client.update_table.return_value = updated_table
         service._prepare_segmented_table('google_map_clean')
         self.assertTrue(service.client.update_table.called)
